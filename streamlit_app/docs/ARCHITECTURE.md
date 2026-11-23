@@ -1,5 +1,20 @@
 # Architecture
 
+## Agent layer (v2)
+
+`core/scan_orchestrator.py` is the **Supervisor**. It validates the URL, owns the isolated workspace, runs the specialist agents in `agents/specialists.py`
+(Recon, SBOM, Graph, Vulnerability, Verification, Threat, Risk, Analyst) and adapts to what they observe. `agents/runtime.py` provides the shared
+`Runtime`: a 21-step catalogue with weighted progress, step lifecycle (`begin/progress/done/skip/fail`), failure isolation (a failed step is recorded and
+independent steps continue) and an append-only trace of `observation`, `decision` and `warning` events that is streamed to the UI (live progress bar) and
+stored in the scan result (`agent_trace`, `agents`, `plan`). Agent reasoning is rule-based; the optional LLM is confined to explanation text and validated.
+
+Adaptive behaviours implemented: lockfile-derived fallback inventory when Syft fails; one OSV retry (cache keeps successful packages); NVD prioritisation under the
+public rate limit; reuse of a stored scan for an identical commit; escalation of correlated detections; LLM only for the top-N risks with per-section validation.
+
+Verification layer: `vulnerability/verification.py` re-queries every PURL by a second OSV route (`cross_verified`) and provides a known-answer test (precision/recall).
+Source-package tracing: each finding records the direct dependency that introduces it (`source_packages`), the lockfile record, and per-root paths; the Analyst Agent ranks source packages.
+
+
 ```text
 app.py (Streamlit)  ──►  ui/pages/*  ──►  core/scan_orchestrator.run_scan()
                                               │
