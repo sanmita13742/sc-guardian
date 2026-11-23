@@ -64,14 +64,20 @@ def _sibling_texts(repo: Path, sha: str, path: str) -> dict[str, Optional[str]]:
     return sib
 
 
-def _diff_excerpt(repo: Path, base: str, head: str, path: str, needles: list[str], limit: int = 10) -> list[str]:
-    text = gm.diff_text(repo, base, head, path)
-    out = []
-    for line in text.splitlines():
-        if line[:1] in ("+", "-") and not line.startswith(("+++", "---")) and any(n and n in line for n in needles):
-            out.append(line[:220])
-            if len(out) >= limit:
-                break
+def _diff_excerpt(repo: Path, base: str, head: str, path: str, needles: list[str], limit: int = 12) -> list[str]:
+    """Changed (+/-) lines of every diff hunk in which the package name appears (context lines count for the match)."""
+    text = gm.diff_text(repo, base, head, path, context=4)
+    needles = [n for n in needles if n]
+    out: list[str] = []
+    for hunk in re.split(r"(?m)^@@.*@@.*$", text)[1:]:
+        lines = hunk.splitlines()
+        if not any(n in ln for ln in lines for n in needles):
+            continue
+        for ln in lines:
+            if ln[:1] in ("+", "-") and not ln.startswith(("+++", "---")):
+                out.append(ln[:220])
+                if len(out) >= limit:
+                    return out
     return out
 
 

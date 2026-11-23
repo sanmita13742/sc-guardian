@@ -157,8 +157,8 @@ def show_file(repo_dir: Path, sha: str, path: str, max_bytes: int = 20 * 1024 * 
     return p.stdout.decode("utf-8", errors="replace")
 
 
-def diff_text(repo_dir: Path, base: str, head: str, path: str, max_chars: int = 20000) -> str:
-    out = run_git(["diff", "-U1", "--no-color", base, head, "--", path], cwd=repo_dir, check=False).stdout
+def diff_text(repo_dir: Path, base: str, head: str, path: str, max_chars: int = 200000, context: int = 1) -> str:
+    out = run_git(["diff", f"-U{int(context)}", "--no-color", base, head, "--", path], cwd=repo_dir, check=False).stdout
     return out[:max_chars]
 
 
