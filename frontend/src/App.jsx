@@ -90,6 +90,15 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
+          <a
+            href="/dependency-graph.html"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold px-3 py-1.5 rounded-lg shadow-lg shadow-emerald-600/20 transition border border-emerald-500/40"
+          >
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+            Circular Network View ↗
+          </a>
           <button
             onClick={() => downloadFile(sbomData, 'nodegoat-sbom.json')}
             className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-800 transition"
