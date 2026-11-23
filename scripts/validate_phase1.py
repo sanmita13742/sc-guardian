@@ -155,7 +155,7 @@ def test_navigation_and_state():
     assert ("Operations" in NAVIGATION_PAGES or "Operations & Audit" in NAVIGATION_PAGES)
     ops_key = "Operations" if "Operations" in NAVIGATION_PAGES else "Operations & Audit"
     assert len(NAVIGATION_PAGES["Security Analysis"]) == 6
-    assert len(NAVIGATION_PAGES[ops_key]) == 2
+    assert len(NAVIGATION_PAGES[ops_key]) == 3  # agents, reports, settings & health
     assert len(PAGES) == 8
     print("  -> Navigation structure and compatibility mappings verified.")
 
