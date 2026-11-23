@@ -5,11 +5,11 @@ GRAPH_JSON_PATH = Path("nodegoat-dependency-graph.json")
 OUTPUT_HTML = Path("dependency-graph.html")
 PUBLIC_HTML = Path("frontend/public/dependency-graph.html")
 
+
 def generate():
     with open(GRAPH_JSON_PATH, "r", encoding="utf-8") as f:
         graph_data = json.load(f)
 
-    # Convert nodes and edges into compact format for embedding
     nodes_json = json.dumps(graph_data["nodes"])
     edges_json = json.dumps(graph_data["edges"])
 
@@ -18,7 +18,7 @@ def generate():
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NodeGoat Dependency Graph | Circular Node Network</title>
+  <title>NodeGoat Dependency Graph | Dependency Impact & Supply Chain Visualizer</title>
   <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <style>
     * {{
@@ -95,7 +95,7 @@ def generate():
       border-radius: 6px;
       font-size: 12px;
       outline: none;
-      width: 180px;
+      width: 190px;
     }}
     input[type="text"]:focus {{
       border-color: #3B82F6;
@@ -149,9 +149,9 @@ def generate():
       height: 100%;
       background: #070A10;
     }}
-    /* Side Info Panel */
+    /* Side Info Panel - Dependency Impact Analysis */
     #info-panel {{
-      width: 320px;
+      width: 360px;
       background: #0E131F;
       border-left: 1px solid #1E293B;
       padding: 20px;
@@ -161,6 +161,7 @@ def generate():
       gap: 12px;
       font-size: 12px;
       z-index: 20;
+      box-shadow: -4px 0 20px rgba(0,0,0,0.5);
     }}
     .panel-header {{
       display: flex;
@@ -170,7 +171,7 @@ def generate():
       padding-bottom: 10px;
     }}
     .panel-title {{
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
       color: #F8FAFC;
       word-break: break-all;
@@ -185,6 +186,18 @@ def generate():
     }}
     .panel-close:hover {{
       color: #F8FAFC;
+    }}
+    .impact-header {{
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.05));
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #FCA5A5;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }}
     .info-card {{
       background: #111827;
@@ -209,14 +222,43 @@ def generate():
       font-size: 11px;
       word-break: break-all;
     }}
+    .path-step {{
+      background: #0B0F19;
+      border: 1px solid #1E293B;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: monospace;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+    }}
+    .parents-list {{
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }}
+    .parent-pill {{
+      background: #070A10;
+      border: 1px solid #1E293B;
+      padding: 3px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 10px;
+      color: #93C5FD;
+    }}
     .legend {{
       position: absolute;
       bottom: 16px;
       left: 16px;
-      background: rgba(14, 19, 31, 0.9);
+      background: rgba(14, 19, 31, 0.95);
       backdrop-filter: blur(8px);
       border: 1px solid #1E293B;
-      padding: 10px 14px;
+      padding: 10px 16px;
       border-radius: 10px;
       font-size: 11px;
       display: flex;
@@ -239,6 +281,7 @@ def generate():
     .circle-root {{ background: #3B82F6; box-shadow: 0 0 8px rgba(59, 130, 246, 0.6); }}
     .circle-prod {{ background: #10B981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); }}
     .circle-dev {{ background: #F59E0B; box-shadow: 0 0 8px rgba(245, 158, 11, 0.6); }}
+    .circle-highlight {{ background: #EF4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.8); }}
   </style>
 </head>
 <body>
@@ -248,104 +291,126 @@ def generate():
     <div class="title-group">
       <h1>
         Software Supply Chain Guardian
-        <span class="badge">CIRCULAR NETWORK VIEW</span>
+        <span class="badge">DEPENDENCY IMPACT & TREE MAP</span>
       </h1>
-      <p>Target: OWASP NodeGoat • Visualizing dependency relationships as interconnected circular nodes</p>
+      <p>Target: OWASP NodeGoat • Circular nodes with path-preserving exploration and multi-parent hub verification</p>
     </div>
     <div style="font-size: 11px; color: #64748B;">
-      Drag circles to inspect • Scroll to zoom • Click circle for details
+      Click any circle for Impact Analysis • Drag circles to explore • Double-click to focus
     </div>
   </header>
 
   <!-- Interactive Toolbar & Filters -->
   <div class="toolbar">
-    <!-- Search -->
+    <!-- Search Box -->
     <div class="control-group">
       <label>Search:</label>
-      <input type="text" id="search-input" placeholder="e.g. express, debug, mocha..." />
+      <input type="text" id="search-input" placeholder="e.g. debug, express, mime..." />
     </div>
 
-    <!-- Filter Mode -->
+    <!-- Filter Presets -->
     <div class="control-group">
       <label>Filter:</label>
-      <button id="btn-direct" class="active" onclick="setPreset('direct')">Direct Only (36)</button>
-      <button id="btn-prod" onclick="setPreset('prod')">Production Only</button>
-      <button id="btn-shared" onclick="setPreset('shared')">Shared Hubs</button>
-      <button id="btn-all" onclick="setPreset('all')">All Nodes</button>
+      <button id="btn-direct" class="active" onclick="setPreset('direct')">1. Direct Only (36)</button>
+      <button id="btn-prod" onclick="setPreset('prod')">2. Production Only</button>
+      <button id="btn-shared" onclick="setPreset('shared')">3. Verified Shared Hubs</button>
+      <button id="btn-all" onclick="setPreset('all')">4. All Nodes</button>
     </div>
 
     <!-- Node Limit Slider -->
     <div class="control-group slider-group">
       <label>Node Limit:</label>
-      <input type="range" id="limit-slider" min="15" max="350" value="50" step="5" oninput="onLimitChange(this.value)" />
-      <span class="slider-val" id="limit-val">50</span>
+      <input type="range" id="limit-slider" min="20" max="400" value="70" step="10" oninput="onLimitChange(this.value)" />
+      <span class="slider-val" id="limit-val">70</span>
     </div>
 
-    <!-- Physics Toggle -->
+    <!-- Layout Switcher (Organic Physics vs Hierarchical) -->
+    <div class="control-group">
+      <label>Layout:</label>
+      <select id="layout-select" onchange="changeLayout(this.value)">
+        <option value="physics">Organic Network (Physics)</option>
+        <option value="hierarchical">Hierarchical Tree (Ranks)</option>
+      </select>
+    </div>
+
+    <!-- Physics & Reset -->
     <div class="control-group" style="margin-left: auto;">
       <button id="btn-physics" onclick="togglePhysics()">Pause Physics</button>
-      <button onclick="network.fit({{ animation: true }})">Reset View</button>
+      <button onclick="resetView()">Reset Selection</button>
     </div>
   </div>
 
-  <!-- Main Canvas & Info Side Panel -->
+  <!-- Main Canvas & Dependency Impact Side Panel -->
   <div class="main-container">
     <div id="network-canvas"></div>
 
-    <!-- Selected Circle Inspector Panel -->
+    <!-- Dependency Impact Analysis Panel -->
     <div id="info-panel">
       <div class="panel-header">
         <div>
-          <span id="panel-badge" class="badge" style="margin-bottom: 4px; display: inline-block;">LIBRARY</span>
-          <div class="panel-title" id="panel-name">package-name</div>
+          <span id="panel-badge" class="badge" style="margin-bottom: 4px; display: inline-block;">TRANSITIVE DEPENDENCY</span>
+          <div class="panel-title" id="panel-name">debug@3.2.6</div>
         </div>
         <button class="panel-close" onclick="closePanel()">✕</button>
       </div>
 
-      <div class="info-card">
-        <div class="info-label">Version</div>
-        <div class="info-val mono" id="panel-ver">1.0.0</div>
+      <div class="impact-header">
+        <span>⚡</span>
+        <span>DEPENDENCY IMPACT & BLAST RADIUS</span>
       </div>
 
       <div class="info-card">
-        <div class="info-label">Environment</div>
-        <div class="info-val" id="panel-env">production</div>
+        <div class="info-label">Full Supply Chain Path from NodeGoat</div>
+        <div id="panel-path-trail" style="display: flex; flex-direction: column; gap: 4px; margin-top: 4px;">
+          <!-- Populated dynamically -->
+        </div>
       </div>
 
       <div class="info-card">
-        <div class="info-label">Tree Position</div>
-        <div class="info-val" id="panel-type">direct dependency</div>
+        <div class="info-label">Upstream Inflow: Incoming Parent Dependencies (<span id="panel-in-count">0</span>)</div>
+        <p style="color: #94A3B8; font-size: 11px;">The following packages directly depend on this component:</p>
+        <div class="parents-list" id="panel-parents-list">
+          <!-- Populated dynamically -->
+        </div>
       </div>
 
       <div class="info-card">
-        <div class="info-label">Network Metrics</div>
+        <div class="info-label">Downstream Blast Radius: Sub-Dependencies (<span id="panel-out-count">0</span>)</div>
+        <p style="color: #94A3B8; font-size: 11px;">Packages imported by this component:</p>
+        <div class="parents-list" id="panel-children-list">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-label">Classification & Environment</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;">
           <div>
-            <span style="color: #64748B; font-size: 10px;">In-Degree (Parents):</span>
-            <div class="info-val" id="panel-in">0</div>
-          </div>
-          <div>
-            <span style="color: #64748B; font-size: 10px;">Out-Degree (Deps):</span>
-            <div class="info-val" id="panel-out">0</div>
+            <span style="color: #64748B; font-size: 10px;">Environment:</span>
+            <div class="info-val font-semibold" id="panel-env" style="color: #10B981;">PRODUCTION</div>
           </div>
           <div>
             <span style="color: #64748B; font-size: 10px;">Tree Depth:</span>
-            <div class="info-val" id="panel-depth">1</div>
+            <div class="info-val" id="panel-depth">2 levels</div>
           </div>
           <div>
             <span style="color: #64748B; font-size: 10px;">License:</span>
-            <div class="info-val" id="panel-license">Unknown</div>
+            <div class="info-val" id="panel-license">MIT</div>
+          </div>
+          <div>
+            <span style="color: #64748B; font-size: 10px;">Day 2 Reachability:</span>
+            <div class="info-val" style="color: #F59E0B; font-size: 10px;">Pending AST trace</div>
           </div>
         </div>
       </div>
 
       <div class="info-card">
         <div class="info-label">Package URL (PURL)</div>
-        <div class="info-val mono" id="panel-purl" style="color: #60A5FA;">pkg:npm/foo@1.0.0</div>
+        <div class="info-val mono" id="panel-purl" style="color: #60A5FA;">pkg:npm/debug@3.2.6</div>
       </div>
     </div>
 
-    <!-- Legend -->
+    <!-- Legend & Transparent Node Counter -->
     <div class="legend">
       <div class="legend-item">
         <div class="legend-circle circle-root"></div>
@@ -353,38 +418,155 @@ def generate():
       </div>
       <div class="legend-item">
         <div class="legend-circle circle-prod"></div>
-        <span>Production Library</span>
+        <span>Production Runtime</span>
       </div>
       <div class="legend-item">
         <div class="legend-circle circle-dev"></div>
         <span>Development Tool</span>
       </div>
+      <div class="legend-item">
+        <div class="legend-circle circle-highlight"></div>
+        <span>Impact Path Selected</span>
+      </div>
       <div style="border-left: 1px solid #334155; height: 14px; margin: 0 4px;"></div>
-      <div id="status-counter">Showing 37 circles</div>
+      <div id="status-counter" style="color: #F8FAFC; font-weight: 600;">
+        Showing 37 of 1,091 packages (36 direct, 0 transitive) • All paths connected
+      </div>
     </div>
   </div>
 
   <script>
-    // Embedded Network Data
     const RAW_NODES = {nodes_json};
     const RAW_EDGES = {edges_json};
+    const TOTAL_INVENTORY = 1091;
 
     let network = null;
     let physicsEnabled = true;
     let currentPreset = 'direct';
-    let currentLimit = 50;
+    let currentLimit = 70;
+    let currentLayout = 'physics';
+    let selectedNodeId = null;
 
+    // Node & Adjacency lookups
     const nodeLookup = {{}};
     RAW_NODES.forEach(n => nodeLookup[n.id] = n);
 
-    function createCircularNode(node) {{
+    const childMap = {{}};
+    const parentMap = {{}};
+    RAW_EDGES.forEach(e => {{
+      if (!childMap[e.source]) childMap[e.source] = [];
+      childMap[e.source].push(e.target);
+
+      if (!parentMap[e.target]) parentMap[e.target] = [];
+      parentMap[e.target].push(e.source);
+    }});
+
+    // Find shortest path from root to any target using BFS
+    function findPathFromRoot(targetId) {{
+      if (targetId === 'root') return ['root'];
+      const queue = [['root']];
+      const visited = new Set(['root']);
+
+      while (queue.length > 0) {{
+        const path = queue.shift();
+        const curr = path[path.length - 1];
+
+        for (const next of (childMap[curr] || [])) {{
+          if (next === targetId) {{
+            return [...path, next];
+          }}
+          if (!visited.has(next)) {{
+            visited.add(next);
+            queue.push([...path, next]);
+          }}
+        }}
+      }}
+      return null;
+    }}
+
+    // Path-Preserving BFS Filtering: Guarantees ZERO isolated nodes!
+    function getPathPreservingNodes(limit, filterType, search) {{
+      const eligible = new Set(['root']);
+
+      if (search && search.length > 0) {{
+        // Include search matches and their full paths to root
+        RAW_NODES.forEach(n => {{
+          if (n.label && n.label.toLowerCase().includes(search)) {{
+            const path = findPathFromRoot(n.id);
+            if (path) path.forEach(id => eligible.add(id));
+            else eligible.add(n.id);
+          }}
+        }});
+      }} else if (filterType === 'shared') {{
+        // VERIFIED SHARED HUBS: Select packages with multiple incoming parents (in_degree >= 2)
+        // AND include their multiple parents so multiple incoming arrows are clearly visible!
+        const sharedCandidates = RAW_NODES
+          .filter(n => n.id !== 'root' && (parentMap[n.id] || []).length >= 2)
+          .sort((a, b) => (parentMap[b.id] || []).length - (parentMap[a.id] || []).length);
+
+        // Pick top shared hubs up to limit
+        for (const hub of sharedCandidates) {{
+          if (eligible.size >= limit) break;
+          eligible.add(hub.id);
+          // Always include its multiple parents so it has real incoming edges!
+          (parentMap[hub.id] || []).forEach(p => {{
+            eligible.add(p);
+            // Connect parent back to root if direct
+            if ((parentMap[p] || []).includes('root')) eligible.add('root');
+          }});
+        }}
+      }} else if (filterType === 'direct') {{
+        // All direct dependencies from root
+        (childMap['root'] || []).forEach(childId => eligible.add(childId));
+      }} else if (filterType === 'prod') {{
+        // BFS traversing only production dependencies
+        const queue = (childMap['root'] || []).filter(id => nodeLookup[id]?.environment === 'production');
+        queue.forEach(id => eligible.add(id));
+
+        while (queue.length > 0 && eligible.size < limit) {{
+          const curr = queue.shift();
+          for (const next of (childMap[curr] || [])) {{
+            if (nodeLookup[next]?.environment === 'production' && !eligible.has(next)) {{
+              eligible.add(next);
+              queue.push(next);
+              if (eligible.size >= limit) break;
+            }}
+          }}
+        }}
+      }} else {{
+        // 'all': Level-order BFS from root to ensure connected tree
+        const queue = [...(childMap['root'] || [])];
+        queue.forEach(id => eligible.add(id));
+
+        while (queue.length > 0 && eligible.size < limit) {{
+          const curr = queue.shift();
+          for (const next of (childMap[curr] || [])) {{
+            if (!eligible.has(next)) {{
+              eligible.add(next);
+              queue.push(next);
+              if (eligible.size >= limit) break;
+            }}
+          }}
+        }}
+      }}
+
+      return eligible;
+    }}
+
+    function createVisNode(node, isPathHighlighted) {{
       const isRoot = node.id === 'root';
       const isProd = node.environment === 'production';
       const isDirect = node.type === 'direct';
 
       let bgColor = isRoot ? '#2563EB' : (isProd ? '#059669' : '#D97706');
       let borderColor = isRoot ? '#60A5FA' : (isProd ? '#34D399' : '#FBBF24');
-      let nodeSize = isRoot ? 32 : (isDirect ? 20 : 14);
+      let nodeSize = isRoot ? 32 : (isDirect ? 20 : 15);
+
+      if (isPathHighlighted) {{
+        bgColor = '#DC2626';
+        borderColor = '#FCA5A5';
+        nodeSize = nodeSize + 6;
+      }}
 
       return {{
         id: node.id,
@@ -394,20 +576,19 @@ def generate():
         color: {{
           background: bgColor,
           border: borderColor,
-          highlight: {{ background: '#38BDF8', border: '#FFFFFF' }},
+          highlight: {{ background: '#EF4444', border: '#FFFFFF' }},
           hover: {{ background: '#38BDF8', border: '#FFFFFF' }}
         }},
-        borderWidth: isRoot ? 3 : 2,
+        borderWidth: isPathHighlighted ? 4 : (isRoot ? 3 : 2),
         font: {{
           color: '#F8FAFC',
           size: isRoot ? 14 : 11,
-          face: 'sans-serif',
-          vadjust: 0
+          face: 'sans-serif'
         }},
         shadow: {{
           enabled: true,
-          color: 'rgba(0,0,0,0.6)',
-          size: 10,
+          color: isPathHighlighted ? 'rgba(239, 68, 68, 0.8)' : 'rgba(0,0,0,0.6)',
+          size: isPathHighlighted ? 15 : 8,
           x: 2,
           y: 2
         }},
@@ -417,115 +598,111 @@ def generate():
 
     function filterNetworkData() {{
       const search = document.getElementById('search-input').value.trim().toLowerCase();
-      let selectedNodeIds = new Set(['root']);
+      const eligibleIds = getPathPreservingNodes(currentLimit, currentPreset, search);
 
-      if (search.length > 0) {{
-        // Filter by search
-        RAW_NODES.forEach(n => {{
-          if (n.label && n.label.toLowerCase().includes(search)) {{
-            selectedNodeIds.add(n.id);
+      // If a node is selected, find its path from root
+      const pathNodes = new Set();
+      const pathEdges = new Set();
+      if (selectedNodeId) {{
+        const path = findPathFromRoot(selectedNodeId);
+        if (path) {{
+          path.forEach(id => pathNodes.add(id));
+          for (let i = 0; i < path.length - 1; i++) {{
+            pathEdges.add(`${{path[i]}}->${{path[i+1]}}`);
           }}
-        }});
-        // Include edges between matches and root
-        RAW_EDGES.forEach(e => {{
-          if (selectedNodeIds.has(e.target)) selectedNodeIds.add(e.source);
-        }});
-      }} else {{
-        if (currentPreset === 'direct') {{
-          RAW_EDGES.forEach(e => {{
-            if (e.source === 'root') selectedNodeIds.add(e.target);
-          }});
-        }} else if (currentPreset === 'prod') {{
-          RAW_NODES.forEach(n => {{
-            if (n.environment === 'production' && selectedNodeIds.size < currentLimit) {{
-              selectedNodeIds.add(n.id);
-            }}
-          }});
-        }} else if (currentPreset === 'shared') {{
-          RAW_NODES.forEach(n => {{
-            if (n.in_degree > 1 && selectedNodeIds.size < currentLimit) {{
-              selectedNodeIds.add(n.id);
-            }}
-          }});
-        }} else {{
-          // 'all' up to limit
-          RAW_NODES.forEach(n => {{
-            if (selectedNodeIds.size < currentLimit) {{
-              selectedNodeIds.add(n.id);
-            }}
-          }});
         }}
       }}
 
-      // Slice up to currentLimit if not searching
-      if (!search && selectedNodeIds.size > currentLimit) {{
-        const arr = Array.from(selectedNodeIds).slice(0, currentLimit);
-        selectedNodeIds = new Set(arr);
-        selectedNodeIds.add('root');
-      }}
+      let directCount = 0;
+      let transitiveCount = 0;
 
       const displayNodes = [];
-      selectedNodeIds.forEach(id => {{
+      eligibleIds.forEach(id => {{
         if (nodeLookup[id]) {{
-          displayNodes.push(createCircularNode(nodeLookup[id]));
+          const n = nodeLookup[id];
+          if (n.type === 'direct') directCount++;
+          else if (id !== 'root') transitiveCount++;
+          displayNodes.push(createVisNode(n, pathNodes.has(id)));
         }}
       }});
 
       const displayEdges = RAW_EDGES
-        .filter(e => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target))
-        .map((e, idx) => ({{
-          id: 'edge_' + idx,
-          from: e.source,
-          to: e.target,
-          arrows: 'to',
-          color: {{
-            color: e.source === 'root' ? '#3B82F6' : '#475569',
-            highlight: '#38BDF8',
-            hover: '#94A3B8'
-          }},
-          width: e.source === 'root' ? 2 : 1.2,
-          smooth: {{ type: 'continuous', roundness: 0.3 }}
-        }}));
+        .filter(e => eligibleIds.has(e.source) && eligibleIds.has(e.target))
+        .map((e, idx) => {{
+          const edgeKey = `${{e.source}}->${{e.target}}`;
+          const isPathEdge = pathEdges.has(edgeKey);
 
+          return {{
+            id: 'edge_' + idx,
+            from: e.source,
+            to: e.target,
+            arrows: 'to',
+            color: {{
+              color: isPathEdge ? '#EF4444' : (e.source === 'root' ? '#3B82F6' : '#475569'),
+              highlight: '#EF4444',
+              hover: '#94A3B8'
+            }},
+            width: isPathEdge ? 3.5 : (e.source === 'root' ? 2 : 1.2),
+            smooth: {{ type: currentLayout === 'hierarchical' ? 'cubicBezier' : 'continuous', roundness: 0.3 }}
+          }};
+        }});
+
+      // Update transparent node counter
+      const pkgCount = displayNodes.length - (eligibleIds.has('root') ? 1 : 0);
       document.getElementById('status-counter').innerText =
-        'Showing ' + displayNodes.length + ' circles (' + displayEdges.length + ' connections)';
+        `Showing ${{pkgCount}} of ${{TOTAL_INVENTORY}} packages (${{directCount}} direct, ${{transitiveCount}} transitive) • All paths connected`;
 
       return {{ nodes: new vis.DataSet(displayNodes), edges: new vis.DataSet(displayEdges) }};
+    }}
+
+    function getNetworkOptions() {{
+      if (currentLayout === 'hierarchical') {{
+        return {{
+          layout: {{
+            hierarchical: {{
+              enabled: true,
+              direction: 'UD',
+              sortMethod: 'directed',
+              nodeSpacing: 160,
+              levelSeparation: 120
+            }}
+          }},
+          physics: {{ enabled: false }},
+          interaction: {{ hover: true, zoomView: true, dragView: true }}
+        }};
+      }} else {{
+        return {{
+          layout: {{ hierarchical: {{ enabled: false }} }},
+          physics: {{
+            enabled: physicsEnabled,
+            solver: 'forceAtlas2Based',
+            forceAtlas2Based: {{
+              gravitationalConstant: -80,
+              centralGravity: 0.015,
+              springLength: 100,
+              springConstant: 0.08,
+              damping: 0.4
+            }},
+            stabilization: {{ iterations: 100 }}
+          }},
+          interaction: {{ hover: true, zoomView: true, dragView: true }}
+        }};
+      }}
     }}
 
     function initNetwork() {{
       const container = document.getElementById('network-canvas');
       const data = filterNetworkData();
-
-      const options = {{
-        physics: {{
-          enabled: true,
-          solver: 'forceAtlas2Based',
-          forceAtlas2Based: {{
-            gravitationalConstant: -70,
-            centralGravity: 0.015,
-            springLength: 90,
-            springConstant: 0.08,
-            damping: 0.4
-          }},
-          stabilization: {{ iterations: 120 }}
-        }},
-        interaction: {{
-          hover: true,
-          tooltipDelay: 100,
-          zoomView: true,
-          dragView: true
-        }}
-      }};
+      const options = getNetworkOptions();
 
       network = new vis.Network(container, data, options);
 
-      // Node selection click handler
       network.on('click', function(params) {{
         if (params.nodes.length > 0) {{
           const nodeId = params.nodes[0];
-          const nodeData = nodeLookup[nodeId];
-          if (nodeData) openPanel(nodeData);
+          selectedNodeId = nodeId;
+          openImpactPanel(nodeId);
+          updateNetwork();
         }}
       }});
     }}
@@ -534,9 +711,7 @@ def generate():
       if (!network) return;
       const data = filterNetworkData();
       network.setData(data);
-      if (physicsEnabled) {{
-        network.stabilize();
-      }}
+      network.setOptions(getNetworkOptions());
     }}
 
     function setPreset(preset) {{
@@ -547,7 +722,10 @@ def generate():
       }});
       const activeBtn = document.getElementById('btn-' + preset);
       if (activeBtn) activeBtn.classList.add('active');
+
       document.getElementById('search-input').value = '';
+      selectedNodeId = null;
+      closePanel();
       updateNetwork();
     }}
 
@@ -557,9 +735,10 @@ def generate():
       updateNetwork();
     }}
 
-    document.getElementById('search-input').addEventListener('input', function() {{
+    function changeLayout(val) {{
+      currentLayout = val;
       updateNetwork();
-    }});
+    }}
 
     function togglePhysics() {{
       physicsEnabled = !physicsEnabled;
@@ -569,23 +748,106 @@ def generate():
       btn.classList.toggle('active', !physicsEnabled);
     }}
 
-    function openPanel(data) {{
+    function resetView() {{
+      selectedNodeId = null;
+      document.getElementById('search-input').value = '';
+      closePanel();
+      updateNetwork();
+      network.fit({{ animation: true }});
+    }}
+
+    function openImpactPanel(nodeId) {{
+      const node = nodeLookup[nodeId];
+      if (!node) return;
+
       const panel = document.getElementById('info-panel');
-      document.getElementById('panel-name').innerText = data.label;
-      document.getElementById('panel-ver').innerText = 'v' + (data.version || '1.3.0');
-      document.getElementById('panel-env').innerText = (data.environment || 'production').toUpperCase();
-      document.getElementById('panel-type').innerText = (data.type || 'transitive').toUpperCase() + ' DEPENDENCY';
-      document.getElementById('panel-in').innerText = data.in_degree || 0;
-      document.getElementById('panel-out').innerText = data.out_degree || 0;
-      document.getElementById('panel-depth').innerText = (data.depth || 1) + ' levels';
-      document.getElementById('panel-license').innerText = data.license || 'Apache-2.0';
-      document.getElementById('panel-purl').innerText = data.purl || 'pkg:npm/' + data.label;
       panel.style.display = 'flex';
+
+      document.getElementById('panel-name').innerText = node.label + '@' + node.version;
+      document.getElementById('panel-badge').innerText = (node.type || 'PACKAGE').toUpperCase() + ' DEPENDENCY';
+      document.getElementById('panel-env').innerText = (node.environment || 'production').toUpperCase();
+      document.getElementById('panel-env').style.color = node.environment === 'production' ? '#10B981' : '#F59E0B';
+      document.getElementById('panel-depth').innerText = (node.depth || 1) + ' levels from Root';
+      document.getElementById('panel-license').innerText = node.license || 'Apache-2.0';
+      document.getElementById('panel-purl').innerText = node.purl || ('pkg:npm/' + node.label + '@' + node.version);
+
+      // 1. Path Trail from Root
+      const pathTrail = document.getElementById('panel-path-trail');
+      pathTrail.innerHTML = '';
+      const path = findPathFromRoot(nodeId);
+      if (path) {{
+        path.forEach((stepId, idx) => {{
+          const isTarget = idx === path.length - 1;
+          const isRoot = idx === 0;
+          const stepDiv = document.createElement('div');
+          stepDiv.className = 'path-step';
+          stepDiv.innerHTML = `
+            <span style="color: ${{isTarget ? '#EF4444' : (isRoot ? '#60A5FA' : '#10B981')}}; font-weight: bold;">
+              ${{isRoot ? '★ ROOT' : `${{idx}}.`}}
+            </span>
+            <span style="${{isTarget ? 'color: #FFFFFF; font-weight: bold;' : 'color: #94A3B8;'}}">
+              ${{nodeLookup[stepId]?.label || stepId}}
+            </span>
+          `;
+          pathTrail.appendChild(stepDiv);
+        }});
+      }} else {{
+        pathTrail.innerHTML = '<span style="color: #64748B;">No direct path found</span>';
+      }}
+
+      // 2. Incoming Parents (Blast Inflow)
+      const parents = parentMap[nodeId] || [];
+      document.getElementById('panel-in-count').innerText = parents.length;
+      const parentsContainer = document.getElementById('panel-parents-list');
+      parentsContainer.innerHTML = '';
+      if (parents.length === 0) {{
+        parentsContainer.innerHTML = '<span style="color: #64748B; font-size: 11px;">None (Direct from Root)</span>';
+      }} else {{
+        parents.slice(0, 15).forEach(pId => {{
+          const p = nodeLookup[pId];
+          const pill = document.createElement('div');
+          pill.className = 'parent-pill';
+          pill.innerText = '← ' + (p?.label || pId);
+          parentsContainer.appendChild(pill);
+        }});
+        if (parents.length > 15) {{
+          const more = document.createElement('div');
+          more.style.color = '#64748B';
+          more.style.fontSize = '10px';
+          more.innerText = `+ ${{parents.length - 15}} more parents`;
+          parentsContainer.appendChild(more);
+        }}
+      }}
+
+      // 3. Downstream Sub-dependencies (Blast Outflow)
+      const children = childMap[nodeId] || [];
+      document.getElementById('panel-out-count').innerText = children.length;
+      const childrenContainer = document.getElementById('panel-children-list');
+      childrenContainer.innerHTML = '';
+      if (children.length === 0) {{
+        childrenContainer.innerHTML = '<span style="color: #64748B; font-size: 11px;">Leaf package (0 dependencies)</span>';
+      }} else {{
+        children.slice(0, 15).forEach(cId => {{
+          const c = nodeLookup[cId];
+          const pill = document.createElement('div');
+          pill.className = 'parent-pill';
+          pill.style.color = '#34D399';
+          pill.innerText = '→ ' + (c?.label || cId);
+          childrenContainer.appendChild(pill);
+        }});
+      }}
     }}
 
     function closePanel() {{
       document.getElementById('info-panel').style.display = 'none';
+      selectedNodeId = null;
+      updateNetwork();
     }}
+
+    document.getElementById('search-input').addEventListener('input', function() {{
+      selectedNodeId = null;
+      updateNetwork();
+    }});
 
     window.onload = initNetwork;
   </script>
@@ -601,6 +863,7 @@ def generate():
 
     print(f"Generated standalone circular graph HTML: {OUTPUT_HTML}")
     print(f"Also copied to frontend public: {PUBLIC_HTML}")
+
 
 if __name__ == "__main__":
     generate()

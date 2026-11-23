@@ -12,20 +12,17 @@ import {
   Search,
   Maximize2,
   Minimize2,
-  Maximize,
   RotateCcw,
-  Layers,
   ShieldCheck,
-  Box,
-  Eye,
-  Sliders,
+  AlertTriangle,
+  ArrowRight,
+  Layers,
   Sparkles
 } from 'lucide-react';
 
 const NODE_WIDTH = 220;
 const NODE_HEIGHT = 85;
 
-// Automatic Hierarchical Layout using Dagre
 function getLayoutedElements(nodes, edges, direction = 'TB') {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
@@ -63,11 +60,12 @@ function getLayoutedElements(nodes, edges, direction = 'TB') {
 
 function GraphCanvas({ graphData }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewFilter, setViewFilter] = useState('direct'); // 'direct', 'production', 'shared'
+  const [viewFilter, setViewFilter] = useState('direct'); // 'direct', 'production', 'shared', 'all'
   const [selectedNode, setSelectedNode] = useState(null);
   const [expandedNodes, setExpandedNodes] = useState(new Set());
-  const [layoutDirection, setLayoutDirection] = useState('TB'); // 'TB' = Vertical, 'LR' = Horizontal
+  const [layoutDirection, setLayoutDirection] = useState('TB');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [nodeLimit, setNodeLimit] = useState(70);
 
   const reactFlowInstance = useReactFlow();
 
@@ -82,7 +80,6 @@ function GraphCanvas({ graphData }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen]);
 
-  // Re-fit view when entering/exiting fullscreen or changing filters
   useEffect(() => {
     const timer = setTimeout(() => {
       if (reactFlowInstance) {
@@ -104,73 +101,133 @@ function GraphCanvas({ graphData }) {
     });
   }, []);
 
-  const { layoutedNodes, layoutedEdges, visibleStats } = useMemo(() => {
+  // Compute Adjacency Maps & Path Finding
+  const { childMap, parentMap, nodeLookup } = useMemo(() => {
+    const cMap = {};
+    const pMap = {};
+    const nMap = {};
+
+    if (graphData && graphData.nodes) {
+      graphData.nodes.forEach(n => { nMap[n.id] = n; });
+      graphData.edges.forEach(e => {
+        if (!cMap[e.source]) cMap[e.source] = [];
+        cMap[e.source].push(e.target);
+
+        if (!pMap[e.target]) pMap[e.target] = [];
+        pMap[e.target].push(e.source);
+      });
+    }
+    return { childMap: cMap, parentMap: pMap, nodeLookup: nMap };
+  }, [graphData]);
+
+  // Find shortest path from root using BFS
+  const findPathFromRoot = useCallback((targetId) => {
+    if (targetId === 'root') return ['root'];
+    const queue = [['root']];
+    const visited = new Set(['root']);
+
+    while (queue.length > 0) {
+      const path = queue.shift();
+      const curr = path[path.length - 1];
+
+      for (const next of (childMap[curr] || [])) {
+        if (next === targetId) {
+          return [...path, next];
+        }
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push([...path, next]);
+        }
+      }
+    }
+    return null;
+  }, [childMap]);
+
+  // Compute Layouted Nodes & Edges
+  const { layoutedNodes, layoutedEdges, visibleStats, pathTrace } = useMemo(() => {
     if (!graphData || !graphData.nodes) {
-      return { layoutedNodes: [], layoutedEdges: [], visibleStats: { nodes: 0, edges: 0 } };
+      return { layoutedNodes: [], layoutedEdges: [], visibleStats: { total: 0, direct: 0, transitive: 0 }, pathTrace: [] };
     }
 
     const eligibleNodeIds = new Set(['root']);
     const isSearching = searchTerm.trim().length > 0;
     const lowerSearch = searchTerm.toLowerCase();
 
-    const childMap = {};
-    const parentMap = {};
-    graphData.edges.forEach(edge => {
-      if (!childMap[edge.source]) childMap[edge.source] = [];
-      childMap[edge.source].push(edge.target);
-
-      if (!parentMap[edge.target]) parentMap[edge.target] = [];
-      parentMap[edge.target].push(edge.source);
-    });
-
     if (isSearching) {
       graphData.nodes.forEach(node => {
         if (node.label?.toLowerCase().includes(lowerSearch) || node.id.toLowerCase().includes(lowerSearch)) {
-          eligibleNodeIds.add(node.id);
-          let queue = [node.id];
-          while (queue.length > 0) {
-            const curr = queue.shift();
-            (parentMap[curr] || []).forEach(parent => {
-              if (!eligibleNodeIds.has(parent)) {
-                eligibleNodeIds.add(parent);
-                queue.push(parent);
-              }
-            });
-          }
+          const path = findPathFromRoot(node.id);
+          if (path) path.forEach(id => eligibleNodeIds.add(id));
+          else eligibleNodeIds.add(node.id);
         }
       });
-    } else {
-      graphData.edges.forEach(edge => {
-        if (edge.source === 'root') {
-          const targetNode = graphData.nodes.find(n => n.id === edge.target);
-          if (!targetNode) return;
+    } else if (viewFilter === 'shared') {
+      // Verified Shared Hubs (in_degree >= 2) with their real parents!
+      const sharedCandidates = graphData.nodes
+        .filter(n => n.id !== 'root' && (parentMap[n.id] || []).length >= 2)
+        .sort((a, b) => (parentMap[b.id] || []).length - (parentMap[a.id] || []).length);
 
-          if (viewFilter === 'direct') {
-            eligibleNodeIds.add(edge.target);
-          } else if (viewFilter === 'production') {
-            if (targetNode.environment === 'production') {
-              eligibleNodeIds.add(edge.target);
-            }
-          } else if (viewFilter === 'shared') {
-            eligibleNodeIds.add(edge.target);
-          }
-        }
-      });
-
-      expandedNodes.forEach(expandedId => {
-        const children = childMap[expandedId] || [];
-        children.forEach(cid => eligibleNodeIds.add(cid));
-      });
-
-      if (viewFilter === 'shared') {
-        graphData.nodes.forEach(node => {
-          if (node.in_degree > 1 && node.id !== 'root') {
-            eligibleNodeIds.add(node.id);
-            (parentMap[node.id] || []).slice(0, 3).forEach(p => eligibleNodeIds.add(p));
-          }
+      for (const hub of sharedCandidates) {
+        if (eligibleNodeIds.size >= nodeLimit) break;
+        eligibleNodeIds.add(hub.id);
+        (parentMap[hub.id] || []).forEach(p => {
+          eligibleNodeIds.add(p);
+          if ((parentMap[p] || []).includes('root')) eligibleNodeIds.add('root');
         });
       }
+    } else if (viewFilter === 'direct') {
+      (childMap['root'] || []).forEach(childId => eligibleNodeIds.add(childId));
+    } else if (viewFilter === 'production') {
+      const queue = (childMap['root'] || []).filter(id => nodeLookup[id]?.environment === 'production');
+      queue.forEach(id => eligibleNodeIds.add(id));
+
+      while (queue.length > 0 && eligibleNodeIds.size < nodeLimit) {
+        const curr = queue.shift();
+        for (const next of (childMap[curr] || [])) {
+          if (nodeLookup[next]?.environment === 'production' && !eligibleNodeIds.has(next)) {
+            eligibleNodeIds.add(next);
+            queue.push(next);
+            if (eligibleNodeIds.size >= nodeLimit) break;
+          }
+        }
+      }
+    } else {
+      // 'all': Level-order BFS from root
+      const queue = [...(childMap['root'] || [])];
+      queue.forEach(id => eligibleNodeIds.add(id));
+
+      while (queue.length > 0 && eligibleNodeIds.size < nodeLimit) {
+        const curr = queue.shift();
+        for (const next of (childMap[curr] || [])) {
+          if (!eligibleNodeIds.has(next)) {
+            eligibleNodeIds.add(next);
+            queue.push(next);
+            if (eligibleNodeIds.size >= nodeLimit) break;
+          }
+        }
+      }
     }
+
+    // User expanded sub-trees
+    expandedNodes.forEach(expandedId => {
+      const children = childMap[expandedId] || [];
+      children.forEach(cid => eligibleNodeIds.add(cid));
+    });
+
+    // Compute path trace if node is selected
+    const pathNodes = new Set();
+    const pathEdges = new Set();
+    let computedPath = [];
+    if (selectedNode) {
+      computedPath = findPathFromRoot(selectedNode.id) || [];
+      computedPath.forEach(id => pathNodes.add(id));
+      for (let i = 0; i < computedPath.length - 1; i++) {
+        pathEdges.add(`${computedPath[i]}->${computedPath[i+1]}`);
+      }
+    }
+
+    let directCount = 0;
+    let transitiveCount = 0;
 
     const rawNodes = graphData.nodes
       .filter(node => eligibleNodeIds.has(node.id))
@@ -180,12 +237,20 @@ function GraphCanvas({ graphData }) {
         const isDirect = node.type === 'direct' || node.dependency_type === 'direct';
         const hasChildren = (childMap[node.id] || []).length > 0;
         const isExpanded = expandedNodes.has(node.id);
+        const isPathHighlighted = pathNodes.has(node.id);
+
+        if (isDirect) directCount++;
+        else if (!isRoot) transitiveCount++;
 
         let bgColor = '#111827';
         let borderColor = '#374151';
         let badgeBg = 'bg-gray-800 text-gray-300';
 
-        if (isRoot) {
+        if (isPathHighlighted) {
+          bgColor = '#7F1D1D';
+          borderColor = '#EF4444';
+          badgeBg = 'bg-red-500/20 text-red-300 border-red-500/40';
+        } else if (isRoot) {
           bgColor = '#1E3A8A';
           borderColor = '#3B82F6';
           badgeBg = 'bg-blue-500/20 text-blue-300 border-blue-500/30';
@@ -247,37 +312,43 @@ function GraphCanvas({ graphData }) {
             width: NODE_WIDTH,
             height: NODE_HEIGHT,
             color: '#F9FAFB',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
+            boxShadow: isPathHighlighted ? '0 0 16px rgba(239, 68, 68, 0.5)' : '0 4px 12px rgba(0, 0, 0, 0.4)'
           }
         };
       });
 
     const rawEdges = graphData.edges
       .filter(e => eligibleNodeIds.has(e.source) && eligibleNodeIds.has(e.target))
-      .map(e => ({
-        id: `${e.source}->${e.target}`,
-        source: e.source,
-        target: e.target,
-        type: 'smoothstep',
-        animated: e.source === 'root',
-        style: {
-          stroke: e.source === 'root' ? '#3B82F6' : '#64748B',
-          strokeWidth: e.source === 'root' ? 2 : 1.2
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: e.source === 'root' ? '#3B82F6' : '#64748B'
-        }
-      }));
+      .map(e => {
+        const edgeKey = `${e.source}->${e.target}`;
+        const isPathEdge = pathEdges.has(edgeKey);
+
+        return {
+          id: edgeKey,
+          source: e.source,
+          target: e.target,
+          type: 'smoothstep',
+          animated: isPathEdge || e.source === 'root',
+          style: {
+            stroke: isPathEdge ? '#EF4444' : (e.source === 'root' ? '#3B82F6' : '#64748B'),
+            strokeWidth: isPathEdge ? 3.5 : (e.source === 'root' ? 2 : 1.2)
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: isPathEdge ? '#EF4444' : (e.source === 'root' ? '#3B82F6' : '#64748B')
+          }
+        };
+      });
 
     const layouted = getLayoutedElements(rawNodes, rawEdges, layoutDirection);
 
     return {
       layoutedNodes: layouted.nodes,
       layoutedEdges: layouted.edges,
-      visibleStats: { nodes: layouted.nodes.length, edges: layouted.edges.length }
+      visibleStats: { total: rawNodes.length, direct: directCount, transitive: transitiveCount },
+      pathTrace: computedPath
     };
-  }, [graphData, searchTerm, viewFilter, expandedNodes, layoutDirection, toggleExpand]);
+  }, [graphData, searchTerm, viewFilter, expandedNodes, layoutDirection, toggleExpand, nodeLimit, selectedNode, findPathFromRoot, childMap, parentMap, nodeLookup]);
 
   const onNodeClick = useCallback((_, node) => {
     setSelectedNode(node.data.rawNode);
@@ -288,6 +359,9 @@ function GraphCanvas({ graphData }) {
       reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
     }
   };
+
+  const selectedParents = selectedNode ? (parentMap[selectedNode.id] || []) : [];
+  const selectedChildren = selectedNode ? (childMap[selectedNode.id] || []) : [];
 
   return (
     <div
@@ -306,7 +380,7 @@ function GraphCanvas({ graphData }) {
             <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
             <input
               type="text"
-              placeholder="Search package (e.g. express, debug)..."
+              placeholder="Search package (e.g. debug, express)..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               className="bg-gray-900 border border-gray-700 text-xs rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 w-60 text-gray-200"
@@ -318,23 +392,46 @@ function GraphCanvas({ graphData }) {
           {/* Preset Filters */}
           <div className="flex gap-1">
             <button
-              onClick={() => { setViewFilter('direct'); setSearchTerm(''); setExpandedNodes(new Set()); }}
+              onClick={() => { setViewFilter('direct'); setSearchTerm(''); setExpandedNodes(new Set()); setSelectedNode(null); }}
               className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'direct' && !searchTerm ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
             >
-              Direct Tree (36)
+              1. Direct Only (36)
             </button>
             <button
               onClick={() => { setViewFilter('production'); setSearchTerm(''); }}
               className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'production' && !searchTerm ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
             >
-              Production Only
+              2. Production Only
             </button>
             <button
               onClick={() => { setViewFilter('shared'); setSearchTerm(''); }}
               className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'shared' && !searchTerm ? 'bg-purple-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
             >
-              Shared Hubs (355)
+              3. Verified Shared Hubs
             </button>
+            <button
+              onClick={() => { setViewFilter('all'); setSearchTerm(''); }}
+              className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'all' && !searchTerm ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
+            >
+              4. All Nodes
+            </button>
+          </div>
+
+          <div className="h-5 w-[1px] bg-gray-700 mx-1" />
+
+          {/* Node Limit Slider */}
+          <div className="flex items-center gap-1.5 text-xs text-gray-300">
+            <span>Limit:</span>
+            <input
+              type="range"
+              min="20"
+              max="350"
+              value={nodeLimit}
+              step="10"
+              onChange={e => setNodeLimit(parseInt(e.target.value, 10))}
+              className="w-16 accent-blue-500 cursor-pointer"
+            />
+            <span className="font-mono text-blue-400 font-semibold">{nodeLimit}</span>
           </div>
 
           <div className="h-5 w-[1px] bg-gray-700 mx-1" />
@@ -343,28 +440,23 @@ function GraphCanvas({ graphData }) {
           <button
             onClick={() => setLayoutDirection(prev => prev === 'TB' ? 'LR' : 'TB')}
             className="px-2.5 py-1.5 rounded-lg text-gray-300 hover:bg-gray-800 border border-gray-700 transition"
-            title="Toggle Top-to-Bottom / Left-to-Right orientation"
           >
-            {layoutDirection === 'TB' ? 'Layout: Vertical ↓' : 'Layout: Horizontal →'}
+            {layoutDirection === 'TB' ? 'Vertical ↓' : 'Horizontal →'}
           </button>
 
           {/* Fit View Button */}
           <button
             onClick={handleFitView}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-700 transition"
-            title="Fit to Screen"
           >
             <RotateCcw className="w-3.5 h-3.5 text-blue-400" />
             Fit View
           </button>
 
-          <div className="h-5 w-[1px] bg-gray-700 mx-1" />
-
           {/* Fullscreen Button */}
           <button
             onClick={() => setIsFullscreen(prev => !prev)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/40 transition font-semibold"
-            title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen Mode'}
           >
             {isFullscreen ? (
               <>
@@ -380,8 +472,8 @@ function GraphCanvas({ graphData }) {
           </button>
         </div>
 
-        {/* Bottom Status & Legend */}
-        <div className="absolute bottom-4 left-4 z-10 bg-[#0E131F]/90 backdrop-blur-md px-4 py-2 rounded-xl border border-gray-800 text-xs flex gap-5 text-gray-300 shadow-xl items-center">
+        {/* Bottom Status & Transparent Limit Display */}
+        <div className="absolute bottom-4 left-4 z-10 bg-[#0E131F]/95 backdrop-blur-md px-4 py-2 rounded-xl border border-gray-800 text-xs flex gap-5 text-gray-300 shadow-xl items-center">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-md bg-blue-600 border border-blue-400"></span> Application Root
           </div>
@@ -391,9 +483,12 @@ function GraphCanvas({ graphData }) {
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-md bg-amber-700 border border-amber-500"></span> Development Tooling
           </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-md bg-red-600 border border-red-400"></span> Impact Path
+          </div>
           <div className="h-4 w-[1px] bg-gray-700" />
-          <div className="text-gray-400">
-            Rendered: <span className="text-white font-mono font-semibold">{visibleStats.nodes}</span> nodes, <span className="text-white font-mono font-semibold">{visibleStats.edges}</span> edges
+          <div className="text-gray-200 font-semibold font-mono">
+            Showing {visibleStats.total} of 1,091 packages ({visibleStats.direct} direct, {visibleStats.transitive} transitive) • All paths connected
           </div>
         </div>
 
@@ -420,9 +515,9 @@ function GraphCanvas({ graphData }) {
         </ReactFlow>
       </div>
 
-      {/* Selected Node Details Side Panel */}
+      {/* Selected Node Details - Dependency Impact Analysis Panel */}
       {selectedNode && (
-        <div className="w-88 h-full bg-[#0E131F] border-l border-gray-800 p-5 overflow-y-auto space-y-4 shadow-2xl z-20">
+        <div className="w-96 h-full bg-[#0E131F] border-l border-gray-800 p-5 overflow-y-auto space-y-4 shadow-2xl z-20">
           <div className="flex justify-between items-start">
             <div>
               <span className={`text-[10px] px-2 py-0.5 rounded font-mono uppercase font-bold border ${selectedNode.environment === 'production' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'}`}>
@@ -439,47 +534,82 @@ function GraphCanvas({ graphData }) {
             </button>
           </div>
 
+          <div className="bg-red-500/10 border border-red-500/30 p-2.5 rounded-lg text-xs text-red-300 flex items-center gap-2 font-semibold">
+            <span>⚡</span>
+            <span>DEPENDENCY IMPACT & BLAST RADIUS</span>
+          </div>
+
           <div className="space-y-3 text-xs">
+            {/* Supply Chain Path from Root */}
+            <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800 space-y-1.5">
+              <span className="text-gray-400 block font-semibold text-[10px] uppercase tracking-wider">
+                Supply Chain Trace from NodeGoat
+              </span>
+              <div className="space-y-1 font-mono text-[11px]">
+                {pathTrace.map((pId, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5 bg-[#070A10] px-2 py-1 rounded border border-gray-800">
+                    <span className={idx === pathTrace.length - 1 ? 'text-red-400 font-bold' : (idx === 0 ? 'text-blue-400 font-bold' : 'text-emerald-400')}>
+                      {idx === 0 ? '★ ROOT' : `${idx}.`}
+                    </span>
+                    <span className={idx === pathTrace.length - 1 ? 'text-white font-bold' : 'text-gray-400'}>
+                      {nodeLookup[pId]?.label || pId}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Upstream Parents Inflow */}
+            <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800 space-y-1">
+              <span className="text-gray-400 block font-semibold text-[10px] uppercase tracking-wider">
+                Upstream Inflow: Imported by {selectedParents.length} parent packages
+              </span>
+              <div className="max-h-28 overflow-y-auto space-y-1 font-mono text-[10px] text-blue-300 mt-1">
+                {selectedParents.length === 0 ? (
+                  <span className="text-gray-500">Directly imported by Root</span>
+                ) : (
+                  selectedParents.slice(0, 15).map((pId, idx) => (
+                    <div key={idx} className="bg-[#070A10] px-2 py-0.5 rounded border border-gray-800">
+                      ← {nodeLookup[pId]?.label || pId}
+                    </div>
+                  ))
+                )}
+                {selectedParents.length > 15 && (
+                  <div className="text-gray-500 text-[10px] text-center pt-1">+ {selectedParents.length - 15} more parents</div>
+                )}
+              </div>
+            </div>
+
+            {/* Downstream Children Outflow */}
+            <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800 space-y-1">
+              <span className="text-gray-400 block font-semibold text-[10px] uppercase tracking-wider">
+                Downstream Blast Radius: {selectedChildren.length} dependencies
+              </span>
+              <div className="max-h-24 overflow-y-auto space-y-1 font-mono text-[10px] text-emerald-300 mt-1">
+                {selectedChildren.length === 0 ? (
+                  <span className="text-gray-500">Leaf package (0 dependencies)</span>
+                ) : (
+                  selectedChildren.slice(0, 10).map((cId, idx) => (
+                    <div key={idx} className="bg-[#070A10] px-2 py-0.5 rounded border border-gray-800">
+                      → {nodeLookup[cId]?.label || cId}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Classification & Metadata */}
             <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800">
-              <span className="text-gray-400 block mb-1">Runtime Reachability</span>
+              <span className="text-gray-400 block mb-1">Runtime Classification</span>
               <span className={`font-semibold capitalize text-sm ${selectedNode.environment === 'production' ? 'text-emerald-400' : 'text-amber-400'}`}>
                 {selectedNode.environment === 'production' ? 'Production (Runtime Dependency)' : 'Development (Test / Build Tool)'}
               </span>
-            </div>
-
-            <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800 space-y-2">
-              <span className="text-gray-400 block font-medium">Tree Statistics</span>
-              <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-                <div>
-                  <span className="text-gray-500 block">Tree Depth:</span>
-                  <span className="text-white font-bold">{selectedNode.depth} levels</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 block">Parents (In-deg):</span>
-                  <span className="text-white font-bold">{selectedNode.in_degree}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 block">Sub-deps (Out-deg):</span>
-                  <span className="text-white font-bold">{selectedNode.out_degree}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500 block">License:</span>
-                  <span className="text-gray-300">{selectedNode.license || 'Unknown'}</span>
-                </div>
-              </div>
             </div>
 
             {selectedNode.purl && (
               <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800">
                 <span className="text-gray-400 block mb-1">Package URL (PURL)</span>
                 <p className="font-mono text-[11px] text-blue-400 break-all">{selectedNode.purl}</p>
-              </div>
-            )}
-
-            {selectedNode.declared_version && (
-              <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800">
-                <span className="text-gray-400 block mb-1">Declared in Manifest</span>
-                <p className="font-mono text-[11px] text-gray-200">{selectedNode.declared_version}</p>
               </div>
             )}
           </div>
