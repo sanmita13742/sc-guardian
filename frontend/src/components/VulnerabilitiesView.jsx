@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   Search,
   Filter,
-  ExternalLink,
   ChevronDown,
   ChevronRight,
   GitCommit,
@@ -309,37 +308,6 @@ export default function VulnerabilitiesView({ scanData }) {
                         </div>
                       </div>
                     </div>
-
-                    {/* Technical Description */}
-                    {finding.details && (
-                      <div className="bg-[#0B0F19] border border-gray-800/80 p-3 rounded-lg space-y-1">
-                        <span className="text-gray-500 text-[10px] font-semibold block">ADVISORY DETAILS</span>
-                        <p className="text-gray-300 text-xs leading-relaxed whitespace-pre-wrap">
-                          {finding.details}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Advisory References */}
-                    {finding.references?.length > 0 && (
-                      <div className="space-y-1">
-                        <span className="text-gray-500 text-[10px] font-semibold block">OFFICIAL REFERENCES</span>
-                        <div className="flex flex-wrap gap-2">
-                          {finding.references.map((refUrl, rIdx) => (
-                            <a
-                              key={rIdx}
-                              href={refUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 bg-gray-900 border border-gray-800 px-2.5 py-1 rounded transition hover:border-blue-500/40"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              <span className="truncate max-w-xs">{refUrl}</span>
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
