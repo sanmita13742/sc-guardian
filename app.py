@@ -34,23 +34,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Backward-compatible dictionary mapping
-PAGES = {
-    "Repository Scan": scan_page,
-    "SBOM Explorer": sbom_page,
-    "Dependency Graph": graph_page,
-    "Vulnerability Findings": vulns_page,
-    "Pipeline & Containers": pipeline_page,
-    "Suspicious Changes": suspicious_page,
-    "Risk & Explainability": risk_page,
-    "Remediation": remediation_page,
-    "Policy & Gate": policy_page,
-    "Monitoring": monitor_page,
-    "Architecture": architecture_page,
-    "Agent Activity": agents_page,
-    "Reports": reports_page,
-}
-
 # Native Streamlit Multi-Page Navigation definition
 NAVIGATION_PAGES = {
     "Security Analysis": [

@@ -11,7 +11,7 @@ Depth is the length of the *shortest* path from a root (direct dependency = 1), 
 from __future__ import annotations
 
 import html
-from collections import Counter, defaultdict, deque
+from collections import Counter, deque
 from typing import Any, Optional
 
 import networkx as nx
@@ -183,20 +183,3 @@ def graph_stats(g: nx.DiGraph, vuln: dict[str, str]) -> dict[str, Any]:
     return {"components": len(comps), "edges": g.number_of_edges(), "depth_histogram": {int(k): v for k, v in sorted(hist.items())}, "max_depth": max(hist) if hist else 0,
             "longest_chain": [g.nodes[n].get("label", n) for n in longest], "most_shared": [x for x in fan_in if x[1] > 1], "biggest_fan_out": [x for x in fan_out if x[1] > 0],
             "vulnerable_by_depth": {int(k): v for k, v in sorted(vuln_depth.items())}, "per_root": per_root, "has_cycles": not nx.is_directed_acyclic_graph(nx.DiGraph(g))}
-
-
-def layered_positions(g: nx.DiGraph, nodes: set[str], x_gap: int = 230, y_gap: int = 34) -> dict[str, dict]:
-    """Left-to-right layers by shortest depth from any root: roots at x=0, direct dependencies at x=1, ... (readable alternative to force layouts)."""
-    depth: dict[str, int] = {}
-    for r in roots_of(g):
-        for n, d in nx.single_source_shortest_path_length(g, r).items():
-            depth[n] = min(depth.get(n, 10**9), d)
-    layers: dict[int, list[str]] = defaultdict(list)
-    for n in nodes:
-        layers[depth.get(n, 0)].append(n)
-    pos = {}
-    for d, ns in layers.items():
-        ns.sort(key=lambda n: (g.nodes[n].get("label", n).lower()))
-        for i, n in enumerate(ns):
-            pos[n] = {"x": d * x_gap, "y": i * y_gap}
-    return pos

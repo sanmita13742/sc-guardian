@@ -6,11 +6,11 @@ import streamlit as st
 
 from graph.dependency_tracer import trace_component
 from graph.graph_builder import roots_of
-from graph.graph_exporter import graph_from_json, subgraph_for, to_cytoscape
+from graph.graph_exporter import dependency_payload, graph_from_json
 from graph.impact_analyzer import impact_of
-from graph.tree_view import build_reverse_tree, build_tree, graph_stats, layered_positions, tree_html, vulnerable_ancestors
+from graph.tree_view import build_reverse_tree, build_tree, graph_stats, tree_html, vulnerable_ancestors
 from ui.components.common import df, download_json, page_header, require_result
-from ui.visualizations.cytoscape_view import render_cytoscape
+from ui.visualizations.graphs import render_dependency_graph
 
 SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0}
 SEV_ICON = {"CRITICAL": "🟥", "HIGH": "🟧", "MEDIUM": "🟨", "LOW": "🟦", "UNKNOWN": "🟪"}
@@ -103,7 +103,7 @@ def render() -> None:
         info[cmp_["bom_ref"]] = {"scope": cmp_.get("scope"), "license": ", ".join(cmp_.get("licenses") or []), "install_script": cmp_.get("install_script"),
                                  "resolution": cmp_.get("resolution"), "deprecated": cmp_.get("deprecated"), "integrity": (cmp_.get("integrity") or {}).get("status")}
 
-    tab_tree, tab_graph, tab_alert, tab_src, tab_inspect, tab_tables = st.tabs(["Dependency Tree", "Graph View", "Transitive Alerts", "Source Packages", "Package Tracer", "Tables"])
+    tab_graph, tab_tree, tab_alert, tab_inspect = st.tabs(["Interactive Graph", "Dependency Tree", "Alerts & Source Packages", "Package Tracer"])
 
     with tab_tree:
         stats = graph_stats(g, vmap)
@@ -148,47 +148,14 @@ def render() -> None:
                 st.info("No packages match.")
 
     with tab_graph:
-        ctrl1, ctrl2 = st.columns([3, 1])
-        mode = ctrl1.radio("Perspective", ["Direct only", "Transitive only", "Vulnerability paths", "Service subgraph", "Component neighborhood"], horizontal=True)
-        max_nodes = ctrl2.slider("Max nodes", 30, 500, 200, 10)
-        layered = st.checkbox("Layered layout (columns = depth from the root)", True, help="Left to right: service root, direct dependencies, then each transitive level.")
-
-        sub = None
-        if mode.startswith("Direct"):
-            only_vuln = st.checkbox("Only vulnerable direct dependencies", False)
-            keep = set(roots)
-            for n in direct_nodes:
-                if not only_vuln or n in vmap:
-                    keep.add(n)
-            sub = g.subgraph(set(list(keep)[:max_nodes] if len(keep) > max_nodes else keep)).copy()
-        elif mode.startswith("Transitive"):
-            only_vuln = st.checkbox("Only vulnerable transitive packages", True)
-            if only_vuln:
-                focus = [n for n in vmap if n in trans_nodes]
-                sub = subgraph_for(g, "vulnerable", focus=focus, max_nodes=max_nodes) if focus else None
-                if not focus:
-                    st.info("No vulnerable transitive dependencies.")
-            else:
-                keep = set(roots) | trans_nodes | {p for n in trans_nodes for p in g.predecessors(n) if p in direct_nodes}
-                sub = g.subgraph(set(list(keep)[:max_nodes])).copy()
-        elif mode.startswith("Vulnerability"):
-            vf = sorted(vulns, key=lambda f: -SEV_RANK[f["severity"] or "UNKNOWN"])
-            opts = {f["finding_id"]: f"{f['primary_id']} · {f['package_name']}@{f['installed_version']} ({f['dependency_type']})" for f in vf}
-            sel = st.multiselect("Vulnerabilities to trace", list(opts), default=list(opts)[:3], format_func=lambda k: opts[k])
-            focus = [ref for f in vf if f["finding_id"] in sel for ref in (f.get("component_refs") or [f["component_ref"]])]
-            sub = subgraph_for(g, "vulnerable", focus=focus, max_nodes=max_nodes) if focus else None
-        elif mode.startswith("Service"):
-            root = st.selectbox("Service root", roots, format_func=lambda n: labels[n])
-            sub = subgraph_for(g, "service", root=root, depth=2, max_nodes=max_nodes)
-        else:
-            q = st.text_input("Find package", placeholder="e.g. express")
-            cands = [n for n in comps if q.lower() in labels[n].lower()][:200] if q else comps[:200]
-            if cands:
-                pick = st.selectbox("Package", cands, format_func=lambda n: labels[n])
-                sub = subgraph_for(g, "neighborhood", focus=[pick], depth=2, max_nodes=max_nodes)
-
-        if sub is not None and len(sub):
-            render_cytoscape(to_cytoscape(sub, vmap, rel, positions=layered_positions(g, set(sub.nodes)) if layered else None, info=info), 500)
+        advisories: dict[str, list[str]] = {}
+        fixes: dict[str, str] = {}
+        for f in vulns:
+            for ref in f.get("component_refs") or [f["component_ref"]]:
+                advisories.setdefault(ref, []).append(f["primary_id"])
+                if f.get("recommended_fix"):
+                    fixes.setdefault(ref, f["recommended_fix"])
+        render_dependency_graph(dependency_payload(g, rel, vmap, advisories, info, fixes), 620)
 
     with tab_alert:
         rows = []
@@ -204,10 +171,9 @@ def render() -> None:
                 "Full Path": " → ".join(path[1:]) if path else "",
                 "Fixed in": f["recommended_fix"] or "none",
             })
-        st.caption(f"{len(rows)} transitive vulnerability alert(s)")
-        df(rows, height=360)
-
-    with tab_src:
+        st.markdown(f"**{len(rows)} transitive vulnerability alert(s)**")
+        df(rows, height=320)
+        st.markdown("**Source packages** (the direct dependencies that bring in the risk)")
         spv = r.get("source_package_view", [])
         df([{"Risk": x["worst_risk"], "Severity": x["worst_severity"] or "n/a", "Source Package": x["source_package"],
              "Itself Vulnerable": "Yes" if x["is_itself_vulnerable"] else "No",
@@ -226,10 +192,5 @@ def render() -> None:
                 with st.expander(f"Path to Root: {ro['root_label']} ({ro['relationship']}, depth {ro['depth']})", expanded=True):
                     for p in ro["paths"][:4]:
                         st.code(" → ".join(p), language="text")
-
-    with tab_tables:
-        rows = [{"Package": labels[n], "Parents": g.in_degree(n), "Roots": len(per)}
-                for n, per in rel.items() if n in g and (len(per) > 1 or g.in_degree(n) > 1)]
-        df(sorted(rows, key=lambda x: -x["Parents"])[:200], height=300)
 
     download_json("Download Graph JSON", {**gd}, f"{r['repo']['name']}-graph.json", "dl_graph")

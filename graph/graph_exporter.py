@@ -1,7 +1,5 @@
-"""Graph export: JSON (node-link) and Cytoscape element lists, with size-capped subgraph views."""
+"""Graph export: JSON (node-link) and the compact payload for the interactive dependency explorer."""
 from __future__ import annotations
-
-from typing import Iterable, Optional
 
 import networkx as nx
 
@@ -17,54 +15,40 @@ def graph_to_json(g: nx.DiGraph, validation: dict | None = None) -> dict:
     }
 
 
-def subgraph_for(g: nx.DiGraph, mode: str = "overview", focus: Optional[Iterable[str]] = None, root: Optional[str] = None,
-                 depth: int = 2, max_nodes: int = 300) -> nx.DiGraph:
-    """Bounded views: overview (roots + direct deps), service, vulnerable (paths to focus nodes), neighborhood."""
-    keep: set[str] = set()
-    if mode == "overview":
-        for r in roots_of(g):
-            keep.add(r)
-            keep |= set(g.successors(r))
-    elif mode == "service" and root:
-        keep = {root} | set(nx.single_source_shortest_path_length(g, root, cutoff=depth))
-    elif mode == "vulnerable" and focus:
-        for f in focus:
-            if f in g:
-                keep.add(f)
-                keep |= nx.ancestors(g, f)
-    elif mode == "neighborhood" and focus:
-        for f in focus:
-            if f in g:
-                keep.add(f)
-                keep |= set(nx.single_source_shortest_path_length(g, f, cutoff=depth))
-                keep |= set(nx.single_source_shortest_path_length(g.reverse(copy=False), f, cutoff=depth))
-    if len(keep) > max_nodes:
-        # keep roots + focus first, then nearest nodes by BFS order
-        ordered = [n for n in roots_of(g) if n in keep] + [f for f in (focus or []) if f in keep]
-        rest = [n for n in keep if n not in ordered]
-        keep = set((ordered + rest)[:max_nodes])
-    return g.subgraph(keep).copy()
+def _name(label: str, version: str | None) -> str:
+    return label[: -len(version) - 1] if version and label.endswith("@" + version) else label
 
 
-def to_cytoscape(g: nx.DiGraph, vulnerable: dict[str, str] | None = None, relationships: dict | None = None, positions: dict | None = None,
-                 info: dict | None = None) -> list[dict]:
-    """Cytoscape.js elements. ``vulnerable`` maps node id -> worst severity label; ``positions`` (layered layout) maps node id -> {x, y}."""
-    vulnerable = vulnerable or {}
-    info = info or {}
-    els = []
-    for n, a in g.nodes(data=True):
-        meta = info.get(n, {})
-        el = {"data": {"id": n, "label": a.get("label", n), "kind": a.get("kind"), "ecosystem": a.get("ecosystem") or "",
-                       "version": a.get("version") or "", "purl": a.get("purl") or "",
-                       "vuln": vulnerable.get(n, ""), "service": a.get("service_dir") or "",
-                       "license": meta.get("license") or "", "scope": meta.get("scope") or "", "resolution": meta.get("resolution") or "",
-                       "rel": ",".join(sorted(set((relationships or {}).get(n, {}).values())))}}
-        if positions and n in positions:
-            el["position"] = positions[n]
-        els.append(el)
-    for i, (u, v, a) in enumerate(g.edges(data=True)):
-        els.append({"data": {"id": f"e{i}", "source": u, "target": v, "prov": a.get("provenance", "")}})
-    return els
+def dependency_payload(g: nx.DiGraph, rel: dict, vulnerable: dict[str, str], advisories: dict[str, list[str]], info: dict,
+                       fixes: dict[str, str], cap: int = 1500) -> dict:
+    """Compact node/edge lists for the interactive explorer. Nodes are ranked (vulnerable, direct, shared hubs, shallow) and capped;
+    the browser filters/limits further, so no Streamlit rerun is needed. Every kept node keeps a path to a root."""
+    roots = roots_of(g)
+    depth: dict[str, int] = {}
+    for r in roots:
+        for n, d in nx.single_source_shortest_path_length(g, r).items():
+            depth[n] = min(depth.get(n, d), d)
+    sev_rank = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0}
+    comps = [n for n, a in g.nodes(data=True) if a.get("kind") == "component" and n in depth]
+    direct = {n for n in comps if any(v.startswith("direct") for v in rel.get(n, {}).values())}
+    comps.sort(key=lambda n: (-(sev_rank[vulnerable[n]] + 1 if n in vulnerable else 0), n not in direct, -g.in_degree(n), depth[n]))
+    keep = set(roots)
+    for n in comps:
+        if len(keep) >= cap:
+            break
+        keep.add(n)
+        if depth[n] > 1:  # pull in the shortest chain to a root so the node is never orphaned
+            keep |= set(nx.shortest_path(g, next(r for r in roots if nx.has_path(g, r, n)), n))
+    nodes = []
+    for n in keep:
+        a = g.nodes[n]
+        scope = info.get(n, {}).get("scope")
+        nodes.append({"id": n, "label": _name(a.get("label", n), a.get("version")), "version": a.get("version") or "", "eco": a.get("ecosystem") or "",
+                      "kind": "root" if n in roots else ("dev" if scope == "dev" else "prod"), "direct": n in direct, "depth": depth.get(n, 0),
+                      "parents": g.in_degree(n), "desc": len(nx.descendants(g, n)), "vuln": vulnerable.get(n, ""),
+                      "ids": advisories.get(n, [])[:4], "fix": fixes.get(n, "")})
+    edges = [[u, v] for u, v in g.edges if u in keep and v in keep]
+    return {"nodes": nodes, "edges": edges, "total": len(comps), "directs": len(direct), "truncated": len(comps) > len(keep) - len(roots)}
 
 
 def graph_from_json(data: dict) -> nx.DiGraph:

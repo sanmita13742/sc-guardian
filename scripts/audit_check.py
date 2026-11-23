@@ -103,6 +103,28 @@ def _secrets() -> None:
         os.environ.pop("NVD_API_KEY")
 
 
+@guarded("graphs")
+def _graph_payloads() -> None:
+    import networkx as nx
+    from graph.graph_exporter import dependency_payload
+    from orchestration.pipeline import workflow_payload
+    g = nx.DiGraph()
+    g.add_node("root", kind="root", label="app (service)")
+    for n, d in (("a", "direct"), ("b", "transitive"), ("c", "transitive")):
+        g.add_node(n, kind="component", label=f"{n}@1", version="1", ecosystem="npm")
+    g.add_edges_from([("root", "a"), ("a", "b"), ("b", "c")])
+    rel = {"a": {"root": "direct"}, "b": {"root": "transitive"}, "c": {"root": "transitive"}}
+    p = dependency_payload(g, rel, {"c": "HIGH"}, {"c": ["CVE-1"]}, {"b": {"scope": "dev"}}, {}, cap=3)
+    ids = {n["id"] for n in p["nodes"]}
+    check("graph payload: capped view keeps the whole chain to the root and labels without versions",
+          {"root", "a", "b", "c"} <= ids and next(n for n in p["nodes"] if n["id"] == "a")["label"] == "a" and p["directs"] == 1)
+    check("graph payload: scope drives production/dev colouring", next(n for n in p["nodes"] if n["id"] == "b")["kind"] == "dev")
+    w = workflow_payload()
+    names = {n["id"] for n in w["nodes"]}
+    check("workflow graph: agent-level view from the real LangGraph with parallel branches joined at Risk",
+          {"Vulnerability Agent", "Threat Agent", "Risk Agent"} <= names and ["Threat Agent", "Risk Agent"] in w["edges"] and ["Investigator Agent", "Risk Agent"] in w["edges"])
+
+
 @guarded("steps")
 def _pipeline_shape() -> None:
     from agents.runtime import STEPS

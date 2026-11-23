@@ -155,6 +155,34 @@ def build_graph() -> StateGraph:
     return g
 
 
+PHASES = {"Discover": "#2563eb", "Inventory": "#0891b2", "Detect": "#d97706", "Analyze": "#7c3aed", "Remediate & Validate": "#059669", "Report": "#64748b"}
+_PHASE_OF = {"Recon Agent": "Discover", "Supervisor": "Discover", "Pipeline Agent": "Discover", "SBOM Agent": "Inventory", "Graph Agent": "Inventory",
+             "Vulnerability Agent": "Detect", "Verification Agent": "Detect", "Threat Agent": "Detect", "Investigator Agent": "Analyze", "Risk Agent": "Analyze",
+             "Remediation Agent": "Remediate & Validate", "Validator Agent": "Remediate & Validate", "Memory Agent": "Report", "Analyst Agent": "Report"}
+
+
+def workflow_payload() -> dict:
+    """Agent-level view of the real compiled LangGraph: one box per agent, edges collapsed from the graph's node edges
+    (backward edges such as the second SBOM pass are dropped so the diagram stays a readable left-to-right flow)."""
+    from agents.runtime import AGENT_ROLES, STEPS
+    agent_of = {sid: ag for sid, ag, _ in STEPS}
+    label_of = {sid: lab for sid, _, lab in STEPS}
+    owner = {name: (agent_of.get(steps[0], "Supervisor") if steps else "Analyst Agent") for name, (_, steps, _) in NODES.items()}
+    order = list(dict.fromkeys(owner.values()))
+    edges: list[list] = []
+    for e in build_graph().compile().get_graph().edges:
+        if e.source in owner and e.target in owner:
+            a, b = owner[e.source], owner[e.target]
+            if a != b and order.index(a) < order.index(b) and [a, b] not in [x[:2] for x in edges]:
+                edges.append([a, b])
+    edges.append(["Pipeline Agent", "Risk Agent"])  # container/CI findings feed the risk model
+    nodes = [{"id": a, "label": a.replace(" Agent", ""), "phase": _PHASE_OF.get(a, "Report"), "role": AGENT_ROLES.get(a, ""),
+              "steps": [label_of[s] for _, (_, steps, _) in NODES.items() for s in steps if agent_of.get(s) == a and s in label_of] if a != "Analyst Agent" else
+                       [label_of[s] for s in ("summary", "export")],
+              "ai": a in ("Investigator Agent", "Risk Agent"), "approval": a in ("Remediation Agent", "Validator Agent")} for a in order]
+    return {"nodes": nodes, "edges": edges, "colors": PHASES}
+
+
 def mermaid() -> str:
     try:
         return build_graph().compile().get_graph().draw_mermaid()

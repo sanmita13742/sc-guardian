@@ -1,7 +1,7 @@
 # SC Guardian — architecture
 
 An agentic guardian for the software supply chain: it **discovers** what a repository is built from (packages, container images, CI/CD actions), **detects** known and suspicious risks, **analyses and prioritises** them with evidence, **recommends and validates** safe fixes, and **reports** with an audit trail.
-Everything is static analysis: repository code is never executed, installed or built (the only exception is the opt-in Docker sandbox, §10). Diagram: `docs/architecture.mmd` (rendered on the in-app *Architecture* page).
+Everything is static analysis: repository code is never executed, installed or built (the only exception is the opt-in Docker sandbox, §10). The agent workflow graph is generated from the compiled LangGraph and shown interactively on the in-app *Architecture* page.
 
 ## 1. Layers (dependencies point downwards only; enforced by `scripts/audit_check.py`)
 

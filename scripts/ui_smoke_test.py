@@ -154,15 +154,14 @@ clear_active_scan()
 
 def test_navigation_and_state():
     print("[5/5] Testing navigation structure and session state persistence...")
-    from app import NAVIGATION_PAGES, PAGES
+    from app import NAVIGATION_PAGES
 
     assert "Security Analysis" in NAVIGATION_PAGES
     assert ("Operations" in NAVIGATION_PAGES or "Operations & Audit" in NAVIGATION_PAGES)
     ops_key = "Operations" if "Operations" in NAVIGATION_PAGES else "Operations & Audit"
     assert len(NAVIGATION_PAGES["Security Analysis"]) == 9
     assert len(NAVIGATION_PAGES[ops_key]) == 5  # agents, reports, settings & health
-    assert len(PAGES) == 13
-    print("  -> Navigation structure and compatibility mappings verified.")
+    print("  -> Navigation structure verified.")
 
 
 def main():
