@@ -85,7 +85,7 @@ def test_monorepo_full_pipeline_with_git_history(monorepo_git, isolated):
 @pytest.mark.network
 def test_nodegoat_local_directory(isolated):
     s, db = isolated
-    res = scan_local_directory(ROOT / "nodegoat", ScanOptions(use_nvd=False, use_kev=True, registry_checks=False), settings=s, db=db)
+    res = scan_local_directory(ROOT.parent / "nodegoat", ScanOptions(use_nvd=False, use_kev=True, registry_checks=False), settings=s, db=db)
     ok = False
     try:
         assert res["status"] == "completed", res["errors"]

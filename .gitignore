@@ -1,14 +1,10 @@
 # Python
 __pycache__/
 *.py[cod]
-*.egg-info/
 .pytest_cache/
 .coverage
-htmlcov/
 .venv/
 venv/
-env/
-ENV/
 
 # Local config / secrets
 .env
@@ -17,24 +13,22 @@ ENV/
 
 # Node
 node_modules/
-npm-debug.log*
 
-# Scanner runtime data
-.workspaces/
-data/*.db
-data/*.sqlite*
-artifacts/sbom/*
-!artifacts/sbom/.gitkeep
-artifacts/scans/*
-!artifacts/scans/.gitkeep
-artifacts/reports/*
-!artifacts/reports/.gitkeep
-artifacts/graphs/*
-!artifacts/graphs/.gitkeep
+# Streamlit app runtime data (clones, cache DB, generated SBOMs/reports)
+streamlit_app/.workspaces/
+streamlit_app/data/*.db
+streamlit_app/data/*.sqlite*
+streamlit_app/artifacts/sbom/*
+!streamlit_app/artifacts/sbom/.gitkeep
+streamlit_app/artifacts/scans/*
+!streamlit_app/artifacts/scans/.gitkeep
+streamlit_app/artifacts/reports/*
+!streamlit_app/artifacts/reports/.gitkeep
+streamlit_app/artifacts/graphs/*
+!streamlit_app/artifacts/graphs/.gitkeep
 
 # IDE & OS
 .idea/
 .vscode/
-*.swp
 .DS_Store
 Thumbs.db
