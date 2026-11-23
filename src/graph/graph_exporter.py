@@ -24,9 +24,12 @@ def dependency_payload(g: nx.DiGraph, rel: dict, vulnerable: dict[str, str], adv
     """Compact node/edge lists for the interactive explorer. Nodes are ranked (vulnerable, direct, shared hubs, shallow) and capped;
     the browser filters/limits further, so no Streamlit rerun is needed. Every kept node keeps a path to a root."""
     roots = roots_of(g)
+    root_reach: dict[str, dict[str, int]] = {}
     depth: dict[str, int] = {}
     for r in roots:
-        for n, d in nx.single_source_shortest_path_length(g, r).items():
+        lengths = nx.single_source_shortest_path_length(g, r)
+        root_reach[r] = lengths
+        for n, d in lengths.items():
             depth[n] = min(depth.get(n, d), d)
     sev_rank = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0}
     comps = [n for n, a in g.nodes(data=True) if a.get("kind") == "component" and n in depth]
@@ -38,14 +41,24 @@ def dependency_payload(g: nx.DiGraph, rel: dict, vulnerable: dict[str, str], adv
             break
         keep.add(n)
         if depth[n] > 1:  # pull in the shortest chain to a root so the node is never orphaned
-            keep |= set(nx.shortest_path(g, next(r for r in roots if nx.has_path(g, r, n)), n))
+            parent_root = next((r for r in roots if n in root_reach[r]), None)
+            if parent_root:
+                keep |= set(nx.shortest_path(g, parent_root, n))
     nodes = []
+    desc_cache: dict[str, int] = {}
     for n in keep:
         a = g.nodes[n]
         scope = info.get(n, {}).get("scope")
+        if g.out_degree(n) == 0:
+            num_desc = 0
+        elif n in desc_cache:
+            num_desc = desc_cache[n]
+        else:
+            num_desc = len(nx.descendants(g, n))
+            desc_cache[n] = num_desc
         nodes.append({"id": n, "label": _name(a.get("label", n), a.get("version")), "version": a.get("version") or "", "eco": a.get("ecosystem") or "",
                       "kind": "root" if n in roots else ("dev" if scope == "dev" else "prod"), "direct": n in direct, "depth": depth.get(n, 0),
-                      "parents": g.in_degree(n), "desc": len(nx.descendants(g, n)), "vuln": vulnerable.get(n, ""),
+                      "parents": g.in_degree(n), "desc": num_desc, "vuln": vulnerable.get(n, ""),
                       "ids": advisories.get(n, [])[:4], "fix": fixes.get(n, "")})
     edges = [[u, v] for u, v in g.edges if u in keep and v in keep]
     return {"nodes": nodes, "edges": edges, "total": len(comps), "directs": len(direct), "truncated": len(comps) > len(keep) - len(roots)}

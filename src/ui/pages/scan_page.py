@@ -17,6 +17,13 @@ def render() -> None:
     page_header("Repository Scan", "Analyze software supply chain security for public GitHub repositories statically.")
     s = get_settings()
 
+    from llm.client import detect_provider
+    prov = (s.llm_provider or detect_provider(s.llm_api_key)) if s.llm_api_key else None
+    if not s.llm_api_key:
+        st.warning("⚠️ **LLM Provider API Key Missing**: Please add an LLM provider API key in `.env` (e.g. `LLM_API_KEY=gsk_...` for Groq, `AIza...` for Gemini, `sk-ant-...` for Anthropic, or `sk-...` for OpenAI) since requirements for this phase require an active LLM for autonomous AI reasoning.")
+    elif not prov:
+        st.error("❌ **Invalid LLM API Key**: Key format unrecognized. Please verify your `LLM_API_KEY` in `.env` (expected `gsk_...`, `AIza...`, `sk-ant-...`, or `sk-...`).")
+
     with st.form("scan_form"):
         url = st.text_input("GitHub repository URL", placeholder="https://github.com/OWASP/NodeGoat", value=st.session_state.get("last_url", ""))
         c1, c2 = st.columns(2)
@@ -30,8 +37,15 @@ def render() -> None:
             enrich = o2.checkbox("Fill missing metadata from registries", True, help="deps.dev, npm, PyPI, crates.io, Maven Central: licenses, hashes, links; also verifies lockfile digests. Cached.")
             reuse = o3.checkbox("Reuse cached scan", True)
             keep = o3.checkbox("Keep clone workspace", False)
-            from llm.client import detect_provider
-            llm = o3.checkbox("Optional LLM reasoning", False, disabled=not s.llm_api_key, help="Set LLM_API_KEY in .env (Groq, Gemini, Anthropic or OpenAI-compatible). Without it everything runs deterministically. AI output is validated against evidence." + (f" Detected provider: {s.llm_provider or detect_provider(s.llm_api_key)}." if s.llm_api_key else ""))
+            llm_disabled = not s.llm_api_key or not prov
+            llm = o3.checkbox("Optional LLM reasoning", value=bool(s.llm_api_key and prov), disabled=llm_disabled,
+                              help="Enable LLM reasoning. Requires LLM_API_KEY in .env.")
+            if not s.llm_api_key:
+                o3.caption("⚠️ *Add LLM_API_KEY in .env to enable*")
+            elif not prov:
+                o3.caption("❌ *Invalid LLM API key*")
+            else:
+                o3.caption(f"🤖 *Active provider: {prov}*")
             investigate = o3.checkbox("Investigator (reachability, EPSS)", True)
             remediate = o3.checkbox("Remediation planning", True)
             sbom_scanner = st.selectbox("SBOM scanner", list(SCANNER_CHOICES), format_func=lambda k: SCANNER_LABELS[k],

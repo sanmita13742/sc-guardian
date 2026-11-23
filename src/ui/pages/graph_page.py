@@ -21,6 +21,11 @@ def _graph(scan_id: str, data: dict):
     return graph_from_json(data)
 
 
+@st.cache_data(show_spinner=False)
+def _cached_dependency_payload(scan_id: str, _g: nx.DiGraph, rel: dict, vmap: dict, advisories: dict, info: dict, fixes: dict) -> dict:
+    return dependency_payload(_g, rel, vmap, advisories, info, fixes)
+
+
 def _vuln_map(r: dict) -> dict[str, str]:
     m: dict[str, str] = {}
     for f in r.get("vulnerabilities", []):
@@ -155,7 +160,8 @@ def render() -> None:
                 advisories.setdefault(ref, []).append(f["primary_id"])
                 if f.get("recommended_fix"):
                     fixes.setdefault(ref, f["recommended_fix"])
-        render_dependency_graph(dependency_payload(g, rel, vmap, advisories, info, fixes), 620)
+        payload = _cached_dependency_payload(r["repo"]["scan_id"], g, rel, vmap, advisories, info, fixes)
+        render_dependency_graph(payload, 620)
 
     with tab_alert:
         rows = []

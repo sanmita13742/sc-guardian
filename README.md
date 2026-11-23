@@ -39,6 +39,13 @@ python guardian.py monitor                         # cron / Actions friendly
 ```
 `.github/workflows/guardian.yml` is a ready-to-copy example. Audit everything with `python scripts/audit_check.py` (`--offline`, `--with-scanners`).
 
+## Documentation & Deep Dives
+* 🏛️ **[System Architecture Guide](docs/ARCHITECTURE.md)**: Layered architecture, 12 execution stages, multi-agent AI system, grounding gate, and security boundaries.
+* ⚙️ **[Workflow, Stages & Scanner Guide](docs/WORKFLOW_AND_SCANNERS.md)**: Detailed rationale on why this workflow was chosen, what happens under each step, and why each specific scanner (Syft, Trivy, Built-in, OSV, NVD, KEV, EPSS, RapidFuzz) is used.
+* 🤖 **[Responsible AI & Anti-Hallucination Shield](docs/RESPONSIBLE_AI.md)**: Evidence citation requirements, grounding gate enforcement, and human-in-the-loop approvals.
+* 🎯 **[Risk Prioritization Model (P0–P3)](docs/RISK_SCORING.md)**: Context-aware risk scoring rules, reachability weighting, and factor breakdown.
+* 🚀 **[Interactive Demo Script](docs/DEMO_SCRIPT.md)**: Guided walkthrough using OWASP NodeGoat and vulnerable sample targets.
+
 ## Layout
 ```
 app.py            Streamlit entry point            guardian.py   CLI (scan / gate / monitor / report)

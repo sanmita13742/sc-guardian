@@ -12,6 +12,11 @@ KIND_ICON = {"start": "▶", "progress": "•", "done": "✔", "skip": "⏭", "d
 
 def render() -> None:
     page_header("Agent Activity", "Supervisor orchestration plan, 8 specialist agents, autonomous decisions, and complete execution trace.")
+    from config.settings import get_settings
+    s = get_settings()
+    if not s.llm_api_key:
+        st.warning("⚠️ **LLM Provider API Key Missing**: Please add an LLM provider API key in `.env` (e.g. `LLM_API_KEY=gsk_...` for Groq, `AIza...` for Gemini, `sk-ant-...` for Anthropic, or `sk-...` for OpenAI) since requirements for this phase require an active LLM for autonomous investigator reasoning.")
+
     r = require_result()
     if not r:
         return

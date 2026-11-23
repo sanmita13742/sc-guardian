@@ -24,6 +24,7 @@ BASE_URLS = {"groq": "https://api.groq.com/openai/v1", "openai": "https://api.op
 _SECRET = re.compile(r"(gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_\-]{30,}|sk-ant-[A-Za-z0-9_\-]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|"
                      r"AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9\-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
 CALL_LOG: list[dict] = []
+_INFERENCE_CACHE: dict[str, str] = {}
 _LOCK = threading.Lock()
 
 
@@ -65,6 +66,14 @@ class LLM:
 
     def complete(self, system: str, user: str, max_tokens: int = 1200, json_mode: bool = False) -> str:
         system, user = redact(system), redact(user)
+        cache_key = hashlib.sha256(f"{self.provider}:{self.model}:{system}:{user}:{json_mode}".encode()).hexdigest()
+        with _LOCK:
+            if cache_key in _INFERENCE_CACHE:
+                cached_out = _INFERENCE_CACHE[cache_key]
+                CALL_LOG.append({"provider": self.provider, "model": self.model, "prompt_chars": len(system) + len(user),
+                                 "prompt_sha256": cache_key[:16], "ok": True, "seconds": 0.0, "response_chars": len(cached_out),
+                                 "cached": True})
+                return cached_out
         t0 = time.time()
         try:
             out = self._call(system, user, max_tokens, json_mode)
@@ -73,8 +82,10 @@ class LLM:
             out, ok = "", False
             err = f"{type(e).__name__}: {str(e)[:160]}"
         with _LOCK:
-            CALL_LOG.append({"provider": self.provider, "model": self.model, "prompt_chars": len(system) + len(user), "prompt_sha256": hashlib.sha256((system + user).encode()).hexdigest()[:16],
+            CALL_LOG.append({"provider": self.provider, "model": self.model, "prompt_chars": len(system) + len(user), "prompt_sha256": cache_key[:16],
                              "ok": ok, "seconds": round(time.time() - t0, 2), "response_chars": len(out), **({} if ok else {"error": err})})
+            if ok:
+                _INFERENCE_CACHE[cache_key] = out
         if not ok:
             raise LLMError(err)
         return out

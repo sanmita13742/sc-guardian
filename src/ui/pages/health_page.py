@@ -46,8 +46,14 @@ def render() -> None:
     from llm.client import detect_provider
     from sandbox.runner import docker_status
     llm_on = bool(s.llm_api_key)
-    st.info(("LLM: **enabled** - " + f"{s.llm_provider or detect_provider(s.llm_api_key)} (model {s.llm_model or 'provider default'}); used only for validated reasoning text. " if llm_on else "LLM: **disabled** - fully deterministic mode (set `LLM_API_KEY` in `.env` to enable optional reasoning). ")
-            + "Docker sandbox: " + ("available" if docker_status()["available"] else "not available (optional)"))
+    prov = (s.llm_provider or detect_provider(s.llm_api_key)) if llm_on else None
+    if not llm_on:
+        st.warning("⚠️ **LLM Provider API Key Missing**: Please add an LLM provider API key in `.env` (Groq, Gemini, Anthropic, or OpenAI) since requirements for this phase require an active LLM.")
+    elif not prov:
+        st.error("❌ **Invalid LLM API Key**: Key format unrecognized. Please check your `LLM_API_KEY` in `.env`.")
+    else:
+        st.success(f"🤖 LLM: **enabled** — {prov} (model: {s.llm_model or 'provider default'}); used for validated reasoning text.")
+    st.caption("Docker sandbox: " + ("available ✓" if docker_status()["available"] else "not available (optional)"))
     t_cfg, t_tools, t_db, t_cache, t_disk = st.tabs(["Configuration", "Tools", "Database", "Cache", "Disk"])
 
     with t_cfg:
