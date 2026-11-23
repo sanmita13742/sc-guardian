@@ -1,15 +1,29 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import ReactFlow, {
   Controls,
   Background,
   MiniMap,
-  MarkerType
+  MarkerType,
+  useReactFlow,
+  ReactFlowProvider
 } from 'reactflow';
 import dagre from 'dagre';
-import { Search, Layers, ShieldCheck, Box, ChevronRight, Eye, RefreshCw } from 'lucide-react';
+import {
+  Search,
+  Maximize2,
+  Minimize2,
+  Maximize,
+  RotateCcw,
+  Layers,
+  ShieldCheck,
+  Box,
+  Eye,
+  Sliders,
+  Sparkles
+} from 'lucide-react';
 
 const NODE_WIDTH = 220;
-const NODE_HEIGHT = 80;
+const NODE_HEIGHT = 85;
 
 // Automatic Hierarchical Layout using Dagre
 function getLayoutedElements(nodes, edges, direction = 'TB') {
@@ -18,8 +32,8 @@ function getLayoutedElements(nodes, edges, direction = 'TB') {
 
   dagreGraph.setGraph({
     rankdir: direction,
-    nodesep: 40,
-    ranksep: 90,
+    nodesep: 50,
+    ranksep: 100,
     align: 'DL'
   });
 
@@ -47,14 +61,37 @@ function getLayoutedElements(nodes, edges, direction = 'TB') {
   return { nodes: layoutedNodes, edges };
 }
 
-export default function DependencyGraphView({ graphData }) {
+function GraphCanvas({ graphData }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewFilter, setViewFilter] = useState('direct'); // 'direct', 'production', 'shared', 'expanded'
+  const [viewFilter, setViewFilter] = useState('direct'); // 'direct', 'production', 'shared'
   const [selectedNode, setSelectedNode] = useState(null);
   const [expandedNodes, setExpandedNodes] = useState(new Set());
-  const [layoutDirection, setLayoutDirection] = useState('TB'); // 'TB' = Top to Bottom, 'LR' = Left to Right
+  const [layoutDirection, setLayoutDirection] = useState('TB'); // 'TB' = Vertical, 'LR' = Horizontal
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Toggle expand/collapse for a specific package node
+  const reactFlowInstance = useReactFlow();
+
+  // Escape key exits fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  // Re-fit view when entering/exiting fullscreen or changing filters
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (reactFlowInstance) {
+        reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isFullscreen, viewFilter, layoutDirection, reactFlowInstance]);
+
   const toggleExpand = useCallback((nodeId) => {
     setExpandedNodes(prev => {
       const next = new Set(prev);
@@ -76,7 +113,6 @@ export default function DependencyGraphView({ graphData }) {
     const isSearching = searchTerm.trim().length > 0;
     const lowerSearch = searchTerm.toLowerCase();
 
-    // Map parent -> children and child -> parents
     const childMap = {};
     const parentMap = {};
     graphData.edges.forEach(edge => {
@@ -88,11 +124,9 @@ export default function DependencyGraphView({ graphData }) {
     });
 
     if (isSearching) {
-      // Find matching nodes and their ancestors up to root
       graphData.nodes.forEach(node => {
         if (node.label?.toLowerCase().includes(lowerSearch) || node.id.toLowerCase().includes(lowerSearch)) {
           eligibleNodeIds.add(node.id);
-          // Add ancestors
           let queue = [node.id];
           while (queue.length > 0) {
             const curr = queue.shift();
@@ -106,7 +140,6 @@ export default function DependencyGraphView({ graphData }) {
         }
       });
     } else {
-      // Always include direct dependencies from root
       graphData.edges.forEach(edge => {
         if (edge.source === 'root') {
           const targetNode = graphData.nodes.find(n => n.id === edge.target);
@@ -120,32 +153,25 @@ export default function DependencyGraphView({ graphData }) {
             }
           } else if (viewFilter === 'shared') {
             eligibleNodeIds.add(edge.target);
-          } else {
-            // 'expanded'
-            eligibleNodeIds.add(edge.target);
           }
         }
       });
 
-      // Expand subtrees for nodes the user has clicked to expand
       expandedNodes.forEach(expandedId => {
         const children = childMap[expandedId] || [];
         children.forEach(cid => eligibleNodeIds.add(cid));
       });
 
-      // If 'shared' view, also include nodes with in_degree > 1
       if (viewFilter === 'shared') {
         graphData.nodes.forEach(node => {
           if (node.in_degree > 1 && node.id !== 'root') {
             eligibleNodeIds.add(node.id);
-            // Include their parents
             (parentMap[node.id] || []).slice(0, 3).forEach(p => eligibleNodeIds.add(p));
           }
         });
       }
     }
 
-    // Filter raw nodes
     const rawNodes = graphData.nodes
       .filter(node => eligibleNodeIds.has(node.id))
       .map(node => {
@@ -202,7 +228,7 @@ export default function DependencyGraphView({ graphData }) {
                         e.stopPropagation();
                         toggleExpand(node.id);
                       }}
-                      className="px-1.5 py-0.5 rounded bg-gray-800/80 hover:bg-blue-600 text-[10px] text-gray-200 border border-gray-700 hover:border-blue-500 transition"
+                      className="px-2 py-0.5 rounded bg-gray-800/80 hover:bg-blue-600 text-[10px] text-gray-200 border border-gray-700 hover:border-blue-500 transition font-medium"
                       title={isExpanded ? 'Collapse sub-dependencies' : 'Expand sub-dependencies'}
                     >
                       {isExpanded ? '− Collapse' : `+ ${(childMap[node.id] || []).length} deps`}
@@ -226,7 +252,6 @@ export default function DependencyGraphView({ graphData }) {
         };
       });
 
-    // Filter edges
     const rawEdges = graphData.edges
       .filter(e => eligibleNodeIds.has(e.source) && eligibleNodeIds.has(e.target))
       .map(e => ({
@@ -258,12 +283,24 @@ export default function DependencyGraphView({ graphData }) {
     setSelectedNode(node.data.rawNode);
   }, []);
 
+  const handleFitView = () => {
+    if (reactFlowInstance) {
+      reactFlowInstance.fitView({ padding: 0.2, duration: 400 });
+    }
+  };
+
   return (
-    <div className="relative w-full h-[680px] bg-[#070A10] rounded-xl border border-gray-800 overflow-hidden flex shadow-2xl">
+    <div
+      className={`relative bg-[#070A10] transition-all duration-200 overflow-hidden flex ${
+        isFullscreen
+          ? 'fixed inset-0 z-50 w-screen h-screen'
+          : 'w-full h-[720px] rounded-xl border border-gray-800 shadow-2xl'
+      }`}
+    >
       {/* Canvas Area */}
       <div className="flex-1 h-full relative">
         {/* Top Control Bar */}
-        <div className="absolute top-4 left-4 z-10 flex flex-wrap gap-2 items-center bg-[#0E131F]/90 backdrop-blur-md p-2 rounded-xl border border-gray-800 shadow-xl text-xs">
+        <div className="absolute top-4 left-4 z-10 flex flex-wrap gap-2 items-center bg-[#0E131F]/95 backdrop-blur-md p-2 rounded-xl border border-gray-800 shadow-2xl text-xs">
           {/* Search Box */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
@@ -272,7 +309,7 @@ export default function DependencyGraphView({ graphData }) {
               placeholder="Search package (e.g. express, debug)..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="bg-gray-900 border border-gray-700 text-xs rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 w-64 text-gray-200"
+              className="bg-gray-900 border border-gray-700 text-xs rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 w-60 text-gray-200"
             />
           </div>
 
@@ -308,12 +345,43 @@ export default function DependencyGraphView({ graphData }) {
             className="px-2.5 py-1.5 rounded-lg text-gray-300 hover:bg-gray-800 border border-gray-700 transition"
             title="Toggle Top-to-Bottom / Left-to-Right orientation"
           >
-            Layout: {layoutDirection === 'TB' ? 'Vertical ↓' : 'Horizontal →'}
+            {layoutDirection === 'TB' ? 'Layout: Vertical ↓' : 'Layout: Horizontal →'}
+          </button>
+
+          {/* Fit View Button */}
+          <button
+            onClick={handleFitView}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-gray-300 border border-gray-700 transition"
+            title="Fit to Screen"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-blue-400" />
+            Fit View
+          </button>
+
+          <div className="h-5 w-[1px] bg-gray-700 mx-1" />
+
+          {/* Fullscreen Button */}
+          <button
+            onClick={() => setIsFullscreen(prev => !prev)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/40 transition font-semibold"
+            title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Enter Fullscreen Mode'}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                Exit Fullscreen
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5" />
+                Fullscreen
+              </>
+            )}
           </button>
         </div>
 
         {/* Bottom Status & Legend */}
-        <div className="absolute bottom-4 left-4 z-10 bg-[#0E131F]/90 backdrop-blur-md px-4 py-2 rounded-xl border border-gray-800 text-xs flex gap-5 text-gray-300 shadow-lg items-center">
+        <div className="absolute bottom-4 left-4 z-10 bg-[#0E131F]/90 backdrop-blur-md px-4 py-2 rounded-xl border border-gray-800 text-xs flex gap-5 text-gray-300 shadow-xl items-center">
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-md bg-blue-600 border border-blue-400"></span> Application Root
           </div>
@@ -335,11 +403,11 @@ export default function DependencyGraphView({ graphData }) {
           edges={layoutedEdges}
           onNodeClick={onNodeClick}
           fitView
-          fitViewOptions={{ padding: 0.15 }}
-          minZoom={0.15}
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.1}
           maxZoom={1.5}
         >
-          <Background color="#1A2234" gap={24} size={1} />
+          <Background color="#161D2F" gap={24} size={1} />
           <Controls className="bg-gray-900 border-gray-800 text-white fill-white rounded-lg" />
           <MiniMap
             nodeColor={n => {
@@ -354,7 +422,7 @@ export default function DependencyGraphView({ graphData }) {
 
       {/* Selected Node Details Side Panel */}
       {selectedNode && (
-        <div className="w-84 h-full bg-[#0E131F] border-l border-gray-800 p-5 overflow-y-auto space-y-4 shadow-2xl">
+        <div className="w-88 h-full bg-[#0E131F] border-l border-gray-800 p-5 overflow-y-auto space-y-4 shadow-2xl z-20">
           <div className="flex justify-between items-start">
             <div>
               <span className={`text-[10px] px-2 py-0.5 rounded font-mono uppercase font-bold border ${selectedNode.environment === 'production' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'}`}>
@@ -418,5 +486,13 @@ export default function DependencyGraphView({ graphData }) {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DependencyGraphView(props) {
+  return (
+    <ReactFlowProvider>
+      <GraphCanvas {...props} />
+    </ReactFlowProvider>
   );
 }
