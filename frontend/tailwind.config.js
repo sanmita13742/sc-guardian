@@ -14,8 +14,7 @@ export default {
           border: "#1F2937",
           accent: "#3B82F6",
           prod: "#10B981",
-          dev: "#F59E0B",
-          danger: "#EF4444"
+          dev: "#F59E0B"
         }
       }
     },

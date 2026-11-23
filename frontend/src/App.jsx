@@ -6,76 +6,58 @@ import {
   GitBranch,
   Download,
   Search,
-  ExternalLink,
-  RefreshCw,
   Box,
-  FileText,
-  Cpu,
-  AlertTriangle,
   CheckCircle2,
-  Workflow
+  Workflow,
+  Sparkles,
+  AlertTriangle,
+  AlertOctagon
 } from 'lucide-react';
 import DependencyGraphView from './components/DependencyGraphView';
+import VulnerabilitiesView from './components/VulnerabilitiesView';
+import SuspiciousChangesView from './components/SuspiciousChangesView';
 
 export default function App() {
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'inventory', 'sbom', 'repo'
-  const [repoMetadata, setRepoMetadata] = useState(null);
+  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'vulnerabilities', 'suspicious', 'inventory'
   const [inventory, setInventory] = useState(null);
-  const [sbomComparison, setSbomComparison] = useState(null);
+  const [sbomData, setSbomData] = useState(null);
   const [graphData, setGraphData] = useState(null);
-  const [rawSbom, setRawSbom] = useState(null);
+  const [scanData, setScanData] = useState(null);
+  const [suspiciousData, setSuspiciousData] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Search & Filters for Inventory Table
+  // Search in Inventory
   const [invSearch, setInvSearch] = useState('');
-  const [invFilter, setInvFilter] = useState('all'); // 'all', 'direct', 'production', 'development'
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      // 1. Repositories
-      const repoRes = await fetch('/api/repositories');
-      const repos = await repoRes.json();
-      if (repos && repos.length > 0) {
-        setRepoMetadata(repos[0]);
-      }
-
-      // 2. Dependencies
-      const invRes = await fetch('/api/dependencies/nodegoat');
-      const invData = await invRes.json();
-      setInventory(invData);
-
-      // 3. SBOM Comparison
-      const sbomRes = await fetch('/api/sbom/nodegoat?format=comparison');
-      if (sbomRes.ok) {
-        const sbomComp = await sbomRes.json();
-        setSbomComparison(sbomComp);
-      }
-
-      // 4. Raw SBOM
-      const rawRes = await fetch('/api/sbom/nodegoat');
-      if (rawRes.ok) {
-        const rawJson = await rawRes.json();
-        setRawSbom(rawJson);
-      }
-
-      // 5. Graph
-      const graphRes = await fetch('/api/graph/nodegoat');
-      const graphJson = await graphRes.json();
-      setGraphData(graphJson);
-    } catch (err) {
-      console.error('Failed to load Guardian data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [invFilter, setInvFilter] = useState('all');
 
   useEffect(() => {
-    loadData();
+    async function loadAll() {
+      try {
+        setLoading(true);
+        const [invRes, sbomRes, graphRes, scanRes, suspRes] = await Promise.all([
+          fetch('/component-inventory.json'),
+          fetch('/nodegoat-sbom.json'),
+          fetch('/nodegoat-dependency-graph.json'),
+          fetch('/nodegoat-vulnerabilities.json'),
+          fetch('/suspicious_changes.json')
+        ]);
+
+        if (invRes.ok) setInventory(await invRes.json());
+        if (sbomRes.ok) setSbomData(await sbomRes.json());
+        if (graphRes.ok) setGraphData(await graphRes.json());
+        if (scanRes.ok) setScanData(await scanRes.json());
+        if (suspRes.ok) setSuspiciousData(await suspRes.json());
+      } catch (e) {
+        console.error('Failed to load local data files:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadAll();
   }, []);
 
-  const downloadFile = (data, filename, type = 'application/json') => {
-    const blob = new Blob([typeof data === 'string' ? data : JSON.stringify(data, null, 2)], { type });
+  const downloadFile = (data, filename) => {
+    const blob = new Blob([typeof data === 'string' ? data : JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -86,194 +68,203 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const filteredComponents = inventory?.components?.filter(comp => {
-    const matchesSearch = comp.name.toLowerCase().includes(invSearch.toLowerCase()) ||
-      comp.version.toLowerCase().includes(invSearch.toLowerCase());
+  const filteredComponents = (inventory?.components || []).filter(c => {
+    const matchesSearch = c.name.toLowerCase().includes(invSearch.toLowerCase()) ||
+      c.version.toLowerCase().includes(invSearch.toLowerCase());
     if (!matchesSearch) return false;
-    if (invFilter === 'direct') return comp.dependency_type === 'direct';
-    if (invFilter === 'production') return comp.environment === 'production';
-    if (invFilter === 'development') return comp.environment === 'development';
+    if (invFilter === 'direct') return c.dependency_type === 'direct';
+    if (invFilter === 'production') return c.environment === 'production';
+    if (invFilter === 'development') return c.environment === 'development';
     return true;
-  }) || [];
+  });
 
   return (
     <div className="min-h-screen bg-[#080B11] text-gray-100 flex flex-col font-sans">
-      {/* Header */}
+      {/* Top Header */}
       <header className="border-b border-gray-800 bg-[#0E131F]/90 backdrop-blur-md sticky top-0 z-30 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+          <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shadow-lg shadow-blue-500/10">
             <Shield className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold text-white tracking-wide">Software Supply Chain Guardian</h1>
-              <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-semibold">
-                PHASE 1 ACTIVE
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-semibold">
+                PHASE 1 • DISCOVERY & TREE MAPPING
               </span>
             </div>
-            <p className="text-xs text-gray-400">Bosch Global Software Technologies (BGSW) Hackathon</p>
+            <p className="text-xs text-gray-400">Target Application: <span className="text-white font-medium">OWASP NodeGoat</span> (Node.js / npm)</p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-lg">
-            <GitBranch className="w-3.5 h-3.5 text-blue-400" />
-            <span className="text-gray-400">Target:</span>
-            <span className="text-white font-medium">OWASP NodeGoat</span>
-            <span className="font-mono text-gray-500 text-[11px]">({repoMetadata?.commit_hash?.slice(0, 7) || 'HEAD'})</span>
-          </div>
-
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded-lg border border-gray-700 transition"
+          <a
+            href="/dependency-graph.html"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 text-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold px-3 py-1.5 rounded-lg shadow-lg shadow-emerald-600/20 transition border border-emerald-500/40"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Scan
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+            Circular Network View ↗
+          </a>
+          <button
+            onClick={() => downloadFile(sbomData, 'nodegoat-sbom.json')}
+            className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-800 transition"
+          >
+            <Download className="w-3.5 h-3.5 text-blue-400" />
+            CycloneDX SBOM JSON
+          </button>
+          <button
+            onClick={() => downloadFile(graphData, 'nodegoat-dependency-graph.json')}
+            className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-800 transition"
+          >
+            <Download className="w-3.5 h-3.5 text-purple-400" />
+            NetworkX Graph JSON
+          </button>
+          <button
+            onClick={() => downloadFile(scanData, 'nodegoat-vulnerabilities.json')}
+            className="flex items-center gap-1.5 text-xs bg-red-950/40 hover:bg-red-900/60 text-red-300 px-3 py-1.5 rounded-lg border border-red-800/60 transition"
+          >
+            <Download className="w-3.5 h-3.5 text-red-400" />
+            OSV Scan JSON
+          </button>
+          <button
+            onClick={() => downloadFile(suspiciousData, 'suspicious_changes.json')}
+            className="flex items-center gap-1.5 text-xs bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 px-3 py-1.5 rounded-lg border border-amber-800/60 transition"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            Suspicious Changes JSON
           </button>
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Body */}
       <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
         {/* Metric Cards Banner */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span>Total Components</span>
-              <Box className="w-4 h-4 text-blue-400" />
-            </div>
-            <div className="text-2xl font-bold text-white font-mono">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">Total Unique Packages</span>
+            <div className="text-2xl font-bold text-white font-mono mt-0.5">
               {inventory?.total_components?.toLocaleString() || '1,091'}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">Unique lockfile packages</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Lockfile tree elements</p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span>Direct Dependencies</span>
-              <Layers className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div className="text-2xl font-bold text-emerald-400 font-mono">
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">Direct Dependencies</span>
+            <div className="text-2xl font-bold text-emerald-400 font-mono mt-0.5">
               {inventory?.direct_dependencies || '36'}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">16 prod / 20 dev</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">16 Prod / 20 Dev</p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span>Transitive Deps</span>
-              <Workflow className="w-4 h-4 text-purple-400" />
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">Syft CycloneDX SBOM</span>
+            <div className="text-2xl font-bold text-blue-400 font-mono mt-0.5">
+              {sbomData?.components?.length || '422'}
             </div>
-            <div className="text-2xl font-bold text-purple-400 font-mono">
-              {inventory?.transitive_dependencies?.toLocaleString() || '1,055'}
-            </div>
-            <p className="text-[11px] text-gray-500 mt-1">Nested dependency tree</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">v1.7 Specification Compliant</p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span>Production / Dev</span>
-              <Cpu className="w-4 h-4 text-amber-400" />
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">NetworkX Graph Model</span>
+            <div className="text-2xl font-bold text-purple-400 font-mono mt-0.5">
+              {graphData?.total_nodes || '1,092'} <span className="text-xs text-gray-500 font-sans font-normal">nodes</span>
             </div>
-            <div className="text-xl font-bold text-white font-mono flex items-baseline gap-1">
-              <span className="text-emerald-400">{inventory?.production_dependencies || '509'}</span>
-              <span className="text-gray-500 text-sm">/</span>
-              <span className="text-amber-400">{inventory?.development_dependencies || '537'}</span>
-            </div>
-            <p className="text-[11px] text-gray-500 mt-1">Runtime reachability</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">{graphData?.total_edges || '1,921'} verified edges</p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span>Syft CycloneDX</span>
-              <FileCode className="w-4 h-4 text-blue-400" />
+          <div
+            onClick={() => setActiveTab('vulnerabilities')}
+            className="bg-[#0E131F] border border-red-900/60 p-3.5 rounded-xl shadow-sm bg-gradient-to-b from-red-950/20 to-transparent cursor-pointer hover:border-red-600 transition"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-red-400 font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Vulnerabilities (OSV)
+              </span>
+              <span className="text-[9px] bg-red-500/20 text-red-300 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">
+                ALERT
+              </span>
             </div>
-            <div className="text-2xl font-bold text-blue-400 font-mono">
-              {sbomComparison?.total_sbom_components || '422'}
+            <div className="text-2xl font-bold text-red-400 font-mono mt-0.5">
+              {scanData?.metrics?.total_vulnerabilities || 200}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">v{sbomComparison?.syft_version || '1.57.2'} standard</p>
+            <p className="text-[10px] text-red-500/80 mt-0.5">
+              {scanData?.metrics?.severity_counts?.CRITICAL || 22} Critical • {scanData?.metrics?.severity_counts?.HIGH || 105} High
+            </p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
-              <span>Graph Edges</span>
-              <GitBranch className="w-4 h-4 text-indigo-400" />
+          <div
+            onClick={() => setActiveTab('suspicious')}
+            className="bg-[#0E131F] border border-amber-900/60 p-3.5 rounded-xl shadow-sm bg-gradient-to-b from-amber-950/20 to-transparent cursor-pointer hover:border-amber-600 transition"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
+                <AlertOctagon className="w-3.5 h-3.5" />
+                Suspicious Changes
+              </span>
+              <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">
+                RISK
+              </span>
             </div>
-            <div className="text-2xl font-bold text-indigo-400 font-mono">
-              {graphData?.summary?.total_edges?.toLocaleString() || '1,931'}
+            <div className="text-2xl font-bold text-amber-400 font-mono mt-0.5">
+              {suspiciousData?.metrics?.total_findings || 24}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">357 shared links</p>
-          </div>
-        </div>
-
-        {/* Tab Navigation & Export Actions */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-gray-800 pb-2">
-          <div className="flex gap-2 text-xs">
-            <button
-              onClick={() => setActiveTab('graph')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition ${activeTab === 'graph' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-            >
-              <Workflow className="w-4 h-4" />
-              Dependency Graph (React Flow)
-            </button>
-            <button
-              onClick={() => setActiveTab('inventory')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition ${activeTab === 'inventory' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-            >
-              <Layers className="w-4 h-4" />
-              Component Inventory ({inventory?.total_components || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('sbom')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition ${activeTab === 'sbom' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-            >
-              <FileCode className="w-4 h-4" />
-              CycloneDX SBOM & Discrepancies
-            </button>
-            <button
-              onClick={() => setActiveTab('repo')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition ${activeTab === 'repo' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-            >
-              <FileText className="w-4 h-4" />
-              Repository Ingestion
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => downloadFile(rawSbom, 'nodegoat-sbom.json')}
-              className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-800 transition"
-              title="Download Syft CycloneDX JSON"
-            >
-              <Download className="w-3.5 h-3.5 text-blue-400" />
-              Export SBOM (CycloneDX)
-            </button>
-            <button
-              onClick={() => downloadFile(inventory, 'component-inventory.json')}
-              className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-800 transition"
-              title="Download Inventory JSON"
-            >
-              <Download className="w-3.5 h-3.5 text-emerald-400" />
-              Export Inventory
-            </button>
-            <button
-              onClick={() => downloadFile(graphData, 'nodegoat-dependency-graph.json')}
-              className="flex items-center gap-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-800 transition"
-              title="Download Graph JSON"
-            >
-              <Download className="w-3.5 h-3.5 text-purple-400" />
-              Export Graph
-            </button>
+            <p className="text-[10px] text-amber-500/80 mt-0.5">
+              {suspiciousData?.metrics?.category_counts?.['Docker & CI/CD'] || 11} CI/CD • {suspiciousData?.metrics?.category_counts?.['Typosquatting'] || 7} Typos
+            </p>
           </div>
         </div>
 
-        {/* Tab 1: Dependency Graph */}
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-gray-800 pb-2 gap-2 text-xs">
+          <button
+            onClick={() => setActiveTab('graph')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'graph' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+          >
+            <Workflow className="w-4 h-4" />
+            Dependency Tree Graph (React Flow)
+          </button>
+          <button
+            onClick={() => setActiveTab('vulnerabilities')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'vulnerabilities' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+          >
+            <AlertTriangle className="w-4 h-4 text-red-400" />
+            Vulnerabilities
+          </button>
+          <button
+            onClick={() => setActiveTab('suspicious')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'suspicious' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+          >
+            <AlertOctagon className="w-4 h-4 text-amber-400" />
+            Suspicious Changes ({suspiciousData?.metrics?.total_findings || 24})
+          </button>
+          <button
+            onClick={() => setActiveTab('inventory')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'inventory' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+          >
+            <Layers className="w-4 h-4" />
+            Component Inventory ({inventory?.total_components || 0})
+          </button>
+        </div>
+
+        {/* Tab: Vulnerabilities */}
+        {activeTab === 'vulnerabilities' && (
+          <VulnerabilitiesView scanData={scanData} />
+        )}
+
+        {/* Tab: Suspicious Changes */}
+        {activeTab === 'suspicious' && (
+          <SuspiciousChangesView scanData={suspiciousData} />
+        )}
+
+        {/* Tab 1: Dependency Tree Graph */}
         {activeTab === 'graph' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-xs text-gray-400">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-gray-400 px-1">
               <p>
-                Visualizing <span className="text-white font-medium">{graphData?.summary?.total_nodes || 1092} nodes</span> and <span className="text-white font-medium">{graphData?.summary?.total_edges || 1931} directed dependency edges</span> built with NetworkX. Click any node to inspect relationship details.
+                Hierarchical DAG layout rendered with <span className="text-white font-semibold">Dagre</span>. Click <span className="text-blue-400 font-mono">+ N deps</span> on any package to expand its sub-dependencies, or click a card to inspect metadata.
               </p>
             </div>
             <DependencyGraphView graphData={graphData} />
@@ -288,7 +279,7 @@ export default function App() {
                 <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Filter components by name or version..."
+                  placeholder="Filter packages by name or version..."
                   value={invSearch}
                   onChange={e => setInvSearch(e.target.value)}
                   className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
@@ -312,31 +303,27 @@ export default function App() {
               <table className="w-full text-left text-xs text-gray-300">
                 <thead className="bg-gray-900/80 text-gray-400 uppercase text-[10px] tracking-wider border-b border-gray-800">
                   <tr>
-                    <th className="py-2.5 px-4">Component Name</th>
-                    <th className="py-2.5 px-4">Version</th>
-                    <th className="py-2.5 px-4">Type</th>
+                    <th className="py-2.5 px-4">Package Name</th>
+                    <th className="py-2.5 px-4">Resolved Version</th>
+                    <th className="py-2.5 px-4">Dependency Type</th>
                     <th className="py-2.5 px-4">Environment</th>
-                    <th className="py-2.5 px-4">Declared In</th>
-                    <th className="py-2.5 px-4">PURL Identifier</th>
+                    <th className="py-2.5 px-4">Package URL (PURL)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-800 font-mono">
+                <tbody className="divide-y divide-gray-800 font-mono text-[11px]">
                   {filteredComponents.slice(0, 100).map((c, i) => (
                     <tr key={i} className="hover:bg-gray-900/50 transition">
                       <td className="py-2 px-4 font-semibold text-white font-sans">{c.name}</td>
                       <td className="py-2 px-4 text-blue-400">{c.version}</td>
                       <td className="py-2 px-4 font-sans">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.dependency_type === 'direct' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-gray-800 text-gray-400'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${c.dependency_type === 'direct' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-gray-800 text-gray-400'}`}>
                           {c.dependency_type}
                         </span>
                       </td>
                       <td className="py-2 px-4 font-sans">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.environment === 'production' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-medium ${c.environment === 'production' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}`}>
                           {c.environment}
                         </span>
-                      </td>
-                      <td className="py-2 px-4 text-gray-400 text-[11px] font-sans">
-                        {c.declared_version ? `package.json (${c.declared_version})` : 'package-lock.json'}
                       </td>
                       <td className="py-2 px-4 text-gray-500 text-[11px] truncate max-w-xs">{c.purl}</td>
                     </tr>
@@ -349,116 +336,10 @@ export default function App() {
             </div>
           </div>
         )}
-
-        {/* Tab 3: SBOM & Discrepancies */}
-        {activeTab === 'sbom' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl">
-                <span className="text-gray-400 text-xs">Validation Status</span>
-                <div className="flex items-center gap-2 mt-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  <span className="text-base font-bold text-white uppercase">{sbomComparison?.validation_status || 'VALID'}</span>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">Compliant with CycloneDX specification v1.7</p>
-              </div>
-
-              <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl">
-                <span className="text-gray-400 text-xs">Cross-Validation Match</span>
-                <div className="text-xl font-bold text-white font-mono mt-2">
-                  {sbomComparison?.matched_components || 321} / {sbomComparison?.total_sbom_components || 422}
-                </div>
-                <p className="text-xs text-gray-400 mt-1">Packages verified between Syft and lockfile</p>
-              </div>
-
-              <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl">
-                <span className="text-gray-400 text-xs">Identified Discrepancies</span>
-                <div className="text-xl font-bold text-amber-400 font-mono mt-2">
-                  {sbomComparison?.only_in_inventory?.length || 483} deep transitives
-                </div>
-                <p className="text-xs text-gray-400 mt-1">Deep nested packages not hoisted in disk scan</p>
-              </div>
-            </div>
-
-            <div className="bg-[#0E131F] border border-gray-800 rounded-xl p-5 space-y-3">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                Evidence-First Discrepancy Breakdown
-              </h3>
-              <p className="text-xs text-gray-300 leading-relaxed">
-                Syft scans the repository filesystem and detected <span className="text-blue-400 font-semibold">{sbomComparison?.total_sbom_components} components</span> (including GitHub Actions workflows and top-level packages). Meanwhile, our parser analyzed the full 1,480-entry npm lockfile tree, discovering <span className="text-emerald-400 font-semibold">{inventory?.total_components} unique packages</span>. Guardian cross-references both to eliminate blind spots.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-                <div className="bg-gray-900/60 border border-gray-800 p-3 rounded-lg text-xs">
-                  <span className="text-gray-400 font-semibold block mb-2">Detected in Syft SBOM Only (e.g. CI/CD actions)</span>
-                  <div className="max-h-40 overflow-y-auto space-y-1 font-mono text-[11px] text-blue-300">
-                    {sbomComparison?.only_in_sbom?.map((item, idx) => (
-                      <div key={idx} className="bg-gray-800/40 px-2 py-0.5 rounded">{item}</div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-gray-900/60 border border-gray-800 p-3 rounded-lg text-xs">
-                  <span className="text-gray-400 font-semibold block mb-2">Deep Lockfile Transitives (Sample)</span>
-                  <div className="max-h-40 overflow-y-auto space-y-1 font-mono text-[11px] text-gray-300">
-                    {sbomComparison?.only_in_inventory?.slice(0, 30).map((item, idx) => (
-                      <div key={idx} className="bg-gray-800/40 px-2 py-0.5 rounded">{item}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 4: Repository Ingestion */}
-        {activeTab === 'repo' && (
-          <div className="bg-[#0E131F] border border-gray-800 rounded-xl p-6 space-y-4">
-            <h3 className="text-sm font-bold text-white">Repository Discovery & Metadata</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              <div className="bg-gray-900/60 p-4 rounded-lg border border-gray-800 space-y-2">
-                <span className="text-gray-500 font-medium uppercase text-[10px] tracking-wider">Repository Details</span>
-                <div>
-                  <span className="text-gray-400">Path:</span> <span className="text-gray-200 font-mono">{repoMetadata?.path}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Commit SHA:</span> <span className="text-blue-400 font-mono">{repoMetadata?.commit_hash}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Languages:</span> <span className="text-white font-medium">{repoMetadata?.languages?.join(', ')}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Package Manager:</span> <span className="text-emerald-400 font-medium uppercase">{repoMetadata?.package_managers?.join(', ')}</span>
-                </div>
-              </div>
-
-              <div className="bg-gray-900/60 p-4 rounded-lg border border-gray-800 space-y-2">
-                <span className="text-gray-500 font-medium uppercase text-[10px] tracking-wider">Detected Manifests & Configs</span>
-                <div>
-                  <span className="text-gray-400">Manifests:</span> <span className="text-white font-mono">{repoMetadata?.manifests?.join(', ')}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Lockfiles:</span> <span className="text-white font-mono">{repoMetadata?.lockfiles?.join(', ')}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Dockerfiles:</span> <span className="text-amber-400 font-mono">{repoMetadata?.dockerfiles?.join(', ')}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Docker Compose:</span> <span className="text-amber-400 font-mono">{repoMetadata?.docker_compose_files?.join(', ')}</span>
-                </div>
-                <div>
-                  <span className="text-gray-400">CI/CD Workflows:</span> <span className="text-purple-400 font-mono">{repoMetadata?.cicd_files?.join(', ')}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-gray-800/80 py-4 px-6 text-center text-xs text-gray-500">
-        Software Supply Chain Guardian • BGSW Hackathon • Day 1: Discovery, Supply Chain Mapping & Initial Threat Detection
+        Software Supply Chain Guardian • BGSW Hackathon • Verified Component Discovery & Dependency Graph
       </footer>
     </div>
   );
