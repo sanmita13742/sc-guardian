@@ -46,9 +46,13 @@ Trivy runs with `--scanners license`, so no vulnerability database download is n
 Accepted repository addresses: `https://github.com/owner/repo`, `.git` and trailing-slash forms, `github.com/owner/repo`, `git@github.com:owner/repo.git`,
 and browser URLs such as `https://github.com/owner/repo/tree/<branch>` (the branch is taken from the URL). Only public repositories can be cloned.
 
+Run the audit any time with `.venv\Scripts\python scriptsudit_check.py` (add `--with-scanners` to compare Syft/Trivy/rule engine, `--offline` to skip network checks).
+
 Optional environment variables (see `.env.example`): `NVD_API_KEY` (higher NVD limits), `ANTHROPIC_API_KEY` (LLM-phrased explanations), `SYFT_BIN`, `TRIVY_BIN`. Nothing is required.
 
 ## The agent pipeline
+
+The agents are nodes of a **LangGraph** state graph (`orchestration/pipeline.py`): a conditional edge runs a second SBOM scanner when the first misses lockfile packages, and the Threat and Vulnerability branches run in parallel. Full design: `docs/ARCHITECTURE.md`.
 
 Everything runs automatically from one button; the **live progress bar** shows overall percentage, current step, a per-agent checklist and a streaming log of what each agent observes
 and decides. The same trace is kept on the **Agent Activity** page.
@@ -62,6 +66,7 @@ and decides. The same trace is kept on the **Agent Activity** page.
 | **Vulnerability Agent** | osv · enrich · trace | OSV batch query + full advisories, **local range re-validation with ecosystem rules**, NVD CVSS, CISA KEV, then traces every finding to its path and **source package**. |
 | **Verification Agent** | verify | Re-queries every PURL via a second OSV route and marks each finding *cross-verified*; disagreements are listed. |
 | **Threat Agent** | typosquat · lockfile history | Name-similarity vs popular packages (registry-corroborated); real Git-history lockfile diffs (integrity/source/version anomalies). |
+| **Memory Agent** | memory | Compares with the repository's previous scans (new / persisting / fixed / reappeared), keeps analyst decisions (accepted risk, false positive) with reason and expiry. |
 | **Risk Agent** | risk · explain | Deterministic rule engine (CVSS severity ≠ project risk), cross-detector correlation, evidence-grounded explanations (templates; optional validated LLM). |
 | **Analyst Agent** | summary · export | Executive summary, prioritised "update this source package" actions, JSON/Markdown/HTML reports, SQLite persistence. |
 
@@ -99,15 +104,16 @@ Generated artifacts (SBOM, reports, graph JSON) go to `artifacts/`, results and 
 
 ```
 app.py                 Streamlit entry point
-agents/                runtime (steps, progress, decision trace) + specialist agents
+orchestration/         LangGraph pipeline (nodes, routing, parallel branches, checkpoints) + Supervisor helpers
+agents/                runtime (steps, progress, decision trace) + specialist agents + memory agent
 core/                  URL validation, safe Git, repository inspection, HTTP client, Supervisor (scan_orchestrator)
-sbom/                  scanner engine (Syft, Trivy, built-in rule engine), CycloneDX validation, lockfile parsers, quality analyzer, metadata enricher
+sbom/                  scanner engine, per-scanner adapters (normalisation), merge, CycloneDX validation, lockfile parsers, quality analyzer
 graph/                 graph builder/validator, per-root tracer, impact, export
 vulnerability/         OSV/NVD/KEV clients, version matcher, CVSS, correlator, remediation, verification (ground truth)
 suspicious_changes/    typosquatting + lockfile-change detectors
 risk_analysis/ explainability/ reporting/ storage/ ui/ config/
 docs/                  architecture, risk scoring, implementation progress, original spec
-scripts/               environment verification, Syft install helpers
+scripts/               verify_environment.py, audit_check.py (architecture + behaviour audit), Syft install helpers
 ```
 
 ## Security

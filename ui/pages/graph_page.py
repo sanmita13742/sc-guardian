@@ -30,12 +30,41 @@ def _vuln_map(r: dict) -> dict[str, str]:
     return m
 
 
+def _changes_since_previous(r: dict) -> None:
+    """Graph diff against the previous scan of the same repository (read from the persisted graph tables)."""
+    from config.settings import get_settings
+    from graph.graph_diff import diff_graphs
+    from storage.database import Database
+    try:
+        db = Database(get_settings().db_path)
+        prev = db.previous_scan(r["repo"]["url"], r["repo"]["scan_id"])
+        old, new = (db.load_graph(prev) if prev else None), db.load_graph(r["repo"]["scan_id"])
+    except Exception:
+        return
+    if not (prev and old and new):
+        return
+    d = diff_graphs(old, new)
+    with st.expander("Changes since the previous scan" + (" - identical" if d["identical"] else f" - {len(d['added_components'])} added, {len(d['removed_components'])} removed, {len(d['version_changes'])} version change(s)")):
+        if d["identical"]:
+            st.caption("The dependency graph is identical to the previous scan.")
+            return
+        st.caption(f"Components {d['totals']['before']['components']} -> {d['totals']['after']['components']}; edges +{d['added_edges']} / -{d['removed_edges']}")
+        for label, items in (("Added", d["added_components"]), ("Removed", d["removed_components"]), ("Version changes", d["version_changes"])):
+            if items:
+                st.markdown(f"**{label}**")
+                for x in items[:30]:
+                    st.markdown(f"- `{x}`")
+                if len(items) > 30:
+                    st.caption(f"... {len(items) - 30} more")
+
+
 def render() -> None:
     page_header("Dependency Graph", "Directed dependency topology, direct vs transitive classification, and transitive alerts.")
     r = require_result()
     if not r:
         return
 
+    _changes_since_previous(r)
     gd = r["graph"]
     g = _graph(r["repo"]["scan_id"], {k: gd[k] for k in ("nodes", "edges")})
     val, rel = gd.get("validation", {}), gd.get("relationships", {})

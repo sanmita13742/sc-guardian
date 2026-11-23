@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+SCHEMA_VERSION = 2  # 1: scans/findings/cache  2: + memory tables, graph tables, scans.scanner_version
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS scans (
     scan_id TEXT PRIMARY KEY,
@@ -72,6 +74,27 @@ CREATE TABLE IF NOT EXISTS package_seen (
     last_repo TEXT,
     PRIMARY KEY (ecosystem, name)
 );
+CREATE TABLE IF NOT EXISTS graph_meta (
+    scan_id TEXT PRIMARY KEY REFERENCES scans(scan_id) ON DELETE CASCADE,
+    graph_hash TEXT NOT NULL,
+    nodes INTEGER NOT NULL,
+    edges INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    scan_id TEXT NOT NULL REFERENCES scans(scan_id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL,
+    node_key TEXT NOT NULL,
+    kind TEXT, label TEXT, name TEXT, version TEXT, ecosystem TEXT, service_dir TEXT, purl TEXT,
+    PRIMARY KEY (scan_id, node_id)
+);
+CREATE TABLE IF NOT EXISTS graph_edges (
+    scan_id TEXT NOT NULL REFERENCES scans(scan_id) ON DELETE CASCADE,
+    src TEXT NOT NULL,
+    dst TEXT NOT NULL,
+    provenance TEXT,
+    PRIMARY KEY (scan_id, src, dst)
+);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_key ON graph_nodes(node_key);
 CREATE TABLE IF NOT EXISTS cache (
     namespace TEXT NOT NULL,
     key TEXT NOT NULL,
@@ -88,6 +111,19 @@ class Database:
         self._lock = threading.RLock()
         with self.connect() as c:
             c.executescript(SCHEMA)
+            self._migrate(c)
+
+    @staticmethod
+    def _migrate(c: sqlite3.Connection) -> None:
+        """Forward-only migrations keyed by PRAGMA user_version (CREATE IF NOT EXISTS above covers new tables)."""
+        ver = c.execute("PRAGMA user_version").fetchone()[0]
+        if ver > SCHEMA_VERSION:
+            raise RuntimeError(f"database schema v{ver} is newer than this code (v{SCHEMA_VERSION}); refusing to open it")
+        cols = {r[1] for r in c.execute("PRAGMA table_info(scans)").fetchall()}
+        if "scanner_version" not in cols:
+            c.execute("ALTER TABLE scans ADD COLUMN scanner_version TEXT")
+        if ver < SCHEMA_VERSION:
+            c.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -117,11 +153,12 @@ class Database:
             c.execute("DELETE FROM scans WHERE scan_id=?", (repo["scan_id"],))
             c.execute(
                 "INSERT INTO scans(scan_id, repo_url, repo_name, ref, commit_sha, scan_timestamp, status, tool_versions,"
-                " sbom_path, summary, result_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                " sbom_path, summary, result_json, scanner_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (repo["scan_id"], repo["url"], repo["name"], repo.get("ref"), repo["commit_sha"], repo["scan_timestamp"],
                  result.get("status", "unknown"), json.dumps(result.get("tool_versions", {})), result.get("sbom_path"),
-                 json.dumps(result.get("summary", {})), json.dumps(result, default=str)),
+                 json.dumps(result.get("summary", {})), json.dumps(result, default=str), (result.get("tool_versions") or {}).get("scanner")),
             )
+            self._save_graph(c, repo["scan_id"], result.get("graph") or {})
             for kind, f in findings:
                 fid = f.get("finding_id", "")
                 c.execute(
@@ -130,6 +167,37 @@ class Database:
                     (repo["scan_id"], kind, fid, f.get("component_ref"), f.get("severity"),
                      (risks.get(fid) or {}).get("label"), json.dumps(f, default=str)),
                 )
+
+    @staticmethod
+    def _save_graph(c: sqlite3.Connection, scan_id: str, graph: dict) -> None:
+        from graph.graph_diff import graph_hash, node_key
+        nodes, edges = graph.get("nodes") or [], graph.get("edges") or []
+        if not nodes:
+            return
+        c.execute("INSERT OR REPLACE INTO graph_meta(scan_id, graph_hash, nodes, edges) VALUES (?,?,?,?)", (scan_id, graph_hash(graph), len(nodes), len(edges)))
+        c.executemany("INSERT OR REPLACE INTO graph_nodes(scan_id,node_id,node_key,kind,label,name,version,ecosystem,service_dir,purl) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      [(scan_id, n["id"], node_key(n), n.get("kind"), n.get("label"), n.get("name"), n.get("version"), n.get("ecosystem"), n.get("service_dir"), n.get("purl")) for n in nodes])
+        c.executemany("INSERT OR REPLACE INTO graph_edges(scan_id,src,dst,provenance) VALUES (?,?,?,?)", [(scan_id, e["source"], e["target"], e.get("provenance")) for e in edges])
+
+    def load_graph(self, scan_id: str) -> Optional[dict]:
+        """Rebuild a ``graph_to_json``-shaped dict from the persisted tables (queryable/diffable without loading the full result)."""
+        with self.connect() as c:
+            nodes = [dict(r) for r in c.execute("SELECT * FROM graph_nodes WHERE scan_id=?", (scan_id,)).fetchall()]
+            edges = [dict(r) for r in c.execute("SELECT * FROM graph_edges WHERE scan_id=?", (scan_id,)).fetchall()]
+        if not nodes:
+            return None
+        return {"nodes": [{"id": n["node_id"], **{k: n[k] for k in ("kind", "label", "name", "version", "ecosystem", "service_dir", "purl")}} for n in nodes],
+                "edges": [{"source": e["src"], "target": e["dst"], "provenance": e["provenance"]} for e in edges]}
+
+    def previous_scan(self, repo_url: str, scan_id: str) -> Optional[str]:
+        """Id of the scan of the same repository that precedes ``scan_id`` (by timestamp)."""
+        with self.connect() as c:
+            cur = c.execute("SELECT scan_timestamp, rowid FROM scans WHERE scan_id=?", (scan_id,)).fetchone()
+            if not cur:
+                return None
+            r = c.execute("SELECT scan_id FROM scans WHERE repo_url=? AND status!='failed' AND (scan_timestamp < ? OR (scan_timestamp = ? AND rowid < ?))"
+                          " ORDER BY scan_timestamp DESC, rowid DESC LIMIT 1", (repo_url, cur["scan_timestamp"], cur["scan_timestamp"], cur["rowid"])).fetchone()
+        return r["scan_id"] if r else None
 
     def list_scans(self, limit: int = 50) -> list[dict]:
         with self.connect() as c:

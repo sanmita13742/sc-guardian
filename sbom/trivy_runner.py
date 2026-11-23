@@ -27,7 +27,7 @@ def resolve_trivy(settings: Settings | None = None) -> Optional[str]:
 
 def trivy_version(trivy_bin: str) -> Optional[str]:
     try:
-        p = subprocess.run([trivy_bin, "--version"], capture_output=True, text=True, timeout=60, shell=False)
+        p = subprocess.run([trivy_bin, "--version"], capture_output=True, text=True, timeout=60, shell=False, env=scrubbed_env())
     except (OSError, subprocess.TimeoutExpired):
         return None
     for line in p.stdout.splitlines():
