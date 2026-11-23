@@ -1,0 +1,30 @@
+version = 3
+
+[[package]]
+name = "demo-app"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "smallvec 0.6.9",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.150"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaaa111122223333"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.150"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb111122223333"
+
+[[package]]
+name = "smallvec"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cccc111122223333"

@@ -1,0 +1,5 @@
+# Demo backend (fixture). reqeusts is a deliberately typosquat-like name for detector tests.
+flask==0.12.2
+requests==2.19.1
+reqeusts==1.0.0
+urllib3==1.23

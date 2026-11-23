@@ -1,0 +1,22 @@
+{
+  "packages": [
+    {
+      "name": "monolog/monolog",
+      "version": "v2.0.0",
+      "dist": {"type": "zip", "url": "https://api.github.com/repos/Seldaek/monolog/zipball/abc", "shasum": ""},
+      "require": {"php": ">=7.2", "psr/log": "^1.0.1"}
+    },
+    {
+      "name": "psr/log",
+      "version": "1.1.4",
+      "dist": {"type": "zip", "url": "https://api.github.com/repos/php-fig/log/zipball/def", "shasum": ""}
+    }
+  ],
+  "packages-dev": [
+    {
+      "name": "phpunit/phpunit",
+      "version": "9.5.0",
+      "dist": {"type": "zip", "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/ghi", "shasum": ""}
+    }
+  ]
+}
