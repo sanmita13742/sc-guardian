@@ -58,3 +58,15 @@ def to_cytoscape(g: nx.DiGraph, vulnerable: dict[str, str] | None = None, relati
     for i, (u, v, a) in enumerate(g.edges(data=True)):
         els.append({"data": {"id": f"e{i}", "source": u, "target": v, "prov": a.get("provenance", "")}})
     return els
+
+
+def graph_from_json(data: dict) -> nx.DiGraph:
+    """Rebuild a DiGraph from ``graph_to_json`` output (used by the UI so scans can be reloaded from SQLite)."""
+    g = nx.DiGraph()
+    for n in data.get("nodes", []):
+        n = dict(n)
+        g.add_node(n.pop("id"), **n)
+    for e in data.get("edges", []):
+        e = dict(e)
+        g.add_edge(e.pop("source"), e.pop("target"), **e)
+    return g
