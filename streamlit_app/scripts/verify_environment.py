@@ -16,8 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-REQUIRED = ["streamlit", "networkx", "pydantic", "requests", "rapidfuzz", "packaging", "jsonschema", "yaml", "pytest"]
-OPTIONAL = ["dotenv", "pytest_cov"]
+REQUIRED = ["streamlit", "networkx", "pydantic", "requests", "rapidfuzz", "packaging", "jsonschema", "yaml", "pandas"]
+OPTIONAL = ["dotenv"]
 failures: list[str] = []
 
 

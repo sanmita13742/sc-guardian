@@ -43,7 +43,8 @@ def resolve_syft(settings: Settings | None = None) -> Optional[str]:
 
 def syft_version(syft_bin: str) -> Optional[str]:
     try:
-        p = subprocess.run([syft_bin, "version"], capture_output=True, text=True, timeout=20, shell=False)
+        p = subprocess.run([syft_bin, "version"], capture_output=True, text=True, timeout=60, shell=False,
+                           env=dict(os.environ, SYFT_CHECK_FOR_APP_UPDATE="false"))
     except (OSError, subprocess.TimeoutExpired):
         return None
     for line in p.stdout.splitlines():

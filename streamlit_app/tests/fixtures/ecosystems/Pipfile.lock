@@ -1,5 +1,0 @@
-{
-  "_meta": {"sources": [{"name": "pypi", "url": "https://pypi.org/simple"}]},
-  "default": {"requests": {"hashes": ["sha256:aaa"], "version": "==2.19.1"}},
-  "develop": {"pytest": {"hashes": ["sha256:bbb"], "version": "==7.0.0"}}
-}

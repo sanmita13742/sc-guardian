@@ -21,6 +21,10 @@ def df(rows: list[dict] | list[list], columns: Optional[list[str]] = None, heigh
     if d.empty:
         st.info("Nothing to show.")
         return
+    for col in d.columns:  # mixed number/text columns (e.g. CVSS "n/a") cannot be Arrow-serialised; show them as text
+        vals = [v for v in d[col] if v is not None and v == v]
+        if any(isinstance(v, str) for v in vals) and any(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals):
+            d[col] = d[col].map(lambda v: "" if v is None or v != v else str(v))
     if height is None:
         height = "content" if len(d) <= 15 else 420
     elif len(d) <= 8:
