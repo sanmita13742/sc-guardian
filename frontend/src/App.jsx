@@ -10,17 +10,15 @@ import {
   CheckCircle2,
   Workflow,
   Sparkles,
-  Split,
   AlertTriangle,
   AlertOctagon
 } from 'lucide-react';
 import DependencyGraphView from './components/DependencyGraphView';
-import CrossValidationView from './components/CrossValidationView';
 import VulnerabilitiesView from './components/VulnerabilitiesView';
 import SuspiciousChangesView from './components/SuspiciousChangesView';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'vulnerabilities', 'suspicious', 'validation', 'inventory'
+  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'vulnerabilities', 'suspicious', 'inventory'
   const [inventory, setInventory] = useState(null);
   const [sbomData, setSbomData] = useState(null);
   const [graphData, setGraphData] = useState(null);
@@ -243,13 +241,6 @@ export default function App() {
             Suspicious Changes ({suspiciousData?.metrics?.total_findings || 24})
           </button>
           <button
-            onClick={() => setActiveTab('validation')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'validation' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-          >
-            <Split className="w-4 h-4" />
-            Cross-Validation (Lockfile vs. SBOM vs. Graph)
-          </button>
-          <button
             onClick={() => setActiveTab('inventory')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'inventory' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
           >
@@ -280,16 +271,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Cross-Validation View */}
-        {activeTab === 'validation' && (
-          <CrossValidationView
-            inventory={inventory}
-            sbom={sbomData}
-            graph={graphData}
-          />
-        )}
-
-        {/* Tab 3: Component Inventory */}
+        {/* Tab 2: Component Inventory */}
         {activeTab === 'inventory' && (
           <div className="bg-[#0E131F] border border-gray-800 rounded-xl p-5 space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
