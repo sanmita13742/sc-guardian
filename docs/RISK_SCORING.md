@@ -1,7 +1,7 @@
 # Risk scoring
 
 Risk labels are produced by a **deterministic, additive rule engine** (`risk_analysis/risk_rules.py`, `risk_scorer.py`).
-No LLM participates in scores, labels or factors. Rules version: **1.0**. Every assessment stores the factor list, the
+No LLM participates in scores, labels or factors. Rules version: **2.0** (adds reachability, EPSS, pipeline findings, confidence and P0-P3 priority). Every assessment stores the factor list, the
 unknowns and the thresholds that were in effect, so a label can always be reproduced.
 
 CVSS severity (a property of the advisory) and *risk* (a property of this finding in this repository) are shown separately.
@@ -21,8 +21,17 @@ CVSS severity (a property of the advisory) and *risk* (a property of this findin
 | No fixed version recorded | +5 | Does not by itself make a finding critical. |
 | Development-only dependency | −10 | Lockfile marks it dev-only; build/CI exposure remains. |
 | Correlated lockfile change | +5 | Same package also changed suspiciously in Git history. |
-| Reachability | 0 | Always listed as *unknown — not treated as unreachable*. |
+| EPSS (exploit probability estimate) | ≥0.5 +20, ≥0.1 +10, ≥0.01 +3 | Only nudges the score; it is a statistical estimate, not proof. |
+| Reachability (package-level import evidence, not a call graph) | imported by the app +20, reached via a dependency +8, tests only −5, no import found −15, unknown 0 | Verdict comes from the Investigator with cited evidence ids. |
 | Applicability unconfirmed | label capped at **MEDIUM** | OSV returned the advisory but the range could not be validated locally. |
+
+## Pipeline findings (Dockerfile, compose, CI)
+
+Severity points CRITICAL 75, HIGH 50, MEDIUM 28, LOW 12, INFO 4; −8 when the evidence is heuristic rather than directly visible; +5 for an unpinned third-party action.
+
+## Confidence and priority
+
+Every finding also gets a **confidence** (cross-verified, range-validated, reachability known, CVSS present) and a **priority P0-P3** (P0 = reachable/exploited and critical). The factor table on *Risk & Explainability* shows each contribution.
 
 Example: a transitive CVSS-CRITICAL finding without KEV scores 55 → **HIGH**; with KEV 85 → **CRITICAL**; a direct LOW finding stays **LOW**.
 
