@@ -167,12 +167,100 @@ def maven_central(http: HttpClient, eco: str, name: str, version: str) -> dict:
     return {"url": base + ".jar.sha1", "digests": [{**p, "what": "jar"}]} if p else {}
 
 
+def go_sum(http: HttpClient, eco: str, name: str, version: str) -> dict:
+    """Go checksum database: the authoritative h1 tree hash of a module version (comparable with go.sum)."""
+    esc = re.sub(r"[A-Z]", lambda m: "!" + m.group(0).lower(), name)
+    url = f"https://sum.golang.org/lookup/{esc}@{version}"
+    r = http.request("GET", url)
+    for line in r.text.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[0] == name and parts[1] == version and parts[2].startswith("h1:"):
+            p = parse_digest(parts[2])
+            if p:
+                return {"url": url, "digests": [{**p, "what": "go module tree"}]}
+    return {}
+
+
+def packagist(http: HttpClient, eco: str, name: str, version: str) -> dict:
+    url = f"https://repo.packagist.org/p2/{quote(name, safe='/')}.json"
+    pk = (http.get_json(url).get("packages") or {}).get(name) or []
+    if pk and http is not None:  # composer/2.0 "minified" metadata: each entry lists only the keys that changed from the previous one
+        full, prev = [], {}
+        for e in pk:
+            cur = dict(prev)
+            for k, val in e.items():
+                if val == "__unset":
+                    cur.pop(k, None)
+                else:
+                    cur[k] = val
+            full.append(cur)
+            prev = cur
+        pk = full
+    want = {version, "v" + version, version.lstrip("v")}
+    v = next((x for x in pk if str(x.get("version")) in want), None)
+    if not v:
+        return {}
+    rec: dict[str, Any] = {"url": url}
+    lic = [x for x in (_clean_license(l) for l in v.get("license") or []) if x]
+    if lic:
+        rec["licenses"] = lic
+    if v.get("description"):
+        rec["description"] = str(v["description"])[:300]
+    if v.get("time"):
+        rec["published_at"] = v["time"]
+    links = []
+    if v.get("homepage"):
+        links.append({"type": "website", "url": v["homepage"]})
+    if (v.get("source") or {}).get("url"):
+        links.append({"type": "vcs", "url": v["source"]["url"]})
+    if (v.get("support") or {}).get("issues"):
+        links.append({"type": "issue-tracker", "url": v["support"]["issues"]})
+    if links:
+        rec["links"] = links
+    authors = [a.get("name") for a in v.get("authors") or [] if a.get("name")]
+    if authors:
+        rec["supplier"] = ", ".join(authors[:2])
+    if v.get("abandoned"):
+        rec["deprecated"] = True
+    sh = (v.get("dist") or {}).get("shasum")
+    p = parse_digest(sh) if sh else None
+    if p:
+        rec["digests"] = [{**p, "what": "dist zip"}]
+    return rec
+
+
+def rubygems(http: HttpClient, eco: str, name: str, version: str) -> dict:
+    url = f"https://rubygems.org/api/v2/rubygems/{quote(name, safe='')}/versions/{quote(version, safe='')}.json"
+    d = http.get_json(url)
+    rec: dict[str, Any] = {"url": url}
+    lic = [x for x in (_clean_license(l) for l in d.get("licenses") or []) if x]
+    if lic:
+        rec["licenses"] = lic
+    if d.get("authors"):
+        rec["supplier"] = str(d["authors"])[:120]
+    if d.get("summary") or d.get("info"):
+        rec["description"] = str(d.get("summary") or d.get("info"))[:300]
+    if d.get("version_created_at"):
+        rec["published_at"] = d["version_created_at"]
+    links = [{"type": t, "url": d[k]} for t, k in (("website", "homepage_uri"), ("vcs", "source_code_uri"), ("issue-tracker", "bug_tracker_uri"), ("documentation", "documentation_uri")) if d.get(k)]
+    if links:
+        rec["links"] = links
+    if d.get("yanked"):
+        rec["deprecated"] = True
+    p = parse_digest(d.get("sha"), "sha256")
+    if p:
+        rec["digests"] = [{**p, "what": "gem"}]
+    return rec
+
+
 FETCHERS: dict[str, list[tuple[str, Callable]]] = {
     "npm": [("npm-registry", npm), ("deps.dev", depsdev)],
     "PyPI": [("pypi", pypi), ("deps.dev", depsdev)],
     "crates.io": [("crates.io", crates), ("deps.dev", depsdev)],
     "Maven": [("deps.dev", depsdev), ("maven-central", maven_central)],
-    "Go": [("deps.dev", depsdev)],
+    "Go": [("deps.dev", depsdev), ("sum.golang.org", go_sum)],
+    "Packagist": [("packagist", packagist)],
+    "RubyGems": [("rubygems", rubygems)],
     "NuGet": [("deps.dev", depsdev)],
 }
 

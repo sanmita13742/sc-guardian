@@ -168,6 +168,10 @@ def run_scan(options: ScanOptions, settings: Settings | None = None, db: Databas
             res["from_cache"] = True
             return res
     gm.reap_stale_workspaces(s)
+    try:
+        Cache(db).maintain(s.cache_max_age_days, s.cache_max_rows)
+    except Exception:
+        pass  # cache upkeep must never block a scan
     scan_id, ws = gm.new_workspace(s)
     ctx = _Ctx(s, db)
     result: dict[str, Any] = {}

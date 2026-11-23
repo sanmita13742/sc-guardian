@@ -10,6 +10,7 @@ venv/
 .env
 .env.*
 !.env.example
+scanner.toml
 
 # Runtime data (clones, cache DB, generated SBOMs/reports/graphs)
 .workspaces/

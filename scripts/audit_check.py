@@ -263,6 +263,134 @@ def _adapters() -> None:
           json.dumps(raw, sort_keys=True) == snap and len(doc["components"]) == 1 and doc["components"][0]["properties"][-1]["value"] == "package-lock.json")
 
 
+@guarded("fusion")
+def _fusion() -> None:
+    from core.http import HttpClient, SourceUnavailable
+    from core.models import Component, LockDependency
+    from sbom.fusion import engine, ledger
+    from sbom.fusion.hashes import parse_digest
+    from sbom.fusion.writer import write_fused
+    from sbom.cyclonedx_validator import validate_cyclonedx
+
+    sri = "sha512-7Wl+Jz+IGWuSdgsQEJ4JunVTlzCqPgnbc7dqCPPQwDfuOkr6Np3XLuC/Hlr1rXbyBz5TrFZcrzFOvDMr7p58zw=="
+    d = parse_digest(sri)
+    check("fusion: SRI digest converts to the correct hex", d and d["alg"] == "sha512" and d["hex"].startswith("ed697e27"))
+    c = Component(bom_ref="a", name="x", version="1", ecosystem="npm", licenses=["GPL-3.0"], sources=["syft"])
+    ledger.init_scanner_provenance(c)
+    ledger.set_field(c, "licenses", ["MIT"], "lockfile", "lock")
+    ok1 = c.licenses == ["MIT"] and c.provenance["licenses"]["source"] == "lockfile" and c.provenance["licenses"]["conflicts"][0]["source"].startswith("scanner")
+    ledger.set_field(c, "licenses", ["Apache-2.0"], "registry:npm", "reg")
+    check("fusion: lockfile outranks scanner and registry; the displaced/rejected values are kept as conflicts", ok1 and c.licenses == ["MIT"] and len(c.provenance["licenses"]["conflicts"]) == 2)
+    e = Component(bom_ref="b", name="y", version="1", ecosystem="npm")
+    ledger.set_field(e, "licenses", [], "registry")
+    check("fusion: nothing is invented (empty values do not create provenance)", e.licenses == [] and "licenses" not in e.provenance)
+
+    ld = LockDependency(name="x", version="1", ecosystem="npm", lockfile="package-lock.json", service_dir=".", integrity=sri, license="MIT", direct=True, meta={"install_script": True})
+    comp = Component(bom_ref="a", name="x", version="1", ecosystem="npm", service_dir=".", sources=["syft"])
+    engine.apply_lockfile([comp], [ld])
+    check("fusion: native lockfile facts (hash, license, install script, scope) reach the component",
+          comp.hashes and comp.licenses == ["MIT"] and comp.install_script and comp.scope == "required" and comp.provenance["hashes"]["source"] == "lockfile")
+    for digest, expect in ((d["hex"], "verified"), ("0" * 128, "mismatch")):
+        cc = comp.model_copy(deep=True)
+        cc.integrity = dict(cc.integrity)
+        engine._apply_record(cc, {"sources": {"npm-registry": "u"}, "digests": [{"alg": "sha512", "hex": digest, "kind": "file"}]})
+        check(f"integrity: lockfile digest vs registry -> {expect}", cc.integrity.get("status") == expect)
+    cc = Component(bom_ref="z", name="z", version="1", ecosystem="npm")
+    engine._apply_record(cc, {"sources": {"npm-registry": "u"}, "digests": [{"alg": "sha512", "hex": "ab" * 64, "kind": "file"}]})
+    check("integrity: no lockfile digest -> registry digest added with medium confidence", cc.integrity.get("status") == "absent" and cc.provenance["hashes"]["confidence"] == "medium")
+
+    # registry outage must degrade quickly and honestly, never hang or invent data
+    class Down(HttpClient):
+        def request(self, *a, **k):
+            raise SourceUnavailable("down")
+    comps = [Component(bom_ref=f"p{i}", name=f"pkg{i}", version="1.0.0", ecosystem="npm", service_dir=".") for i in range(12)]
+    t0 = time.time()
+    rep = engine.fuse(comps, [], Down(retries=0), None, registry=True, budget_s=20)
+    check("resilience: registry outage -> breaker trips fast, no data invented, report says unavailable",
+          time.time() - t0 < 10 and rep["registry_phase"]["hosts_tripped"] and all(not c.licenses for c in comps), str(rep["registry_phase"]))
+
+    doc = {"bomFormat": "CycloneDX", "specVersion": "1.6", "components": [{"type": "library", "name": "x", "version": "1", "bom-ref": "a", "purl": "pkg:npm/x@1"}], "dependencies": []}
+    out = write_fused(doc, [comp], {"average_completeness": 0.5, "integrity": {"verified": 1}}, "builtin")
+    ent = out["components"][0]
+    check("writer: fused CycloneDX is valid and carries licenses, hashes, scope and provenance properties",
+          validate_cyclonedx(out)["valid"] and ent["licenses"][0]["license"]["id"] == "MIT" and ent["hashes"][0]["alg"] == "SHA-512" and ent["scope"] == "required"
+          and any(pp["name"] == "sc-guardian:provenance:hashes" for pp in ent["properties"]))
+    check("writer: the input (scanner) document is not modified", "hashes" not in doc["components"][0])
+
+
+@guarded("resolver")
+def _resolver() -> None:
+    from core.models import LockDependency
+    from sbom.fusion.resolver import candidates
+    mk = lambda **k: LockDependency(ecosystem="Maven", name="g:a", version="1.0", service_dir=".", direct=True, **k)  # noqa: E731
+    pom = mk(lockfile="pom.xml")
+    check("resolver: pinned direct deps of a pom.xml-only service are resolution candidates", len(candidates([pom])) == 1)
+    lockd = LockDependency(ecosystem="Maven", name="g:b", version="2", service_dir=".", lockfile="gradle.lockfile")
+    check("resolver: a service with a real lockfile is never resolved (the lockfile is authoritative)", candidates([pom, lockd]) == [])
+    check("resolver: unpinned or non-direct records are skipped", candidates([mk(lockfile="pom.xml").model_copy(update={"version": None}), mk(lockfile="pom.xml").model_copy(update={"direct": False})]) == [])
+
+
+@guarded("config")
+def _config() -> None:
+    from config.settings import get_settings
+    saved = {k: os.environ.get(k) for k in ("SCANNER_CLONE_TIMEOUT_S", "SCANNER_HTTP_RETRIES", "SCANNER_CLONE_DEPTH")}
+    os.environ.update({"SCANNER_CLONE_TIMEOUT_S": "abc", "SCANNER_HTTP_RETRIES": "99", "SCANNER_CLONE_DEPTH": "7"})
+    try:
+        s = get_settings()
+        check("config: invalid values are ignored with a reported problem, valid env override wins",
+              s.clone_timeout_s == 180 and s.http_retries == 3 and s.clone_depth == 7 and len(s.problems) >= 2 and s.sources["clone_depth"] == "env", str(s.problems))
+    finally:
+        for k, v in saved.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    tf = Path(tempfile.mkdtemp()) / "scanner.toml"
+    tf.write_text('clone_depth = 9\nnvd_api_key = "leak"\nbogus = 1\n')
+    os.environ["SCANNER_CONFIG"] = str(tf)
+    try:
+        s = get_settings()
+        check("config: file value applies, secrets in the file are rejected, unknown keys reported",
+              s.clone_depth == 9 and not s.nvd_api_key and any("secret" in p for p in s.problems) and any("bogus" in p for p in s.problems) and s.sources["clone_depth"] == "file")
+    finally:
+        os.environ.pop("SCANNER_CONFIG", None)
+
+
+@guarded("cache")
+def _cache() -> None:
+    from storage.cache import Cache
+    from storage.database import Database
+    db = Database(Path(tempfile.mkdtemp()) / "c.db")
+    c = Cache(db)
+    for i in range(30):
+        c.set("ns", f"k{i}", {"i": i})
+    with db.connect() as cx:
+        cx.execute("UPDATE cache SET fetched_at = fetched_at - ? WHERE key IN ('k0','k1')", (200 * 86400,))
+    r = c.maintain(max_age_days=120, max_rows=20)
+    st_ = c.stats()
+    check("cache: rows older than the limit and rows beyond the row cap are purged (oldest first)", r["purged_old"] == 2 and st_["total_rows"] == 20, str(r))
+    h = db.health()
+    check("database: integrity check passes and schema version is current", h["integrity"] == "ok" and h["schema_version"] >= 2, str(h["schema_version"]))
+
+
+@guarded("tree")
+def _tree() -> None:
+    import networkx as nx
+    from graph.tree_view import build_reverse_tree, build_tree, graph_stats, tree_html
+    g = nx.DiGraph()
+    g.add_node("root:.", kind="root", label="app", service_dir=".")
+    for n in ("a", "b", "c", "d"):
+        g.add_node(n, kind="component", label=f"{n}@1")
+    g.add_edges_from([("root:.", "a"), ("root:.", "b"), ("a", "c"), ("b", "c"), ("c", "d"), ("d", "a")])  # shared child + a cycle
+    t = build_tree(g, "root:.", {"d": "HIGH"}, {})
+    check("graph tree: shared dependencies are expanded once and shown as references; cycles terminate", t["tree"]["descendants"] == 4 and "shown above" in tree_html(t["tree"]))
+    rv = build_reverse_tree(g, "d", {"d": "HIGH"}, {})
+    check("graph tree: bottom-up view reaches the service root", "app" in tree_html(rv["tree"], 9))
+    st_ = graph_stats(g, {"d": "HIGH"})
+    check("graph stats: depth histogram and vulnerable depth are computed", st_["depth_histogram"] == {1: 2, 2: 1, 3: 1} and st_["vulnerable_by_depth"] == {3: 1} and st_["has_cycles"], str(st_["depth_histogram"]))
+    ev = "<script>alert(1)</script>"
+    g.add_node("e", kind="component", label=ev)
+    g.add_edge("root:.", "e")
+    check("graph tree: package names are HTML-escaped", "<script>" not in tree_html(build_tree(g, "root:.", {}, {})["tree"]))
+
+
 @guarded("ground_truth")
 def _ground_truth() -> None:
     if OFFLINE:

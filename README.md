@@ -43,6 +43,12 @@ evidence ends with a real CycloneDX file you can open on the **SBOM Explorer →
 document from the scanner's own lockfile/manifest parsers; because it reads the same lockfiles used for cross-checking, the app labels that comparison as not independent.
 Trivy runs with `--scanners license`, so no vulnerability database download is needed (vulnerabilities come from OSV).
 
+### Complete SBOM metadata (metadata fusion)
+After the scanner runs, the SBOM Agent **fuses** lockfile, scanner and registry metadata with per-field provenance and writes a *fused* CycloneDX file (licences, hashes, supplier, scope, links, install-script and deprecation flags, `sc-guardian:provenance:*`). Lockfile digests are **verified against the registry** (npm, PyPI, crates.io, Packagist, RubyGems, Go checksum DB) and mismatches raise an alert. For services without a lockfile (`pom.xml`, `build.gradle`, pinned `requirements.txt`) the transitive packages are resolved through deps.dev and labelled `registry-resolved`. Measured: NodeGoat 99% metadata completeness. Details: `docs/ARCHITECTURE.md` section 4b. Disable registry look-ups with the scan option *Fill missing metadata from registries*.
+
+### Configuration
+Copy `scanner.example.toml` to `scanner.toml` for tuning (timeouts, cache limits, scan reuse window, tool paths). Precedence: environment `SCANNER_<NAME>` > `.env` > `scanner.toml` > defaults; values are validated and secrets are environment-only. The **Settings & Health** page shows every effective value and its source, tool versions, database health, cache statistics and disk usage.
+
 Accepted repository addresses: `https://github.com/owner/repo`, `.git` and trailing-slash forms, `github.com/owner/repo`, `git@github.com:owner/repo.git`,
 and browser URLs such as `https://github.com/owner/repo/tree/<branch>` (the branch is taken from the URL). Only public repositories can be cloned.
 
@@ -88,8 +94,8 @@ before it is shown — otherwise the template text is used.
 | Page | Contents |
 |---|---|
 | Repository Scan | URL form, SBOM-scanner choice, **live agent progress**, repository overview, analyst summary, where the clone was stored, coverage/limitations |
-| SBOM Explorer | components table, quality assessment, scanner attempts & validation, **the actual CycloneDX file** (full file with line numbers, header / components / dependencies views), download |
-| Dependency Graph | **Direct-only**, **transitive-only**, vulnerability-path, service and neighbourhood views (Cytoscape); **severity alert banner**; **Transitive alerts** with *source (direct) package*; **Source packages** ranking; package tracer |
+| SBOM Explorer | components table with licence/scope/integrity/provenance, **Metadata tab** (coverage before/after fusion, digest verification, conflicts), quality, scanner attempts & validation, **the actual CycloneDX file** (full file with line numbers, header / components / dependencies views), download |
+| Dependency Graph | **Dependency tree** (top-down / bottom-up, depth statistics), **Direct-only**, **transitive-only**, vulnerability-path, service and neighbourhood views (Cytoscape); **severity alert banner**; **Transitive alerts** with *source (direct) package*; **Source packages** ranking; package tracer |
 | Vulnerability Findings | filters, details, **7-step evidence chain**, ground-truth panel |
 | Suspicious Changes | typosquatting evidence; lockfile changes with commit, baseline, diff, reasons |
 | Risk & Explainability | risk overview, per-root exposure, factor tables, grounded explanations |

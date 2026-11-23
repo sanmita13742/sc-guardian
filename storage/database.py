@@ -132,6 +132,8 @@ class Database:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=30000")
             try:
                 yield conn
                 conn.commit()
@@ -167,6 +169,21 @@ class Database:
                     (repo["scan_id"], kind, fid, f.get("component_ref"), f.get("severity"),
                      (risks.get(fid) or {}).get("label"), json.dumps(f, default=str)),
                 )
+
+    def health(self) -> dict:
+        """Schema version, integrity and sizes for the Settings & Health page."""
+        out: dict = {"path": self.path, "schema_version": None, "integrity": None, "tables": {}, "size_bytes": None, "journal_mode": None}
+        try:
+            with self.connect() as c:
+                out["schema_version"] = c.execute("PRAGMA user_version").fetchone()[0]
+                out["integrity"] = c.execute("PRAGMA integrity_check").fetchone()[0]
+                out["journal_mode"] = c.execute("PRAGMA journal_mode").fetchone()[0]
+                for t in ("scans", "findings", "finding_state", "decisions", "package_seen", "graph_nodes", "graph_edges", "cache"):
+                    out["tables"][t] = c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            out["size_bytes"] = Path(self.path).stat().st_size
+        except Exception as e:
+            out["integrity"] = f"error: {type(e).__name__}: {e}"
+        return out
 
     @staticmethod
     def _save_graph(c: sqlite3.Connection, scan_id: str, graph: dict) -> None:

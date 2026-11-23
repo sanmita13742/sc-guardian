@@ -46,15 +46,22 @@ def subgraph_for(g: nx.DiGraph, mode: str = "overview", focus: Optional[Iterable
     return g.subgraph(keep).copy()
 
 
-def to_cytoscape(g: nx.DiGraph, vulnerable: dict[str, str] | None = None, relationships: dict | None = None) -> list[dict]:
-    """Cytoscape.js elements. ``vulnerable`` maps node id -> worst severity label."""
+def to_cytoscape(g: nx.DiGraph, vulnerable: dict[str, str] | None = None, relationships: dict | None = None, positions: dict | None = None,
+                 info: dict | None = None) -> list[dict]:
+    """Cytoscape.js elements. ``vulnerable`` maps node id -> worst severity label; ``positions`` (layered layout) maps node id -> {x, y}."""
     vulnerable = vulnerable or {}
+    info = info or {}
     els = []
     for n, a in g.nodes(data=True):
-        els.append({"data": {"id": n, "label": a.get("label", n), "kind": a.get("kind"), "ecosystem": a.get("ecosystem") or "",
-                             "version": a.get("version") or "", "purl": a.get("purl") or "",
-                             "vuln": vulnerable.get(n, ""), "service": a.get("service_dir") or "",
-                             "rel": ",".join(sorted(set((relationships or {}).get(n, {}).values())))}})
+        meta = info.get(n, {})
+        el = {"data": {"id": n, "label": a.get("label", n), "kind": a.get("kind"), "ecosystem": a.get("ecosystem") or "",
+                       "version": a.get("version") or "", "purl": a.get("purl") or "",
+                       "vuln": vulnerable.get(n, ""), "service": a.get("service_dir") or "",
+                       "license": meta.get("license") or "", "scope": meta.get("scope") or "", "resolution": meta.get("resolution") or "",
+                       "rel": ",".join(sorted(set((relationships or {}).get(n, {}).values())))}}
+        if positions and n in positions:
+            el["position"] = positions[n]
+        els.append(el)
     for i, (u, v, a) in enumerate(g.edges(data=True)):
         els.append({"data": {"id": f"e{i}", "source": u, "target": v, "prov": a.get("provenance", "")}})
     return els

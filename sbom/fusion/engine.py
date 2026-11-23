@@ -140,7 +140,7 @@ def fetch_registry(components: list[Component], http: HttpClient, cache: Optiona
 
     def work(k: tuple) -> tuple[tuple, dict, str]:
         eco, name, ver = k
-        ck = f"{eco}:{name}@{ver}"
+        ck = f"{eco}:{name}@{ver}|{'+'.join(l for l, _ in FETCHERS[eco])}"  # key includes the client set: adding a client never serves stale, thinner records
         cached = cache.get("meta_fusion", ck, ttl=TTL) if cache else None
         if cached is not None:
             return k, cached, "cache"
@@ -229,7 +229,13 @@ def _apply_record(c: Component, rec: dict) -> None:
     lock = c.integrity.get("lockfile")
     if lock:
         if lock.get("kind") == "tree":
-            c.integrity.update(status="unverifiable", reason="Go module tree hash (h1:) is not comparable to registry digests")
+            trees = [d for d in rec.get("digests", []) if d.get("kind") == "tree"]
+            if not trees:
+                c.integrity.update(status="unverifiable", reason="Go module tree hash (h1:) could not be compared: checksum database returned nothing")
+            elif any(d["hex"] == lock["hex"] for d in trees):
+                c.integrity.update(status="verified", algorithm="go-h1", registry=trees[0]["hex"], reason="go.sum h1 equals the Go checksum database (sum.golang.org)")
+            else:
+                c.integrity.update(status="mismatch", algorithm="go-h1", registry=trees[0]["hex"], reason="go.sum h1 differs from the Go checksum database")
         else:
             comparable = [d for d in digs if d["alg"] == lock["alg"]]
             if not digs or not comparable:

@@ -50,12 +50,31 @@ Trivy runs with `--scanners license --offline-scan` (no vulnerability DB; vulner
 `canonicalize(raw) → document`, `locations(component)`, `found_by(component)`. `normalize_components(doc, …, tool)` turns the canonical document into `Component` models carrying `sources`.
 Identity key = `(ecosystem, normalised name, version, service_dir)`. Everything downstream (graph, OSV, detectors, reports) consumes only canonical models. Raw files are for viewing/download only and are never rewritten.
 
+## 4b. Metadata fusion (`sbom/fusion/`) — SBOM completeness at native-parser level
+
+An SBOM scanner knows a package's name and version; the lockfile also knows its digest, source URL, scope, install-script flag and (npm, Composer) licence; the registry knows licence, description, links, publish date, deprecation. No single source has everything, so a dedicated SBOM-Agent step **fuses** them with *per-field provenance*:
+
+| Step | What happens |
+|---|---|
+| 1 Lockfile (native) | parsers keep everything the file records: digests/hashes (SRI, hex, Go h1, Pipfile/poetry/uv lists), resolved URL, scope (dev/optional/peer), install scripts, deprecation, licence, Composer homepage/authors/time |
+| 2 Scanner | what Syft/Trivy already put in the entry is remembered with its source (lower trust) |
+| 3 Registry | deps.dev (npm, PyPI, Maven, Go, Cargo, NuGet), npm registry, PyPI JSON, crates.io, Maven Central, Packagist, RubyGems, Go checksum DB — parallel, cached (30 d), time-budgeted, per-host circuit breaker; only for fields still empty and for verification |
+| 4 Integrity triangulation | the lockfile digest is compared with the digest the registry publishes today for that exact version: `verified`, `mismatch` (possible tampered lockfile / republished package, shown as an alert), `unverifiable`, or `absent` (registry digest added with *medium* confidence) |
+| 5 Report | per-field coverage scanner-only vs after fusion, conflicts, a *reason* for every field that stays unknown, weighted completeness per component |
+
+Trust order: lockfile (exact pin) > manifest > registry > scanner > inferred. A lower-trust value never overwrites a higher one; disagreements are recorded as conflicts. Nothing is ever invented. The result is written as a **fused CycloneDX document** (licences as SPDX id/expression/name, hashes in hex, supplier, scope, externalReferences, `sc-guardian:provenance:*`, `sc-guardian:integrity` properties); it is the primary SBOM, and the raw scanner files stay viewable next to it.
+
+**Registry resolver (`sbom/fusion/resolver.py`).** A `pom.xml`, `build.gradle` or pinned `requirements.txt` lists only direct dependencies; running Maven/Gradle/pip would execute repository-controlled code, so it is forbidden. For services with *no* lockfile for that ecosystem, each pinned direct dependency's resolved dependency graph is fetched from deps.dev and added as `registry-resolved` packages and edges (limits: each direct dependency is resolved alone, so real version mediation may differ; stated in the result). Measured on spring-petclinic: 20 -> 49 components, 0 -> 16 findings.
+
+Measured (default settings, live): NodeGoat 99% completeness in ~85 s (1,090 registry look-ups, 952 digests verified, 0 mismatches); flask 90%; ripgrep 66% (Rust crates have no author/description in crates.io's version API); gin 38% (Go modules: licences from deps.dev, h1 hashes verified against sum.golang.org).
+
 ## 5. Dependency graph
 
 * Library: **NetworkX `DiGraph`**, edge *parent → child* ("parent depends on child"), nodes keyed by canonical bom-ref, one synthetic root per service (monorepos).
 * Built **once**, after normalisation + quality, **before** any vulnerability work (`graph/graph_builder.py`).
 * Edge provenance, in precedence order: `sbom` > `lockfile:<file>` > `lockfile-direct` > `inferred-no-parent` (flagged, not proven).
 * Direct/transitive is always **per root** (`classify_all`, one BFS per root); paths come from bounded Yen enumeration on the target's ancestor sub-graph (`dependency_tracer`), so large graphs never explode.
+* Display (`graph/tree_view.py`, no UI imports): an offline collapsible **dependency tree** (top-down "what a service brings in", bottom-up "who pulls this package in"; each package expanded once, repeats shown as references, cycles terminate; badges for severity, dev/optional, install script, deprecated, digest mismatch, registry-resolved, licence), **statistics** (depth histogram, longest chain, most-shared packages, vulnerable packages per depth) and a **layered canvas** (columns = depth from the root).
 * Persisted to `graph_nodes` / `graph_edges` / `graph_meta` (content hash). `graph/graph_diff.py` compares graphs by *identity* (not bom-ref), powering "Changes since the previous scan".
 
 ## 6. Vulnerability data
@@ -72,7 +91,12 @@ OSV.dev is the ground truth (`querybatch` by name/ecosystem/version, then full a
 
 No vector store: recall is exact and auditable.
 
-## 8. Storage and freshness
+## 8. Configuration, storage and freshness
+
+**Configuration** (`config/loader.py`): `SCANNER_<NAME>` environment variable > `.env` > `scanner.toml` > defaults (see `scanner.example.toml`). Every value is type- and range-checked; an invalid value is ignored with a reported problem (never a crash); secrets are accepted from the environment only (a secret in the file is rejected); each value's source is recorded and shown on the **Settings & Health** page together with tool availability, database health (schema version, integrity check), cache statistics/maintenance and disk usage.
+
+**Cache** (`storage/cache.py`): TTL cache with per-namespace stats, purge of rows older than `cache_max_age_days` and of the oldest rows above `cache_max_rows` (run at every scan start); registry record keys include the client set so new clients never see stale thinner records.
+
 
 SQLite (`data/scanner.db`, `PRAGMA user_version` migrations; refuses a database newer than the code): `scans`, `findings`, `graph_*`, memory tables, TTL `cache`.
 A stored scan of the same commit is **reused only if** it is younger than `scan_cache_ttl_s` (24 h), was produced by the same `SCANNER_VERSION` and `RULES_VERSION` with the same options fingerprint, and its SBOM file still exists — otherwise the repo is rescanned (new advisories may exist).

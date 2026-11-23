@@ -48,6 +48,9 @@ def _props(c: Component) -> list[dict]:
             out.append({"name": f"sc-guardian:confidence:{f}", "value": p["confidence"]})
         for cf in p.get("conflicts", [])[:3]:
             out.append({"name": f"sc-guardian:conflict:{f}", "value": f"{cf['source']}={cf['value']}"})
+    lk = c.integrity.get("lockfile") or {}
+    if lk.get("kind") == "tree":  # Go h1: digest of the module tree - not a file hash, so not a CycloneDX hash; kept verbatim as a property
+        out.append({"name": "sc-guardian:digest:go-h1", "value": f"sha256:{lk.get('hex')}"})
     st = c.integrity.get("status")
     if st:
         out.append({"name": "sc-guardian:integrity", "value": st})

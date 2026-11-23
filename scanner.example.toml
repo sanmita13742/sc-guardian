@@ -1,0 +1,14 @@
+# SC Guardian configuration (copy to scanner.toml). Precedence: environment SCANNER_<NAME> > .env > this file > defaults.
+# Secrets (NVD_API_KEY, ANTHROPIC_API_KEY) are NOT accepted here - set them as environment variables.
+# Invalid values are ignored with a warning on the Settings & Health page.
+
+clone_timeout_s = 180          # git clone time limit
+clone_depth = 50               # shallow clone depth (limits Git-history lockfile comparison)
+http_timeout_s = 25            # timeout for OSV / NVD / KEV / registries
+metadata_budget_s = 120        # registry metadata look-ups per scan (results are cached for 30 days)
+scan_cache_ttl_s = 86400       # reuse a stored scan of the same commit for at most this long
+keep_scans_per_repo = 20       # older scans (and their artifacts) are pruned
+cache_max_age_days = 120       # cache rows older than this are purged at scan start
+# syft_bin = "C:/tools/syft.exe"
+# trivy_bin = "C:/tools/trivy.exe"
+# data_dir = "./data"

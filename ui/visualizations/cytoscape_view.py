@@ -39,7 +39,8 @@ if (typeof cytoscape === 'undefined') {
       {selector:'.hl', style:{'line-color':'#0969da','target-arrow-color':'#0969da','width':3,'background-color':'#0969da'}},
       {selector:'node.hl[vuln]', style:{'border-color':'#0969da'}}
     ],
-    layout: elements.length > 400 ? {name:'cose', animate:false, nodeRepulsion:8000, idealEdgeLength:60} :
+    layout: elements.some(e => e.position) ? {name:'preset', fit:true, padding:30} :
+            elements.length > 400 ? {name:'cose', animate:false, nodeRepulsion:8000, idealEdgeLength:60} :
             {name:'breadthfirst', directed:true, roots:'node[kind="root"]', spacingFactor:1.15, animate:false}
   });
   cy.on('tap','node', function(evt){
@@ -50,7 +51,7 @@ if (typeof cytoscape === 'undefined') {
     const succ = n.outgoers('node').map(x=>x.data('label')).slice(0,8).join(', ') || '-';
     document.getElementById('info').innerHTML =
       '<b>'+d.label+'</b>' + (d.ecosystem? ' ('+d.ecosystem+')':'') + (d.vuln? ' &mdash; <b style="color:'+(sev[d.vuln]||'#333')+'">vulnerable: '+d.vuln+'</b>':'') +
-      '<br>PURL: '+(d.purl||'-')+'<br>Relationship to root(s): '+(d.rel||'-')+'<br>Parents: '+preds+'<br>Depends on: '+succ+
+      '<br>PURL: '+(d.purl||'-')+(d.license? '<br>License: '+d.license:'')+(d.scope? ' &middot; scope: '+d.scope:'')+(d.resolution==='registry-resolved'? ' &middot; <i>registry-resolved</i>':'')+'<br>Relationship to root(s): '+(d.rel||'-')+'<br>Parents: '+preds+'<br>Depends on: '+succ+
       '<br><i>Highlighted: all ancestors back to the service root(s).</i>';
   });
 }

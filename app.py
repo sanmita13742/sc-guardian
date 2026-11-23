@@ -21,7 +21,7 @@ if _missing:
     st.markdown("or run `run.bat` (Windows) / `./run.sh`. Alternatively: `python -m pip install -r requirements.txt` in the current environment.")
     st.stop()
 
-from ui.pages import (agents_page, graph_page, reports_page, risk_page,
+from ui.pages import (agents_page, graph_page, health_page, reports_page, risk_page,
                       sbom_page, scan_page, suspicious_page, vulns_page)
 from ui.state import get_active_scan, list_recent_scans, load_scan_from_db
 from ui.theme import status_pill_html
@@ -59,6 +59,7 @@ NAVIGATION_PAGES = {
     "Operations": [
         st.Page(agents_page.render, title="Agent Activity", icon="🤖", url_path="agents"),
         st.Page(reports_page.render, title="Reports & Downloads", icon="📄", url_path="reports"),
+        st.Page(health_page.render, title="Settings & Health", icon="⚙️", url_path="health"),
     ],
 }
 

@@ -1,4 +1,4 @@
-"""Runtime configuration. All secrets come from environment variables only."""
+"""Runtime configuration (layered: env > .env > scanner.toml > defaults; see config/loader.py). Secrets come from environment variables only."""
 from __future__ import annotations
 
 import os
@@ -56,9 +56,18 @@ class Settings:
     workspace_max_age_s: int = 3600  # orphaned clone workspaces older than this are removed at start
     keep_scans_per_repo: int = 20
 
+    # cache bounds
+    cache_max_rows: int = 2_000_000
+    cache_max_age_days: int = 120
+
     # graph
     max_paths_per_target: int = 25
     max_path_depth: int = 40
+
+    # filled by config.loader.apply(): where each value came from and what was wrong with the configuration
+    sources: dict = field(default_factory=dict, repr=False)
+    problems: list = field(default_factory=list, repr=False)
+    config_file: str | None = field(default=None, repr=False)
 
     @property
     def db_path(self) -> Path:
@@ -66,7 +75,8 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    s = Settings()
+    from config.loader import apply
+    s = apply(Settings())
     s.data_dir.mkdir(parents=True, exist_ok=True)
     s.workspace_dir.mkdir(parents=True, exist_ok=True)
     for sub in ("sbom", "scans", "reports", "graphs"):

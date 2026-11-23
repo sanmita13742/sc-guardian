@@ -8,6 +8,7 @@ from graph.dependency_tracer import trace_component
 from graph.graph_builder import roots_of
 from graph.graph_exporter import graph_from_json, subgraph_for, to_cytoscape
 from graph.impact_analyzer import impact_of
+from graph.tree_view import build_reverse_tree, build_tree, graph_stats, layered_positions, tree_html, vulnerable_ancestors
 from ui.components.common import df, download_json, page_header, require_result
 from ui.visualizations.cytoscape_view import render_cytoscape
 
@@ -93,12 +94,60 @@ def render() -> None:
     c[4].metric("Vuln Transitive", len({n for n in vmap if n in trans_nodes}))
     c[5].metric("Total Edges", g.number_of_edges())
 
-    tab_graph, tab_alert, tab_src, tab_inspect, tab_tables = st.tabs(["Graph View", "Transitive Alerts", "Source Packages", "Package Tracer", "Tables"])
+    info = {}
+    for cmp_ in r.get("components", []):
+        info[cmp_["bom_ref"]] = {"scope": cmp_.get("scope"), "license": ", ".join(cmp_.get("licenses") or []), "install_script": cmp_.get("install_script"),
+                                 "resolution": cmp_.get("resolution"), "deprecated": cmp_.get("deprecated"), "integrity": (cmp_.get("integrity") or {}).get("status")}
+
+    tab_tree, tab_graph, tab_alert, tab_src, tab_inspect, tab_tables = st.tabs(["Dependency Tree", "Graph View", "Transitive Alerts", "Source Packages", "Package Tracer", "Tables"])
+
+    with tab_tree:
+        stats = graph_stats(g, vmap)
+        s1, s2 = st.columns([1, 1])
+        with s1:
+            st.markdown("**How deep does the dependency chain go?**")
+            st.caption("Packages per depth (shortest distance from the service root: 1 = direct, 2+ = transitive)")
+            st.bar_chart({f"depth {k}": v for k, v in stats["depth_histogram"].items()})
+            if stats["vulnerable_by_depth"]:
+                st.caption("Vulnerable packages per depth: " + ", ".join(f"depth {k}: {v}" for k, v in stats["vulnerable_by_depth"].items()))
+        with s2:
+            st.markdown("**Longest chain** (" + str(max(len(stats["longest_chain"]) - 1, 0)) + " hops)")
+            st.code(" -> ".join(stats["longest_chain"][:14]) + (" -> ..." if len(stats["longest_chain"]) > 14 else ""), language="text")
+            if stats["most_shared"]:
+                st.markdown("**Most shared** (many parents; upgrading one affects them all)")
+                df([{"Package": n, "Parents": k} for n, k in stats["most_shared"][:6]], height="content")
+            if stats["has_cycles"]:
+                st.caption("The graph contains dependency cycles; each package is expanded once.")
+
+        mode = st.radio("Direction", ["Top-down: what a service brings in", "Bottom-up: who pulls a package in"], horizontal=True, key="tree_dir")
+        if mode.startswith("Top"):
+            c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+            root = c1.selectbox("Service root", roots, format_func=lambda n: labels[n], key="tree_root")
+            depth = c2.slider("Max depth", 1, 15, 6, key="tree_depth")
+            only_vuln = c3.checkbox("Only vulnerable branches", False, key="tree_vuln")
+            hide_dev = c4.checkbox("Hide dev deps", False, key="tree_dev")
+            only = vulnerable_ancestors(g, vmap) | {root} if only_vuln else None
+            t = build_tree(g, root, vmap, info, max_depth=depth, only=only, hide_dev=hide_dev)
+            top = t["tree"]
+            st.caption(f"{top['descendants']} unique packages below this root · {top['vuln_below']} vulnerable · showing {t['shown']} rows"
+                       + (" · output truncated, narrow with the filters" if t["truncated"] else "") + " · '↪ shown above' marks a package already expanded elsewhere")
+            st.html(tree_html(top, open_levels=1))
+        else:
+            q = st.text_input("Find package", placeholder="e.g. minimist", key="tree_q")
+            pool = [n for n in comps if (q.lower() in labels[n].lower())][:300] if q else sorted(vmap, key=lambda n: -SEV_RANK.get(vmap[n], 0))[:300] or comps[:300]
+            if pool:
+                pick = st.selectbox("Package", pool, format_func=lambda n: labels[n], key="tree_pick")
+                rt_ = build_reverse_tree(g, pick, vmap, info)
+                st.caption(f"{rt_['tree']['descendants']} package(s)/roots above it. Read upward: each level is a package that depends on the one beneath.")
+                st.html(tree_html(rt_["tree"], open_levels=6, reverse=True))
+            else:
+                st.info("No packages match.")
 
     with tab_graph:
         ctrl1, ctrl2 = st.columns([3, 1])
         mode = ctrl1.radio("Perspective", ["Direct only", "Transitive only", "Vulnerability paths", "Service subgraph", "Component neighborhood"], horizontal=True)
         max_nodes = ctrl2.slider("Max nodes", 30, 500, 200, 10)
+        layered = st.checkbox("Layered layout (columns = depth from the root)", True, help="Left to right: service root, direct dependencies, then each transitive level.")
 
         sub = None
         if mode.startswith("Direct"):
@@ -135,7 +184,7 @@ def render() -> None:
                 sub = subgraph_for(g, "neighborhood", focus=[pick], depth=2, max_nodes=max_nodes)
 
         if sub is not None and len(sub):
-            render_cytoscape(to_cytoscape(sub, vmap, rel), 500)
+            render_cytoscape(to_cytoscape(sub, vmap, rel, positions=layered_positions(g, set(sub.nodes)) if layered else None, info=info), 500)
 
     with tab_alert:
         rows = []
