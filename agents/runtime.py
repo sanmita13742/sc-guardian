@@ -23,6 +23,7 @@ STEPS: list[tuple[str, str, str]] = [
     ("sbom_generate", "SBOM Agent", "Generate the CycloneDX SBOM (Syft, Trivy or built-in rule engine)"),
     ("sbom_validate", "SBOM Agent", "Validate the SBOM"),
     ("quality", "SBOM Agent", "Assess SBOM quality and completeness"),
+    ("metadata", "SBOM Agent", "Fuse metadata (lockfile + scanner + registries) and verify integrity"),
     ("graph", "Graph Agent", "Build the dependency graph"),
     ("osv", "Vulnerability Agent", "Query OSV and validate affected version ranges"),
     ("enrich", "Vulnerability Agent", "Enrich with NVD (CVSS) and CISA KEV"),

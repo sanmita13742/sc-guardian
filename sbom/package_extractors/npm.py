@@ -26,6 +26,33 @@ def _manifest_deps(package_json_text: Optional[str]) -> tuple[Optional[set[str]]
     return prod | dev, dev - prod
 
 
+def _npm_license(v) -> Optional[str]:
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        return v.get("type")
+    if isinstance(v, list):
+        parts = [_npm_license(x) for x in v if x]
+        return " OR ".join(p for p in parts if p) or None
+    return None
+
+
+def _npm_meta(meta: dict) -> dict:
+    """What package-lock v2/v3 records about a package besides its version (only keys that are present)."""
+    m: dict = {}
+    for k in ("optional", "peer", "devOptional", "inBundle"):
+        if meta.get(k):
+            m[k] = True
+    if meta.get("hasInstallScript"):
+        m["install_script"] = True
+    if meta.get("deprecated"):
+        m["deprecated"] = str(meta["deprecated"])[:200]
+    for k in ("engines", "os", "cpu"):
+        if meta.get(k):
+            m[k] = meta[k]
+    return m
+
+
 def _mk(name, version, lockfile, service_dir, **kw) -> LockDependency:
     return LockDependency(name=name, version=version, ecosystem=ECO, purl=make_purl(ECO, name, version),
                           lockfile=lockfile, service_dir=service_dir, **kw)
@@ -58,6 +85,7 @@ def parse_package_lock(text: str, lockfile: str, service_dir: str, package_json:
                 requires=sorted(set((meta.get("dependencies") or {})) | set((meta.get("optionalDependencies") or {}))),
                 record=f"packages[{key}]", integrity=meta.get("integrity"), resolved=resolved,
                 source_type=classify_source(resolved) if resolved else ("path" if meta.get("link") else "unknown"),
+                license=_npm_license(meta.get("license")), meta=_npm_meta(meta),
             ))
         return out
     deps = data.get("dependencies")  # lockfileVersion 1
@@ -76,6 +104,7 @@ def parse_package_lock(text: str, lockfile: str, service_dir: str, package_json:
                 requires=sorted((meta.get("requires") or {}).keys()),
                 record=f"dependencies[{path}{name}]", integrity=meta.get("integrity"), resolved=resolved,
                 source_type=classify_source(resolved) if resolved else classify_source(str(version)),
+                meta=({"optional": True} if meta.get("optional") else {}),
             ))
             if meta.get("dependencies"):
                 walk(meta["dependencies"], False, f"{path}{name}>")
@@ -140,7 +169,8 @@ def parse_yarn_lock(text: str, lockfile: str, service_dir: str, package_json: Op
                        dev=(name in dev_only) if direct_names is not None and name in dev_only else None,
                        requires=sorted(set(rq)), record=f"entry[{first}]",
                        integrity=meta.get("integrity") or meta.get("checksum"), resolved=resolved,
-                       source_type=classify_source(resolved) if resolved else "unknown"))
+                       source_type=classify_source(resolved) if resolved else "unknown",
+                       meta={k: v for k, v in (("link_type", meta.get("linkType")), ("language", meta.get("languageName"))) if v}))
     return out
 
 
@@ -168,6 +198,9 @@ def parse_pnpm_lock(text: str, lockfile: str, service_dir: str, package_json: Op
         res = (meta.get("resolution") or {})
         out.append(_mk(name, version, lockfile, service_dir, direct=name in direct_names, requires=requires,
                        dev=True if meta.get("dev") else None, record=f"packages[{key}]",
+                       meta={k: v for k, v in (("optional", True if meta.get("optional") else None), ("install_script", True if meta.get("requiresBuild") else None),
+                                                ("deprecated", str(meta["deprecated"])[:200] if meta.get("deprecated") else None), ("engines", meta.get("engines")),
+                                                ("cpu", meta.get("cpu")), ("os", meta.get("os"))) if v},
                        integrity=res.get("integrity"), resolved=res.get("tarball") or res.get("repo"),
                        source_type="git" if res.get("type") == "git" else (classify_source(res.get("tarball")) if res.get("tarball") else "registry")))
     return out

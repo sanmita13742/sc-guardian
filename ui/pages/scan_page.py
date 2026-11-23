@@ -27,7 +27,7 @@ def render() -> None:
             use_nvd = o1.checkbox("NVD CVSS enrichment", True)
             use_kev = o1.checkbox("CISA KEV known exploited", True)
             registry = o2.checkbox("Typosquatting checks", True)
-            enrich = o2.checkbox("Enrich missing metadata", False)
+            enrich = o2.checkbox("Fill missing metadata from registries", True, help="deps.dev, npm, PyPI, crates.io, Maven Central: licenses, hashes, links; also verifies lockfile digests. Cached.")
             reuse = o3.checkbox("Reuse cached scan", True)
             keep = o3.checkbox("Keep clone workspace", False)
             llm = o3.checkbox("LLM explanations", False, disabled=not s.llm_api_key)
@@ -41,7 +41,7 @@ def render() -> None:
     if go:
         _run(url, ref, ScanOptions(
             url=url, ref=ref or None, use_nvd=use_nvd, use_kev=use_kev,
-            registry_checks=registry, enrich_metadata=enrich,
+            registry_checks=registry, metadata_registry=enrich,
             lockfile_commits=int(commits), baseline=baseline or None,
             reuse_cached=reuse, use_llm=llm, keep_workspace=keep, sbom_scanner=sbom_scanner,
         ))

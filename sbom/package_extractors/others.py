@@ -114,6 +114,10 @@ def parse_composer_lock(text: str, lockfile: str, service_dir: str, composer_jso
                            requires=sorted(k.lower() for k in (p.get("require") or {}) if "/" in k),
                            record=f"{section}[{name}]", integrity=dist.get("shasum") or None,
                            resolved=dist.get("url") or src.get("url"),
+                           license=" OR ".join(p.get("license") or []) or None,
+                           meta={k: v for k, v in (("homepage", p.get("homepage")), ("description", p.get("description")), ("published", p.get("time")),
+                                                    ("authors", [a.get("name") for a in p.get("authors", []) if a.get("name")]),
+                                                    ("vcs", src.get("url")), ("vcs_ref", src.get("reference")), ("abandoned", p.get("abandoned") or None)) if v},
                            source_type=classify_source(dist.get("url") or src.get("url"))))
     return out
 
@@ -135,7 +139,7 @@ def parse_nuget_lock(text: str, lockfile: str, service_dir: str, **_) -> list[Lo
                 continue
             out[key] = _mk("NuGet", name, ver, lockfile, service_dir, direct=is_direct,
                            requires=sorted((meta.get("dependencies") or {}).keys()), record=f"{fw}[{name}]",
-                           integrity=meta.get("contentHash"), source_type="registry")
+                           integrity=meta.get("contentHash"), source_type="registry", meta={"hash_alg": "sha512"} if meta.get("contentHash") else {})
     return list(out.values())
 
 

@@ -44,7 +44,6 @@ class ScanOptions:
     ref: Optional[str] = None
     use_nvd: bool = True
     use_kev: bool = True
-    enrich_metadata: bool = False
     registry_checks: bool = True
     lockfile_commits: int = 1
     baseline: Optional[str] = None
@@ -53,9 +52,10 @@ class ScanOptions:
     use_llm: bool = False
     rules_path: Optional[str] = None
     sbom_scanner: str = "auto"  # auto | syft | trivy | builtin
+    metadata_registry: bool = True  # fill missing metadata / verify digests against package registries
 
 
-_FP_FIELDS = ("use_nvd", "use_kev", "enrich_metadata", "registry_checks", "lockfile_commits", "baseline", "use_llm", "rules_path")
+_FP_FIELDS = ("use_nvd", "use_kev", "metadata_registry", "registry_checks", "lockfile_commits", "baseline", "use_llm", "rules_path")
 
 
 def options_fingerprint(o: "ScanOptions") -> str:

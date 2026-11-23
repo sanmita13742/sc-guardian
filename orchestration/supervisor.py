@@ -59,6 +59,7 @@ def assemble(st: ScanState, rt: Runtime, workspace: Optional[Path]) -> None:
     res["lockfile_dependencies"] = [d.model_dump() for d in st.lock_deps]
     res["lockfile_errors"] = st.lock_errors
     res["sbom_tool"] = st.sbom_tool
+    res["metadata_fusion"] = st.fusion or None
     res["sbom_files"] = st.sbom_files or ([{"label": f"{st.inventory_source} (raw scanner output)", "path": st.sbom_path}] if st.sbom_path else [])
     res["syft"] = st.syft.to_dict() if (st.syft is not None and st.inventory_source == "syft") else None  # kept for stored scans / API compatibility
     res["inventory_source"], res["sbom_path"] = st.inventory_source, st.sbom_path

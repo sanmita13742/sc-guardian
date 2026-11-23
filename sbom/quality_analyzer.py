@@ -21,6 +21,7 @@ def key_of(eco: str, name: str, version: Optional[str]) -> tuple[str, str, str]:
 def analyze_quality(components: list[Component], sbom_doc: dict, lock_deps: list[LockDependency],
                     inspection: InspectionResult, syft_ok: bool = True, lock_errors: list[dict] | None = None) -> dict:
     lock_errors = lock_errors or []
+    lock_deps = [d for d in lock_deps if not d.derived]  # registry-resolved records are not repository evidence
     limitations: list[str] = []
     pkgs = [c for c in components if c.type != "file" and not c.is_self]
 

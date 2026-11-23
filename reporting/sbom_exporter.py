@@ -1,4 +1,4 @@
-"""SBOM artifacts: the original Syft CycloneDX file is preserved byte-for-byte; enrichment is a separate derived file."""
+"""SBOM artifact helpers: raw scanner files are preserved byte-for-byte; the fused document is a separate file."""
 from __future__ import annotations
 
 import json
@@ -13,14 +13,6 @@ def preserve_original(src: str | Path, dest_dir: Path, name: str) -> Path:
     if Path(src).resolve() != dest.resolve():
         shutil.copyfile(src, dest)
     return dest
-
-
-def derived_enriched_sbom(original: dict, components: list[dict]) -> dict:
-    """Overlay of enriched fields (license/supplier) with provenance. The original document is NOT modified."""
-    enriched = {c["bom_ref"]: c["enriched"] for c in components if c.get("enriched")}
-    return {"derivedFrom": "original Syft CycloneDX SBOM (unmodified copy stored alongside)",
-            "note": "Only fields that were empty in the original were filled; each entry records its source URL.",
-            "enrichedComponents": [{"bom-ref": r, "fields": f} for r, f in enriched.items()]}
 
 
 def read_text(path: Optional[str]) -> Optional[str]:

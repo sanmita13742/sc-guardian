@@ -24,13 +24,11 @@ from graph.graph_builder import build_graph
 from graph.graph_exporter import graph_to_json
 from graph.graph_validator import validate_graph
 from reporting import json_exporter, report_generator
-from reporting.sbom_exporter import derived_enriched_sbom
 from risk_analysis.evidence_collector import collect_lockfile_evidence, collect_typosquat_evidence, collect_vulnerability_evidence
 from risk_analysis.evidence_normalizer import normalize_bundle
 from risk_analysis.finding_correlator import correlate_findings, summarize_by_root
 from sbom.cyclonedx_validator import load_sbom, normalize_components, validate_cyclonedx
 from sbom.lockfile_analyzer import analyze_repository, supported_files
-from sbom.metadata_enricher import enrich_components
 from sbom.package_extractors.common import parse_purl
 from sbom.quality_analyzer import analyze_quality
 from sbom.scanner_engine import SCANNER_LABELS, available_scanners, generate_sbom
@@ -62,6 +60,8 @@ class ScanState:
     lock_errors: list[dict] = field(default_factory=list)
     syft: Any = None  # result of the external scanner that produced the SBOM (Syft or Trivy), if any
     sbom_tool: dict = field(default_factory=dict)
+    fused_path: Optional[str] = None
+    fusion: dict = field(default_factory=dict)  # metadata fusion report
     sbom_files: list = field(default_factory=list)  # [{label, path}] files shown in the SBOM viewer
     sbom_doc: dict = field(default_factory=dict)
     sbom_path: Optional[str] = None
@@ -183,9 +183,6 @@ class SBOMAgent:
                 rt.fail("sbom_validate", "SBOM failed validation: " + "; ".join(v["errors"][:3]))
                 return
             rt.observe("sbom_validate", f"Valid CycloneDX {v['stats']['spec_version']}: {v['stats']['components']} components, {v['stats']['dependencies']} dependency records, {len(v['warnings'])} warnings")
-            if st.options.enrich_metadata and st.components:
-                rt.progress("sbom_validate", "Enriching missing license/supplier metadata from npm/PyPI (provenance recorded)")
-                st.result["enrichment"] = enrich_components(st.components, st.ctx.http, st.ctx.cache)
             b["message"] = "valid"
 
     @staticmethod
@@ -228,6 +225,72 @@ class SBOMAgent:
         st.quality = analyze_quality(st.components, st.sbom_doc, st.lock_deps, st.insp, syft_ok=True, lock_errors=st.lock_errors)
         rt.observe("quality", f"Re-assessed inventory: {st.quality['inventory_status']}")
         return True
+
+    def fuse_metadata(self, st: ScanState, rt: Runtime) -> None:
+        """Fill every metadata field from the most trustworthy source, record provenance, verify digests, write the fused CycloneDX file."""
+        s, o = st.ctx.s, st.options
+        if not st.sbom_doc:
+            rt.skip("metadata", "no SBOM to enrich")
+            return
+        with rt.step("metadata", "Fusing lockfile, scanner and registry metadata (field-level provenance)") as b:
+            from sbom.fusion.engine import fuse
+            from sbom.fusion.resolver import resolve
+            from sbom.fusion.writer import write_fused
+            if o.metadata_registry:
+                res_ = resolve(st.lock_deps, st.ctx.http, st.ctx.cache, budget_s=min(90.0, s.metadata_budget_s))
+                rs = res_["stats"]
+                st.result["registry_resolution"] = rs
+                if rs["candidates"]:
+                    rt.decide("metadata", f"Resolve transitive dependencies of {rs['candidates']} pinned direct dependenc(ies) via deps.dev", reason="These services have no lockfile for that ecosystem, so the transitive closure "
+                              "is otherwise unknown; resolution is done by the registry, nothing from the repository is executed.", agent="Supervisor")
+                    rt.observe("metadata", f"Registry resolution: {rs['resolved']} resolved, {rs['not_found']} not found, {rs['unavailable']} unavailable -> {rs['derived_packages']} additional transitive package(s)")
+                if res_["derived"]:
+                    from sbom.builtin_generator import generate_cyclonedx
+                    from sbom.merge import merge_inventories
+                    ddoc, _ = generate_cyclonedx(res_["derived"], st.info.name, st.info.commit_sha)
+                    dcomps = normalize_components(ddoc, st.repo_dir, st.service_dirs, tool="builtin")
+                    for c_ in dcomps:
+                        c_.sources, c_.resolution = ["registry-resolver"], "registry-resolved"
+                    st.lock_deps.extend(res_["derived"])
+                    st.sbom_doc, st.components, mstats = merge_inventories(st.sbom_doc, st.components, ddoc, dcomps)
+                    st.result["limitations"].append(f"{rs['derived_packages']} transitive package(s) were resolved by the deps.dev registry for manifest-only services (no lockfile): each direct dependency was "
+                                                    "resolved on its own, so the project's real version mediation may differ. They are labelled 'registry-resolved'.")
+            rep = fuse(st.components, st.lock_deps, st.ctx.http if o.metadata_registry else None, st.ctx.cache, registry=bool(o.metadata_registry),
+                       budget_s=s.metadata_budget_s, on_progress=lambda m: rt.progress("metadata", m))
+            st.fusion = rep
+            cov = rep["coverage"]
+            rt.observe("metadata", "Coverage (scanner -> after fusion): " + ", ".join(f"{f} {c['before']}->{c['after']}" for f, c in cov.items()) + f" of {rep['components']} components")
+            reg = rep.get("registry_phase", {})
+            if reg.get("skipped"):
+                rt.decide("metadata", "Skip registry look-ups", reason="Disabled in the scan options; only lockfile-recorded metadata was used.", agent="Supervisor")
+            else:
+                rt.observe("metadata", f"Registries: {reg.get('fetched', 0)} fetched, {reg.get('from_cache', 0)} from cache, {reg.get('not_found', 0)} not found, {reg.get('unavailable', 0)} unavailable"
+                           + (f", {reg['skipped_budget']} skipped (time budget)" if reg.get("skipped_budget") else ""))
+                if reg.get("hosts_tripped"):
+                    rt.warn("metadata", "Registry host(s) unreachable, skipped after repeated failures: " + ", ".join(reg["hosts_tripped"]))
+                    st.result["limitations"].append("Some registries were unreachable; metadata for those packages may be incomplete (see Metadata tab for per-field reasons).")
+                if reg.get("unsupported_ecosystems"):
+                    rt.observe("metadata", "No registry client for: " + ", ".join(reg["unsupported_ecosystems"]) + " (only lockfile/scanner metadata available)")
+            integ = rep["integrity"]
+            rt.observe("metadata", "Integrity: " + ", ".join(f"{k} {v}" for k, v in sorted(integ.items())))
+            if rep["integrity_mismatches"]:
+                rt.warn("metadata", f"{len(rep['integrity_mismatches'])} lockfile digest(s) differ from the registry's digest for the same version - possible tampered lockfile or republished package")
+                rt.decide("metadata", "Surface integrity mismatches prominently", reason="A pinned digest that does not match the registry is a strong supply-chain signal.", agent="Supervisor")
+            if rep["install_script_packages"]:
+                rt.observe("metadata", f"{len(rep['install_script_packages'])} package(s) run install-time scripts")
+            out_dir = s.artifacts_dir / "sbom"
+            fused = write_fused(st.sbom_doc, st.components, rep, st.inventory_source)
+            path = out_dir / f"{st.prefix}.fused.cdx.json"
+            path.write_text(json.dumps(fused, indent=2), encoding="utf-8")
+            v = validate_cyclonedx(fused)
+            for e in v["errors"]:
+                rt.warn("metadata", f"Fused document validation error: {e}")
+            raw = st.sbom_files or [{"label": f"{st.inventory_source} (raw scanner output)", "path": st.sbom_path}]
+            st.sbom_files = [{"label": "FUSED CycloneDX (scanner + lockfile + registries, with provenance)", "path": str(path)}] + raw
+            st.fused_path, st.sbom_doc, st.sbom_path = str(path), fused, str(path)  # the fused file is the primary SBOM; raw files stay in sbom_files
+            st.result["sbom"] = {**st.result.get("sbom", {}), "fused_validation": v, "fused_path": str(path)}
+            st.quality = analyze_quality(st.components, st.sbom_doc, st.lock_deps, st.insp, syft_ok=True, lock_errors=st.lock_errors)
+            b["message"] = f"avg completeness {rep['average_completeness']:.0%}; integrity: " + ", ".join(f"{k} {v}" for k, v in sorted(integ.items()))
 
     def quality(self, st: ScanState, rt: Runtime) -> None:
         with rt.step("quality") as b:
@@ -489,10 +552,6 @@ class AnalystAgent:
         s = st.ctx.s
         res = st.result
         with rt.step("export") as b:
-            if res.get("enrichment") and st.sbom_path:
-                p = s.artifacts_dir / "sbom" / f"{st.prefix}.enrichment.json"
-                p.write_text(json_exporter.dumps(derived_enriched_sbom(st.sbom_doc, res["components"])), encoding="utf-8")
-                res["enrichment_path"] = str(p)
             paths = json_exporter.write_all(res, s.artifacts_dir / "scans", st.prefix)
             (s.artifacts_dir / "graphs" / f"{st.prefix}.json").write_text(json_exporter.dumps(json_exporter.graph_export(res)), encoding="utf-8")
             md = report_generator.generate_markdown(res)

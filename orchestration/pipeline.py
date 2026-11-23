@@ -1,7 +1,7 @@
 """LangGraph state graph that runs the agent pipeline.
 
   discover -> classify -> plan -> lockfiles -> sbom_generate -> sbom_validate -> sbom_quality
-        -> (conditional) sbom_second_pass -> graph
+        -> (conditional) sbom_second_pass -> sbom_metadata (fusion) -> graph
   graph -> [ vulnerability -> verification ]  ||  [ typosquat -> lockfile_history ]     (parallel branches)
         -> risk (joins both) -> explain -> assemble -> summary -> export -> finalize
 
@@ -73,6 +73,7 @@ _register("sbom_generate", lambda st, rt, ws: sbom.generate(st, rt), ("sbom_gene
 _register("sbom_validate", lambda st, rt, ws: sbom.validate(st, rt), ("sbom_validate",))
 _register("sbom_quality", lambda st, rt, ws: sbom.quality(st, rt), ("quality",))
 _register("sbom_second_pass", lambda st, rt, ws: sbom.second_pass(st, rt), ("quality",))
+_register("sbom_metadata", lambda st, rt, ws: sbom.fuse_metadata(st, rt), ("metadata",))
 _register("graph", lambda st, rt, ws: graph_agent.build(st, rt), ("graph",))
 _register("vulnerability", lambda st, rt, ws: vuln.run(st, rt), ("osv", "enrich", "trace"))
 _register("verification", lambda st, rt, ws: ver.run(st, rt), ("verify",))
@@ -125,10 +126,11 @@ def build_graph() -> StateGraph:
         g.add_edge(a, b)
 
     def route_quality(state: GraphState) -> str:
-        return "sbom_second_pass" if SBOMAgent.wants_second_pass(_REG[state["scan_id"]][0]) else "graph"
+        return "sbom_second_pass" if SBOMAgent.wants_second_pass(_REG[state["scan_id"]][0]) else "sbom_metadata"
 
-    g.add_conditional_edges("sbom_quality", route_quality, {"sbom_second_pass": "sbom_second_pass", "graph": "graph"})
-    g.add_edge("sbom_second_pass", "graph")
+    g.add_conditional_edges("sbom_quality", route_quality, {"sbom_second_pass": "sbom_second_pass", "sbom_metadata": "sbom_metadata"})
+    g.add_edge("sbom_second_pass", "sbom_metadata")
+    g.add_edge("sbom_metadata", "graph")
     g.add_edge("graph", "vulnerability")  # parallel branch A
     g.add_edge("graph", "typosquat")  # parallel branch B
     g.add_edge("vulnerability", "verification")

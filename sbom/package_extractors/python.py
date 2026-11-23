@@ -49,7 +49,7 @@ def parse_requirements(text: str, lockfile: str, service_dir: str, **_) -> list[
         pm = re.match(r"^(?:==|===)\s*([A-Za-z0-9.!+_*-]+)\s*$", rest.split(",")[0].strip()) if "," not in rest else None
         version = pm.group(1) if pm and "*" not in pm.group(1) else None
         out.append(_mk(name, version, lockfile, service_dir, direct=None, record=f"line {i}",
-                       integrity=hashes[0] if hashes else None, source_type="registry"))
+                       integrity=hashes[0] if hashes else None, source_type="registry", meta={"hashes": hashes} if hashes else {}))
     return out
 
 
@@ -89,6 +89,9 @@ def parse_poetry_lock(text: str, lockfile: str, service_dir: str, pyproject: Opt
                        dev=True if p.get("category") == "dev" or (p.get("groups") and "main" not in p.get("groups")) else None,
                        requires=sorted(normalize_name(ECO, k) for k in (p.get("dependencies") or {})),
                        record=f"package[{name}]", resolved=src.get("url") or src.get("reference"),
+                       integrity=((p.get("files") or [{}])[0].get("hash") if p.get("files") else None),
+                       meta={k: v for k, v in (("hashes", [f.get("hash") for f in p.get("files", []) if f.get("hash")]), ("description", p.get("description")),
+                                                ("optional", True if p.get("optional") else None)) if v},
                        source_type=("git" if src.get("type") == "git" else "path" if src.get("type") in ("directory", "file") else "registry")))
     return out
 
@@ -118,7 +121,9 @@ def parse_uv_lock(text: str, lockfile: str, service_dir: str, **_) -> list[LockD
         stype = "git" if "git" in src else "path" if "directory" in src or "path" in src else "registry" if "registry" in src else "unknown"
         out.append(_mk(name, p.get("version"), lockfile, service_dir, direct=(nn in direct) if roots else None,
                        requires=sorted(normalize_name(ECO, d.get("name", "")) for d in (p.get("dependencies") or [])),
-                       record=f"package[{name}]", integrity=sdist.get("hash"), resolved=src.get("registry") or src.get("git"),
+                       record=f"package[{name}]", integrity=sdist.get("hash") or ((p.get("wheels") or [{}])[0].get("hash") if p.get("wheels") else None),
+                       resolved=src.get("registry") or src.get("git"),
+                       meta={"hashes": [x for x in [sdist.get("hash")] + [w.get("hash") for w in p.get("wheels", [])] if x]},
                        source_type=stype))
     return out
 
@@ -132,6 +137,7 @@ def parse_pipfile_lock(text: str, lockfile: str, service_dir: str, **_) -> list[
             hashes = meta.get("hashes") or []
             out.append(_mk(name, ver, lockfile, service_dir, direct=None, dev=True if dev else None,
                            record=f"{section}[{name}]", integrity=hashes[0] if hashes else None,
+                           meta={"hashes": hashes} if hashes else {},
                            resolved=meta.get("git") or meta.get("file") or meta.get("path"),
                            source_type="git" if meta.get("git") else "path" if (meta.get("file") or meta.get("path")) else "registry"))
     return out
