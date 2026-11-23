@@ -22,7 +22,7 @@ def analyze_quality(components: list[Component], sbom_doc: dict, lock_deps: list
                     inspection: InspectionResult, syft_ok: bool = True, lock_errors: list[dict] | None = None) -> dict:
     lock_errors = lock_errors or []
     limitations: list[str] = []
-    pkgs = [c for c in components if c.type != "file"]
+    pkgs = [c for c in components if c.type != "file" and not c.is_self]
 
     # ---- metadata gaps
     miss = {"version": [], "purl": [], "license": [], "supplier": [], "hashes": []}

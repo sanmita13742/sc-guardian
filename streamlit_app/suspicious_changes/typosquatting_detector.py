@@ -165,7 +165,7 @@ def detect_typosquatting(components: list[Component], http: HttpClient | None = 
     dependency_info = dependency_info or {}
     groups: dict[tuple[str, str], list[Component]] = defaultdict(list)
     for c in components:
-        if c.type != "file" and c.ecosystem in POPULAR and c.name:
+        if c.type != "file" and not c.is_self and c.ecosystem in POPULAR and c.name:
             groups[(c.ecosystem, c.name)].append(c)
     popular_sets = {e: {normalize_name(e, n) for n in names} for e, names in POPULAR.items()}
     stats = {"unique_packages_checked": len(groups), "reference_version": REFERENCE_VERSION, "candidates": 0,

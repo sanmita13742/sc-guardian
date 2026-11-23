@@ -195,6 +195,45 @@ def inspect_repository(root: Path, settings: Settings | None = None) -> Inspecti
     return res
 
 
+def own_package_identities(root: Path, inspection: InspectionResult) -> dict[str, set[tuple[str, str | None]]]:
+    """{service_dir: {(name, version)}} for the application's *own* packages, read from its manifests.
+
+    Syft reports the project itself as a component (e.g. from the lockfile root entry). It is the application, not a
+    dependency, so it must not be matched against vulnerability databases or shown as a source package.
+    """
+    out: dict[str, set[tuple[str, str | None]]] = {}
+    for mf in inspection.manifests:
+        if mf.kind != "manifest":
+            continue
+        text = safe_read_text(root, mf.path)
+        if text is None:
+            continue
+        try:
+            if mf.name in ("package.json", "composer.json"):
+                d = json.loads(text)
+                if d.get("name"):
+                    out.setdefault(mf.service_dir, set()).add((str(d["name"]).lower() if mf.name == "composer.json" else str(d["name"]), d.get("version")))
+            elif mf.name == "pyproject.toml":
+                d = tomllib.loads(text)
+                proj = d.get("project") or d.get("tool", {}).get("poetry") or {}
+                if proj.get("name"):
+                    out.setdefault(mf.service_dir, set()).add((re.sub(r"[-_.]+", "-", proj["name"]).lower(), proj.get("version")))
+            elif mf.name == "Cargo.toml":
+                pkg = tomllib.loads(text).get("package") or {}
+                if pkg.get("name"):
+                    out.setdefault(mf.service_dir, set()).add((pkg["name"], pkg.get("version") if isinstance(pkg.get("version"), str) else None))
+            elif mf.name == "pom.xml":
+                import xml.etree.ElementTree as ET
+                root_el = ET.fromstring(re.sub(r"<\?xml[^>]*\?>", "", text, count=1))
+                loc = lambda e: e.tag.split("}")[-1]  # noqa: E731
+                vals = {loc(c): (c.text or "").strip() for c in root_el if loc(c) in ("groupId", "artifactId", "version")}
+                if vals.get("artifactId"):
+                    out.setdefault(mf.service_dir, set()).add((f"{vals.get('groupId', '')}:{vals['artifactId']}", vals.get("version")))
+        except Exception:
+            continue
+    return out
+
+
 def service_for_path(path: str, services: list[str]) -> str:
     """Nearest ancestor service directory for a repo-relative file path ('.' = root)."""
     best, best_len = ".", -1

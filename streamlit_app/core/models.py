@@ -86,4 +86,5 @@ class Component(BaseModel):
     locations: list[str] = Field(default_factory=list)  # repo-relative paths
     service_dir: Optional[str] = None
     found_by: Optional[str] = None
+    is_self: bool = False  # the application's own package (declared by its manifest), not a dependency
     enriched: dict[str, dict[str, str]] = Field(default_factory=dict)  # field -> {value, source}

@@ -17,6 +17,7 @@ from core.models import Component
 from core.repository_inspector import service_for_path
 from sbom.package_extractors.common import parse_purl
 
+SELF_MANIFESTS = {"package.json", "pyproject.toml", "setup.py", "pom.xml", "Cargo.toml", "composer.json", "build.gradle", "build.gradle.kts"}
 SUPPORTED_SPECS = ("1.4", "1.5", "1.6", "1.7")
 
 PROFILE_SCHEMA = {
@@ -143,6 +144,7 @@ def normalize_components(doc: dict, repo_root: Path, service_dirs: list[str]) ->
             svc = service_for_path(locs[0], service_dirs)
         supplier = (c.get("supplier") or {}).get("name") if isinstance(c.get("supplier"), dict) else None
         supplier = supplier or c.get("publisher") or (c.get("author") if isinstance(c.get("author"), str) else None)
+        own = bool(svc is not None and locs and locs[0] in {(f"{svc}/{m}" if svc != "." else m) for m in SELF_MANIFESTS})
         result.append(Component(
             bom_ref=c.get("bom-ref") or f"gen:{c['name']}@{c.get('version', '')}",
             name=(pp["osv_name"] if pp and pp["ecosystem"] in ("npm", "Maven", "Go", "Packagist") else c["name"]),
@@ -150,7 +152,7 @@ def normalize_components(doc: dict, repo_root: Path, service_dirs: list[str]) ->
             ecosystem=pp["ecosystem"] if pp else None, purl_type=pp["type"] if pp else None,
             licenses=_licenses(c), supplier=supplier, cpe=c.get("cpe"),
             hashes=[h for h in c.get("hashes", []) or [] if isinstance(h, dict)],
-            locations=locs, service_dir=svc, found_by=(_prop(c, "syft:package:foundBy") or [None])[0],
+            locations=locs, service_dir=svc, found_by=(_prop(c, "syft:package:foundBy") or [None])[0], is_self=own,
         ))
     return result
 

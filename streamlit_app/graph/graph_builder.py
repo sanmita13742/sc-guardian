@@ -39,8 +39,12 @@ def build_graph(sbom_doc: dict, components: list[Component], lock_deps: list[Loc
 
     # ---- component nodes
     seen: dict[str, Component] = {}
+    self_refs: dict[str, str] = {}
     for c in components:
         if c.type == "file":
+            continue
+        if c.is_self and c.service_dir is not None:
+            self_refs[c.bom_ref] = c.service_dir  # the application itself == its service root
             continue
         if c.bom_ref in seen:
             info["duplicate_refs"].append(c.bom_ref)
@@ -58,17 +62,21 @@ def build_graph(sbom_doc: dict, components: list[Component], lock_deps: list[Loc
             info["malformed"].append(str(d)[:100])
             continue
         parent = d["ref"]
+        if parent in self_refs:
+            parent = root_id(self_refs[parent])
         targets = d.get("dependsOn") or []
         if not isinstance(targets, list):
             info["malformed"].append(f"dependsOn of {parent} is not a list")
             continue
-        if parent not in seen and parent != meta_root:
+        if parent not in seen and parent != meta_root and not parent.startswith(ROOT_PREFIX):
             if targets:
                 info["dangling_refs"].append(parent)
             continue
         for t in targets:
             if not isinstance(t, str):
                 info["malformed"].append(f"non-string dependsOn entry under {parent}")
+                continue
+            if t in self_refs:
                 continue
             if t not in seen:
                 info["dangling_refs"].append(t)
