@@ -85,11 +85,7 @@ def analyze_typosquatting(repo_root: Path) -> List[Dict[str, Any]]:
                         "While frequently an unmaintained fork or legacy wrapper (e.g. bcrypt-nodejs vs native bcrypt), "
                         "such patterns are also leveraged by typosquatters for dependency confusion."
                     ),
-                    "confidence": "MEDIUM",
-                    "recommended_action": (
-                        f"Verify upstream provenance of '{pkg_name}'. If an official, actively maintained "
-                        f"package exists (such as '{popular}'), migrate to the canonical module."
-                    )
+                    "confidence": "MEDIUM"
                 })
                 break
 
@@ -108,8 +104,7 @@ def analyze_typosquatting(repo_root: Path) -> List[Dict[str, Any]]:
                         f"Package '{pkg_name}' is visually and phonetically similar to '{popular}' (edit distance: 1). "
                         "Attackers frequently publish packages with 1-character typos to hijack accidental misspellings."
                     ),
-                    "confidence": "HIGH",
-                    "recommended_action": f"Confirm whether '{pkg_name}' was intentionally chosen or a typo for '{popular}'."
+                    "confidence": "HIGH"
                 })
                 break
             elif dist == 2 and len(popular) >= 6 and abs(len(base_name) - len(popular)) <= 1:
@@ -125,8 +120,7 @@ def analyze_typosquatting(repo_root: Path) -> List[Dict[str, Any]]:
                         f"Package '{pkg_name}' shares high string similarity with '{popular}' (edit distance: 2). "
                         "Recorded as a low-confidence typosquatting heuristic candidate for reviewer awareness."
                     ),
-                    "confidence": "LOW",
-                    "recommended_action": f"Review dependency intent and maintainer authenticity for '{pkg_name}'."
+                    "confidence": "LOW"
                 })
                 break
 

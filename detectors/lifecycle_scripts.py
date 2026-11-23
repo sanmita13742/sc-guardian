@@ -33,32 +33,28 @@ def analyze_lifecycle_scripts(repo_root: Path) -> List[Dict[str, Any]]:
             "SUSP-SCRIPT-DOCKER-LATEST",
             "MEDIUM",
             "Unpinned Docker Execution in npm Script",
-            "npm script invokes 'docker run' using mutable ':latest' image tag instead of an immutable digest.",
-            "Pin the Docker container to a specific SHA256 digest or immutable version tag."
+            "npm script invokes 'docker run' using mutable ':latest' image tag instead of an immutable digest."
         ),
         (
             r"(curl|wget)\s+.*https?://",
             "SUSP-SCRIPT-REMOTE-DOWNLOAD",
             "HIGH",
             "Remote File Download in npm Script",
-            "Script downloads remote executable artifacts directly over HTTP/HTTPS during execution.",
-            "Vendor required binaries or package them within the repository/container build."
+            "Script downloads remote executable artifacts directly over HTTP/HTTPS during execution."
         ),
         (
             r"(bash|sh)\s+-c",
             "SUSP-SCRIPT-SHELL-EXEC",
             "MEDIUM",
             "Explicit Shell Child Process Execution",
-            "Script explicitly spawns an interactive shell process (bash/sh -c) rather than running direct commands.",
-            "Refactor command to execute designated binaries directly without invoking arbitrary subshells."
+            "Script explicitly spawns an interactive shell process (bash/sh -c) rather than running direct commands."
         ),
         (
             r"(base64|Buffer\.from\(.*base64\)|eval\(|String\.fromCharCode)",
             "SUSP-SCRIPT-OBFUSCATION",
             "CRITICAL",
             "Potential Code Obfuscation in Lifecycle Script",
-            "Detected Base64 or eval-based execution pattern frequently associated with dropper payloads.",
-            "Remove obfuscated code and audit the script for unauthorized commands."
+            "Detected Base64 or eval-based execution pattern frequently associated with dropper payloads."
         )
     ]
 
@@ -73,7 +69,7 @@ def analyze_lifecycle_scripts(repo_root: Path) -> List[Dict[str, Any]]:
                 evidence_line = line.strip()
                 break
 
-        for pattern, rule_id, severity, title, explanation, remediation in SUSPICIOUS_PATTERNS:
+        for pattern, rule_id, severity, title, explanation in SUSPICIOUS_PATTERNS:
             if re.search(pattern, script_cmd, re.IGNORECASE):
                 findings.append({
                     "id": f"{rule_id}-{script_name.upper().replace(':', '_')}",
@@ -83,8 +79,7 @@ def analyze_lifecycle_scripts(repo_root: Path) -> List[Dict[str, Any]]:
                     "line_number": line_no,
                     "evidence": evidence_line,
                     "explanation": f"{title} in script '{script_name}': {explanation}",
-                    "confidence": "CONFIRMED",
-                    "recommended_action": remediation
+                    "confidence": "CONFIRMED"
                 })
 
     # 2. Scan package-lock.json packages with install scripts (preinstall / postinstall)
@@ -110,10 +105,7 @@ def analyze_lifecycle_scripts(repo_root: Path) -> List[Dict[str, Any]]:
                         f"Dependency '{pkg_name}@{version}' registers automated install lifecycle hooks "
                         "(preinstall/install/postinstall) that execute arbitrary commands when running 'npm install'."
                     ),
-                    "confidence": "CONFIRMED",
-                    "recommended_action": (
-                        "Audit lifecycle hooks or invoke npm with '--ignore-scripts' in untrusted production builds."
-                    )
+                    "confidence": "CONFIRMED"
                 })
 
     return findings

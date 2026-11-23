@@ -58,8 +58,7 @@ def analyze_dependency_changes(repo_root: Path) -> List[Dict[str, Any]]:
                         "Floating constraints allow automated adoption of upstream breaking or malicious updates "
                         "without manifest review."
                     ),
-                    "confidence": "CONFIRMED",
-                    "recommended_action": f"Pin '{pkg_name}' to a strict, immutable semantic version (e.g. '1.2.3')."
+                    "confidence": "CONFIRMED"
                 }
                 findings.append(finding)
 
@@ -76,8 +75,7 @@ def analyze_dependency_changes(repo_root: Path) -> List[Dict[str, Any]]:
                         f"Package '{pkg_name}' has an unbounded upper range constraint '{constraint}'. "
                         "New major or minor releases can be pulled in unexpectedly."
                     ),
-                    "confidence": "HIGH",
-                    "recommended_action": f"Constrain '{pkg_name}' with a bounded tilde (~) or caret (^) range or exact pin."
+                    "confidence": "HIGH"
                 }
                 findings.append(finding)
 
@@ -102,8 +100,7 @@ def analyze_dependency_changes(repo_root: Path) -> List[Dict[str, Any]]:
                         f"Package '{pkg_name}' is declared in package.json ({sec_name}) but missing from "
                         "top-level package-lock.json packages."
                     ),
-                    "confidence": "HIGH",
-                    "recommended_action": "Run 'npm install' or 'npm package-lock-only' to regenerate lockfile integrity."
+                    "confidence": "HIGH"
                 })
 
     # 3. Git Commit History Analysis for Dependency Changes
@@ -130,8 +127,7 @@ def analyze_dependency_changes(repo_root: Path) -> List[Dict[str, Any]]:
                             f"Git manifest change tracked in commit {commit_sha[:8]} by {author}. "
                             "Verifies provenance and audit trail for dependency changes."
                         ),
-                        "confidence": "CONFIRMED",
-                        "recommended_action": "Verify commit signature and review pull request approvals."
+                        "confidence": "CONFIRMED"
                     })
     except Exception:
         pass

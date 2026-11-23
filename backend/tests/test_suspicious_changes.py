@@ -66,8 +66,7 @@ def test_suspicious_artifact_schema(suspicious_data):
     seen_ids = set()
     required_keys = {
         "id", "category", "severity", "affected_file",
-        "line_number", "evidence", "explanation", "confidence",
-        "recommended_action"
+        "line_number", "evidence", "explanation", "confidence"
     }
 
     for f in findings:
@@ -82,7 +81,6 @@ def test_suspicious_artifact_schema(suspicious_data):
         assert f["confidence"] in ["CONFIRMED", "HIGH", "MEDIUM", "LOW"]
         assert len(f["evidence"].strip()) > 0, f"Finding {fid} has empty evidence"
         assert len(f["explanation"].strip()) > 0, f"Finding {fid} has empty explanation"
-        assert len(f["recommended_action"].strip()) > 0, f"Finding {fid} has empty recommended action"
         assert len(f["affected_file"].strip()) > 0, f"Finding {fid} has empty affected_file"
 
 

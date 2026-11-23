@@ -266,17 +266,6 @@ export default function SuspiciousChangesView({ scanData }) {
                 <span className="text-gray-500 font-semibold text-[11px] block mb-0.5">TECHNICAL EXPLANATION</span>
                 {finding.explanation}
               </div>
-
-              {/* Recommended Action Box */}
-              <div className="bg-emerald-950/15 border border-emerald-800/40 rounded-lg p-3 text-xs text-emerald-300 flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold text-[11px] uppercase tracking-wider block text-emerald-400">
-                    Recommended Remediation Action
-                  </span>
-                  <p className="mt-0.5 text-gray-200">{finding.recommended_action}</p>
-                </div>
-              </div>
             </div>
           ))
         )}

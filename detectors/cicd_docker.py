@@ -40,8 +40,7 @@ def analyze_cicd_and_docker(repo_root: Path) -> List[Dict[str, Any]]:
                             "cryptographic digest (@sha256:...). Upstream registry tag mutations could inject "
                             "compromised build environments."
                         ),
-                        "confidence": "CONFIRMED",
-                        "recommended_action": f"Pin the base image using an immutable digest: 'FROM {image_ref}@sha256:<digest>'."
+                        "confidence": "CONFIRMED"
                     })
 
     # 2. GitHub Actions Workflow Analysis
@@ -68,8 +67,7 @@ def analyze_cicd_and_docker(repo_root: Path) -> List[Dict[str, Any]]:
                         "GitHub Actions defaults to permissive read-write tokens (GITHUB_TOKEN), enabling "
                         "potential unauthorized repository modifications if a step is compromised."
                     ),
-                    "confidence": "CONFIRMED",
-                    "recommended_action": "Add an explicit least-privilege block: 'permissions: { contents: read }'."
+                    "confidence": "CONFIRMED"
                 })
 
             # Check 2: Unpinned Action tags (uses: actions/...@v1 or @v2 instead of 40-char SHA)
@@ -93,11 +91,7 @@ def analyze_cicd_and_docker(repo_root: Path) -> List[Dict[str, Any]]:
                                 "Tags and branch names can be overwritten or re-targeted upstream by compromised "
                                 "maintainers to execute malicious code in CI/CD runners."
                             ),
-                            "confidence": "CONFIRMED",
-                            "recommended_action": (
-                                f"Pin action '{action_name}' to a full 40-character commit SHA "
-                                f"(e.g. '{action_name}@<commit-sha> # {tag_or_ref}')."
-                            )
+                            "confidence": "CONFIRMED"
                         })
 
                 # Check 3: Mutable Docker runs in CI/CD steps
@@ -117,8 +111,7 @@ def analyze_cicd_and_docker(repo_root: Path) -> List[Dict[str, Any]]:
                                 f"CI workflow spawns container '{image_name}:{image_tag}' using a mutable tag. "
                                 "Container images pulled during CI runs should be pinned by digest to avoid poisoned layers."
                             ),
-                            "confidence": "CONFIRMED",
-                            "recommended_action": f"Pin '{image_name}' to an exact digest or internal mirror registry."
+                            "confidence": "CONFIRMED"
                         })
 
     return findings
