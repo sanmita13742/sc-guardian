@@ -231,7 +231,7 @@ export default function App() {
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'vulnerabilities' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
           >
             <AlertTriangle className="w-4 h-4 text-red-400" />
-            Vulnerabilities ({scanData?.metrics?.total_vulnerabilities || 200})
+            Vulnerabilities
           </button>
           <button
             onClick={() => setActiveTab('suspicious')}

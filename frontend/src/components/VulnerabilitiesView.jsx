@@ -9,8 +9,6 @@ import {
   ChevronDown,
   ChevronRight,
   GitCommit,
-  CheckCircle,
-  XCircle,
   Layers,
   ArrowRight
 } from 'lucide-react';
@@ -147,7 +145,7 @@ export default function VulnerabilitiesView({ scanData }) {
             <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-500" />
             <input
               type="text"
-              placeholder="Search CVE, package, or summary..."
+              placeholder="Search CVE or package..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="bg-gray-900 border border-gray-700 text-gray-100 pl-8 pr-3 py-1.5 rounded-lg text-xs w-64 focus:outline-none focus:border-blue-500"
@@ -259,26 +257,6 @@ export default function VulnerabilitiesView({ scanData }) {
                           {finding.environment.toUpperCase()}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-300 mt-1 truncate max-w-2xl">
-                        {finding.summary}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Fixed Version Badge */}
-                  <div className="flex items-center gap-4 text-xs">
-                    <div>
-                      {finding.fixed_version ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-md font-mono">
-                          <CheckCircle className="w-3 h-3 text-emerald-400" />
-                          Fixed in {finding.fixed_version}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] bg-gray-900 text-gray-400 border border-gray-800 px-2.5 py-1 rounded-md font-mono">
-                          <XCircle className="w-3 h-3 text-gray-500" />
-                          No fix published
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
