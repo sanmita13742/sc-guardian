@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Starts SC Guardian using the self-contained environment in .venv (creates it on first run).
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 if [ ! -x ".venv/bin/python" ] && [ ! -x ".venv/Scripts/python.exe" ]; then
   echo "Creating virtual environment..."
   python3 -m venv .venv 2>/dev/null || python -m venv .venv

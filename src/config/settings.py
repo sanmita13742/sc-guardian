@@ -13,7 +13,7 @@ try:  # optional
 except Exception:  # pragma: no cover
     pass
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent  # repository root (src/config/ -> repo)
 
 
 def _env_path(name: str, default: Path) -> Path:

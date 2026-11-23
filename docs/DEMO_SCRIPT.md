@@ -1,6 +1,6 @@
 # Day-2 demo script (≈ 8 minutes) — "from detection to verified remediation"
 
-Sample application: **OWASP/NodeGoat** (public, containerised: Dockerfile + docker-compose + GitHub workflows, ~1,200 npm packages). Start the app: `run.bat` → http://localhost:8501.
+Sample application: **OWASP/NodeGoat** (public, containerised: Dockerfile + docker-compose + GitHub workflows, ~1,200 npm packages). Start the app: `scriptsun.bat` → http://localhost:8501.
 
 1. **Discover (1 min)** — *Repository Scan*: paste `https://github.com/OWASP/NodeGoat`, **Start Security Scan**. Narrate the live agent checklist (Recon → Pipeline → SBOM → Graph → Vulnerability → Verification → Investigator → Threat → Risk → Remediation → Validator → Memory → Analyst) and the decision log (scanner fallback, fusion, registry resolution).
 2. **SBOM & supply-chain view (1 min)** — *SBOM Explorer → Metadata*: 99% completeness, digests verified against the registry, install-script packages. *SBOM file* tab: the fused CycloneDX with `sc-guardian:provenance:*`. *Dependency Graph → Dependency Tree*: bottom-up "who pulls this in" for a vulnerable transitive package.

@@ -6,6 +6,7 @@ Everything is static analysis: repository code is never executed, installed or b
 ## 1. Layers (dependencies point downwards only; enforced by `scripts/audit_check.py`)
 
 ```
+(all packages below live under `src/`)
 ui/ · guardian.py   Streamlit pages and the CLI (gate / scan / monitor / report)
 orchestration/      LangGraph state graph: order, branching, parallelism, failure containment, checkpoints
 agents/             Recon · Pipeline · SBOM · Graph · Vulnerability · Verification · Investigator · Threat · Risk · Remediation · Validator · Memory · Analyst (+ Supervisor)

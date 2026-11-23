@@ -49,7 +49,7 @@ TUNABLES: dict[str, tuple[type, float, float, str]] = {
 STRINGS = {"syft_bin": "Syft executable", "trivy_bin": "Trivy executable", "llm_model": "optional LLM model name (default per provider)", "llm_provider": "optional LLM provider (auto-detected from LLM_API_KEY)", "llm_base_url": "base URL for an OpenAI-compatible LLM endpoint"}
 PATHS = {"data_dir": "SQLite database folder", "workspace_dir": "temporary clone folder"}
 SECRETS = {"nvd_api_key", "llm_api_key", "anthropic_api_key"}
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent  # repository root (src/config/ -> repo)
 
 
 def _coerce(name: str, raw: Any) -> tuple[Any, str | None]:

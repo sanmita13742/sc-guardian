@@ -15,8 +15,9 @@ from pathlib import Path
 
 # Ensure the project root is on sys.path
 APP_DIR = Path(__file__).resolve().parent.parent
-if str(APP_DIR) not in sys.path:
-    sys.path.insert(0, str(APP_DIR))
+for _p in (APP_DIR, APP_DIR / "src"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 os.chdir(APP_DIR)
 

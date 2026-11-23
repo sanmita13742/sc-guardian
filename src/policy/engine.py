@@ -26,7 +26,7 @@ import yaml
 ACTIONS = ("block", "warn", "info")
 KNOWN_KEYS = {"kind", "severity", "kev", "epss", "verdict", "reachability", "dependency_type", "ecosystem", "fix_available", "priority", "risk", "confirmed", "rule_id", "category", "third_party",
               "classification", "strength", "scope", "install_script", "deprecated", "integrity", "licenses", "published_age_days", "name", "confidence"}
-POLICY_DIR = Path(__file__).resolve().parent.parent / "policies"
+POLICY_DIR = Path(__file__).resolve().parent.parent.parent / "policies"
 
 
 class PolicyError(ValueError):

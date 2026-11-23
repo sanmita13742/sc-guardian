@@ -9,8 +9,8 @@ scores risk with transparent rules, and proposes **verified remediations** you a
 
 ## Run
 ```bash
-run.bat            # Windows
-./run.sh           # Linux / macOS / Git Bash
+scriptsun.bat    # Windows
+scripts/run.sh     # Linux / macOS / Git Bash
 ```
 or manually: `python -m venv .venv`, install `requirements.txt`, `python scripts/verify_environment.py`, then `python -m streamlit run app.py` (http://localhost:8501).
 Use `python -m streamlit` (not bare `streamlit`) so the venv's packages are used. Syft and Trivy are optional (`SYFT_BIN` / `TRIVY_BIN`); nothing else is required.
@@ -41,15 +41,20 @@ python guardian.py monitor                         # cron / Actions friendly
 
 ## Layout
 ```
-app.py  guardian.py     Streamlit entry point · CLI
-orchestration/ agents/  LangGraph pipeline · specialist agents (runtime, investigator, remediation, memory)
-sbom/ graph/            scanners + fusion · dependency graph, tree view, exports
-vulnerability/ reachability/ intel/ tools/ evidence/   matching and evidence-gated investigation
-pipeline_analysis/      Dockerfile, compose and CI rules
-remediation/ sandbox/   planner, patchers, what-if validation, opt-in Docker sandbox
-policy/ monitor/ reporting/ risk_analysis/ storage/ config/ llm/ ecosystems/ core/ ui/
-docs/                   ARCHITECTURE, RESPONSIBLE_AI, RISK_SCORING, DEMO_SCRIPT
-scripts/                audit_check.py, ui_smoke_test.py, verify_environment.py
+app.py            Streamlit entry point            guardian.py   CLI (scan / gate / monitor / report)
+src/              all application code (added to sys.path by the entry points)
+  orchestration/ agents/       LangGraph pipeline · specialist agents (runtime, investigator, remediation, memory)
+  sbom/ graph/                 scanners + metadata fusion · dependency graph, tree view, exports
+  vulnerability/ reachability/ intel/ tools/ evidence/   matching and evidence-gated investigation
+  pipeline_analysis/           Dockerfile, compose and CI rules
+  remediation/ sandbox/        planner, patchers, what-if validation, opt-in Docker sandbox
+  policy/ monitor/ reporting/ risk_analysis/ explainability/
+  core/ config/ storage/ llm/ ecosystems/ suspicious_changes/ ui/
+policies/         sample policy-as-code (default, strict)
+docs/             ARCHITECTURE, RESPONSIBLE_AI, RISK_SCORING, DEMO_SCRIPT
+scripts/          run.bat / run.sh launchers, audit_check.py, ui_smoke_test.py, verify_environment.py
+.env.example  scanner.example.toml  requirements.txt  .github/workflows/guardian.yml
+data/ artifacts/ .workspaces/   runtime output (git-ignored)
 ```
 
 ## Security and limitations
