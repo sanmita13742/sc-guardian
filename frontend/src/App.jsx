@@ -10,16 +10,19 @@ import {
   CheckCircle2,
   Workflow,
   Sparkles,
-  Split
+  Split,
+  AlertTriangle
 } from 'lucide-react';
 import DependencyGraphView from './components/DependencyGraphView';
 import CrossValidationView from './components/CrossValidationView';
+import VulnerabilitiesView from './components/VulnerabilitiesView';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'validation', 'inventory', 'raw_sbom'
+  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'vulnerabilities', 'validation', 'inventory', 'raw_sbom'
   const [inventory, setInventory] = useState(null);
   const [sbomData, setSbomData] = useState(null);
   const [graphData, setGraphData] = useState(null);
+  const [scanData, setScanData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Search in Inventory
@@ -30,15 +33,17 @@ export default function App() {
     async function loadAll() {
       try {
         setLoading(true);
-        const [invRes, sbomRes, graphRes] = await Promise.all([
+        const [invRes, sbomRes, graphRes, scanRes] = await Promise.all([
           fetch('/component-inventory.json'),
           fetch('/nodegoat-sbom.json'),
-          fetch('/nodegoat-dependency-graph.json')
+          fetch('/nodegoat-dependency-graph.json'),
+          fetch('/nodegoat-vulnerabilities.json')
         ]);
 
         if (invRes.ok) setInventory(await invRes.json());
         if (sbomRes.ok) setSbomData(await sbomRes.json());
         if (graphRes.ok) setGraphData(await graphRes.json());
+        if (scanRes.ok) setScanData(await scanRes.json());
       } catch (e) {
         console.error('Failed to load local data files:', e);
       } finally {
@@ -113,43 +118,71 @@ export default function App() {
             <Download className="w-3.5 h-3.5 text-purple-400" />
             NetworkX Graph JSON
           </button>
+          <button
+            onClick={() => downloadFile(scanData, 'nodegoat-vulnerabilities.json')}
+            className="flex items-center gap-1.5 text-xs bg-red-950/40 hover:bg-red-900/60 text-red-300 px-3 py-1.5 rounded-lg border border-red-800/60 transition"
+          >
+            <Download className="w-3.5 h-3.5 text-red-400" />
+            OSV Scan JSON
+          </button>
         </div>
       </header>
 
       {/* Main Body */}
       <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
         {/* Metric Cards Banner */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <span className="text-xs text-gray-400">Total Unique Packages</span>
-            <div className="text-3xl font-bold text-white font-mono mt-1">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">Total Unique Packages</span>
+            <div className="text-2xl font-bold text-white font-mono mt-0.5">
               {inventory?.total_components?.toLocaleString() || '1,091'}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">Lockfile tree elements</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Lockfile tree elements</p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <span className="text-xs text-gray-400">Direct Dependencies</span>
-            <div className="text-3xl font-bold text-emerald-400 font-mono mt-1">
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">Direct Dependencies</span>
+            <div className="text-2xl font-bold text-emerald-400 font-mono mt-0.5">
               {inventory?.direct_dependencies || '36'}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">16 Production / 20 Development</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">16 Prod / 20 Dev</p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <span className="text-xs text-gray-400">Syft CycloneDX SBOM</span>
-            <div className="text-3xl font-bold text-blue-400 font-mono mt-1">
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">Syft CycloneDX SBOM</span>
+            <div className="text-2xl font-bold text-blue-400 font-mono mt-0.5">
               {sbomData?.components?.length || '422'}
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">v1.7 Specification Compliant</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">v1.7 Specification Compliant</p>
           </div>
 
-          <div className="bg-[#0E131F] border border-gray-800 p-4 rounded-xl shadow-sm">
-            <span className="text-xs text-gray-400">NetworkX Graph Model</span>
-            <div className="text-3xl font-bold text-purple-400 font-mono mt-1">
-              {graphData?.total_nodes || '1,092'} <span className="text-sm text-gray-500 font-sans font-normal">nodes</span>
+          <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
+            <span className="text-[11px] text-gray-400">NetworkX Graph Model</span>
+            <div className="text-2xl font-bold text-purple-400 font-mono mt-0.5">
+              {graphData?.total_nodes || '1,092'} <span className="text-xs text-gray-500 font-sans font-normal">nodes</span>
             </div>
-            <p className="text-[11px] text-gray-500 mt-1">{graphData?.total_edges || '1,921'} verified dependency edges</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">{graphData?.total_edges || '1,921'} verified edges</p>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('vulnerabilities')}
+            className="bg-[#0E131F] border border-red-900/60 p-3.5 rounded-xl shadow-sm bg-gradient-to-b from-red-950/20 to-transparent cursor-pointer hover:border-red-600 transition"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-red-400 font-semibold flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Vulnerabilities (OSV)
+              </span>
+              <span className="text-[9px] bg-red-500/20 text-red-300 border border-red-500/30 px-1.5 py-0.5 rounded font-bold">
+                ALERT
+              </span>
+            </div>
+            <div className="text-2xl font-bold text-red-400 font-mono mt-0.5">
+              {scanData?.metrics?.total_vulnerabilities || 201}
+            </div>
+            <p className="text-[10px] text-red-500/80 mt-0.5">
+              {scanData?.metrics?.severity_counts?.CRITICAL || 22} Critical • {scanData?.metrics?.severity_counts?.HIGH || 106} High
+            </p>
           </div>
         </div>
 
@@ -161,6 +194,13 @@ export default function App() {
           >
             <Workflow className="w-4 h-4" />
             Dependency Tree Graph (React Flow)
+          </button>
+          <button
+            onClick={() => setActiveTab('vulnerabilities')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'vulnerabilities' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+          >
+            <AlertTriangle className="w-4 h-4 text-red-400" />
+            Vulnerabilities ({scanData?.metrics?.total_vulnerabilities || 201})
           </button>
           <button
             onClick={() => setActiveTab('validation')}
@@ -177,6 +217,11 @@ export default function App() {
             Component Inventory ({inventory?.total_components || 0})
           </button>
         </div>
+
+        {/* Tab: Vulnerabilities */}
+        {activeTab === 'vulnerabilities' && (
+          <VulnerabilitiesView scanData={scanData} />
+        )}
 
         {/* Tab 1: Dependency Tree Graph */}
         {activeTab === 'graph' && (

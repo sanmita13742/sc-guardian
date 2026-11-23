@@ -315,6 +315,7 @@ def generate():
       <button id="btn-prod" onclick="setPreset('prod')">2. Production Only</button>
       <button id="btn-shared" onclick="setPreset('shared')">3. Verified Shared Hubs</button>
       <button id="btn-all" onclick="setPreset('all')">4. All Nodes</button>
+      <button id="btn-vuln" onclick="setPreset('vuln')" style="border-color: #EF4444; color: #FCA5A5;">5. Vulnerabilities (98)</button>
     </div>
 
     <!-- Node Limit Slider & Direct Type Input -->
@@ -383,6 +384,17 @@ def generate():
         </div>
       </div>
 
+      <!-- Vulnerabilities Warning Card -->
+      <div class="info-card" id="panel-vuln-card" style="display: none; background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.4);">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div class="info-label" style="color: #F87171; font-weight: bold;" id="panel-vuln-title">⚠ 0 Known Vulnerabilities</div>
+          <span id="panel-vuln-sev" style="background: rgba(239,68,68,0.25); color: #FCA5A5; border: 1px solid rgba(239,68,68,0.5); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;">HIGH</span>
+        </div>
+        <div id="panel-vuln-list" style="margin-top: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
       <div class="info-card">
         <div class="info-label">Classification & Environment</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;">
@@ -424,6 +436,10 @@ def generate():
       <div class="legend-item">
         <div class="legend-circle circle-dev"></div>
         <span>Development Tool</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-circle" style="background: #EF4444; border: 2px solid #FCA5A5;"></div>
+        <span>Known Vulnerability (OSV)</span>
       </div>
       <div class="legend-item">
         <div class="legend-circle circle-highlight"></div>
@@ -516,6 +532,15 @@ def generate():
             if ((parentMap[p] || []).includes('root')) eligible.add('root');
           }});
         }}
+      }} else if (filterType === 'vuln') {{
+        // Filter for packages with known vulnerabilities and their lineages to root
+        const vulnNodes = RAW_NODES.filter(n => n.has_vulnerability);
+        for (const vn of vulnNodes) {{
+          if (eligible.size >= limit) break;
+          const path = findPathFromRoot(vn.id);
+          if (path) path.forEach(id => eligible.add(id));
+          else eligible.add(vn.id);
+        }}
       }} else if (filterType === 'direct') {{
         // All direct dependencies from root
         (childMap['root'] || []).forEach(childId => eligible.add(childId));
@@ -567,6 +592,18 @@ def generate():
         bgColor = '#DC2626';
         borderColor = '#FCA5A5';
         nodeSize = nodeSize + 6;
+      }} else if (node.has_vulnerability) {{
+        if (node.max_severity === 'CRITICAL') {{
+          bgColor = '#DC2626';
+          borderColor = '#FCA5A5';
+        }} else if (node.max_severity === 'HIGH') {{
+          bgColor = '#EA580C';
+          borderColor = '#FDBA74';
+        }} else {{
+          bgColor = '#D97706';
+          borderColor = '#FDE68A';
+        }}
+        nodeSize = nodeSize + 3;
       }}
 
       return {{
@@ -717,7 +754,7 @@ def generate():
 
     function setPreset(preset) {{
       currentPreset = preset;
-      ['direct', 'prod', 'shared', 'all'].forEach(p => {{
+      ['direct', 'prod', 'shared', 'all', 'vuln'].forEach(p => {{
         const btn = document.getElementById('btn-' + p);
         if (btn) btn.classList.remove('active');
       }});
@@ -785,6 +822,30 @@ def generate():
       document.getElementById('panel-depth').innerText = (node.depth || 1) + ' levels from Root';
       document.getElementById('panel-license').innerText = node.license || 'Apache-2.0';
       document.getElementById('panel-purl').innerText = node.purl || ('pkg:npm/' + node.label + '@' + node.version);
+
+      // 0. Active Vulnerabilities Alert
+      const vulnCard = document.getElementById('panel-vuln-card');
+      if (node.has_vulnerability) {{
+        vulnCard.style.display = 'block';
+        document.getElementById('panel-vuln-title').innerText = `⚠ ${{node.vulnerability_count}} Known Vulnerabilities`;
+        document.getElementById('panel-vuln-sev').innerText = node.max_severity || 'HIGH';
+        const listDiv = document.getElementById('panel-vuln-list');
+        listDiv.innerHTML = '';
+        (node.vulnerabilities || []).forEach(v => {{
+          const vDiv = document.createElement('div');
+          vDiv.style.cssText = 'background: #0B0F19; border: 1px solid #7F1D1D; padding: 4px 6px; border-radius: 4px; font-size: 10px;';
+          vDiv.innerHTML = `
+            <div style="display: flex; justify-content: space-between; font-weight: bold; color: #FCA5A5; font-family: monospace;">
+              <span>${{v.id}}</span>
+              <span style="color: ${{v.fixed_version ? '#34D399' : '#64748B'}};">${{v.fixed_version ? 'Fix: ' + v.fixed_version : 'No fix'}}</span>
+            </div>
+            <div style="color: #94A3B8; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${{v.summary || ''}}</div>
+          `;
+          listDiv.appendChild(vDiv);
+        }});
+      }} else {{
+        vulnCard.style.display = 'none';
+      }}
 
       // 1. Path Trail from Root
       const pathTrail = document.getElementById('panel-path-trail');

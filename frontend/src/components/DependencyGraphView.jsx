@@ -175,6 +175,18 @@ function GraphCanvas({ graphData }) {
           if ((parentMap[p] || []).includes('root')) eligibleNodeIds.add('root');
         });
       }
+    } else if (viewFilter === 'vuln') {
+      // Filter for vulnerable packages and their paths back to root!
+      const vulnCandidates = graphData.nodes
+        .filter(n => n.has_vulnerability)
+        .sort((a, b) => (b.vulnerability_count || 0) - (a.vulnerability_count || 0));
+
+      for (const vn of vulnCandidates) {
+        if (eligibleNodeIds.size >= nodeLimit) break;
+        const path = findPathFromRoot(vn.id);
+        if (path) path.forEach(id => eligibleNodeIds.add(id));
+        else eligibleNodeIds.add(vn.id);
+      }
     } else if (viewFilter === 'direct') {
       (childMap['root'] || []).forEach(childId => eligibleNodeIds.add(childId));
     } else if (viewFilter === 'production') {
@@ -250,6 +262,20 @@ function GraphCanvas({ graphData }) {
           bgColor = '#7F1D1D';
           borderColor = '#EF4444';
           badgeBg = 'bg-red-500/20 text-red-300 border-red-500/40';
+        } else if (node.has_vulnerability) {
+          if (node.max_severity === 'CRITICAL') {
+            bgColor = isDirect ? '#7F1D1D' : '#450A0A';
+            borderColor = '#EF4444';
+            badgeBg = 'bg-red-500/30 text-red-300 border-red-500/50';
+          } else if (node.max_severity === 'HIGH') {
+            bgColor = isDirect ? '#7C2D12' : '#431407';
+            borderColor = '#F97316';
+            badgeBg = 'bg-orange-500/30 text-orange-300 border-orange-500/50';
+          } else {
+            bgColor = isDirect ? '#713F12' : '#451A03';
+            borderColor = '#F59E0B';
+            badgeBg = 'bg-amber-500/30 text-amber-300 border-amber-500/50';
+          }
         } else if (isRoot) {
           bgColor = '#1E3A8A';
           borderColor = '#3B82F6';
@@ -274,7 +300,11 @@ function GraphCanvas({ graphData }) {
                   <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase font-semibold border ${badgeBg}`}>
                     {isRoot ? 'APPLICATION ROOT' : (isDirect ? 'DIRECT' : 'TRANSITIVE')}
                   </span>
-                  {!isRoot && (
+                  {node.has_vulnerability ? (
+                    <span className="text-[9px] bg-red-600/40 text-red-200 border border-red-500/60 px-1 py-0.5 rounded font-bold">
+                      ⚠ {node.vulnerability_count}
+                    </span>
+                  ) : !isRoot && (
                     <span className={`text-[9px] font-medium capitalize ${isProd ? 'text-emerald-400' : 'text-amber-400'}`}>
                       {node.environment}
                     </span>
@@ -414,6 +444,12 @@ function GraphCanvas({ graphData }) {
               className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'all' && !searchTerm ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
             >
               4. All Nodes
+            </button>
+            <button
+              onClick={() => { setViewFilter('vuln'); setSearchTerm(''); }}
+              className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'vuln' && !searchTerm ? 'bg-red-600 text-white font-semibold' : 'text-red-400 hover:bg-red-950/40 border border-red-900/40'}`}
+            >
+              5. Vulnerable (98)
             </button>
           </div>
 
@@ -605,6 +641,38 @@ function GraphCanvas({ graphData }) {
                 )}
               </div>
             </div>
+
+            {/* Active Vulnerabilities Alert */}
+            {selectedNode.has_vulnerability && (
+              <div className="bg-red-950/40 border border-red-800/80 p-3 rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-red-400 font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                    {selectedNode.vulnerability_count} Known Vulnerabilities
+                  </span>
+                  <span className="text-[10px] bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded font-mono font-bold">
+                    {selectedNode.max_severity}
+                  </span>
+                </div>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {(selectedNode.vulnerabilities || []).map((v, vIdx) => (
+                    <div key={vIdx} className="bg-[#070A10] p-2 rounded border border-red-900/40 text-[11px]">
+                      <div className="flex items-center justify-between font-mono">
+                        <span className="text-red-400 font-bold">{v.id}</span>
+                        {v.fixed_version ? (
+                          <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                            Fixed: {v.fixed_version}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-500">No fix</span>
+                        )}
+                      </div>
+                      <p className="text-gray-300 text-[10px] mt-1 line-clamp-2">{v.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Classification & Metadata */}
             <div className="bg-gray-900/80 p-3 rounded-lg border border-gray-800">
