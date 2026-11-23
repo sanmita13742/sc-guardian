@@ -35,10 +35,6 @@ dist/
 dist-ssr/
 *.local
 
-# Target repositories (ingested / test repositories)
-target-repositories/*
-!target-repositories/.gitkeep
-
 # Scan Artifacts (preserve structure, ignore generated outputs)
 artifacts/sbom/*
 !artifacts/sbom/.gitkeep
