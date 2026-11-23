@@ -302,11 +302,12 @@
       <button id="btn-all" onclick="setPreset('all')">4. All Nodes</button>
     </div>
 
-    <!-- Node Limit Slider -->
+    <!-- Node Limit Slider & Direct Type Input -->
     <div class="control-group slider-group">
-      <label>Node Limit:</label>
-      <input type="range" id="limit-slider" min="20" max="400" value="70" step="10" oninput="onLimitChange(this.value)" />
-      <span class="slider-val" id="limit-val">70</span>
+      <label>Limit:</label>
+      <input type="range" id="limit-slider" min="15" max="1092" value="70" step="5" oninput="onLimitChange(this.value)" />
+      <input type="number" id="limit-input" min="1" max="1092" value="70" oninput="onLimitInput(this.value)" style="width: 58px; background: #111827; border: 1px solid #334155; color: #60A5FA; font-family: monospace; font-weight: 600; padding: 4px 6px; border-radius: 6px; text-align: center; font-size: 12px; outline: none;" />
+      <span style="color: #64748B; font-size: 11px;">/ 1,091</span>
     </div>
 
     <!-- Layout Switcher (Organic Physics vs Hierarchical) -->
@@ -715,8 +716,22 @@
     }
 
     function onLimitChange(val) {
-      currentLimit = parseInt(val, 10);
-      document.getElementById('limit-val').innerText = val;
+      let num = parseInt(val, 10);
+      if (isNaN(num) || num < 1) num = 1;
+      if (num > TOTAL_INVENTORY) num = TOTAL_INVENTORY;
+      currentLimit = num;
+      document.getElementById('limit-slider').value = num;
+      document.getElementById('limit-input').value = num;
+      updateNetwork();
+    }
+
+    function onLimitInput(val) {
+      let num = parseInt(val, 10);
+      if (isNaN(num)) return;
+      if (num < 1) num = 1;
+      if (num > TOTAL_INVENTORY) num = TOTAL_INVENTORY;
+      currentLimit = num;
+      document.getElementById('limit-slider').value = num;
       updateNetwork();
     }
 

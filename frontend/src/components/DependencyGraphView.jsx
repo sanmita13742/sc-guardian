@@ -419,19 +419,27 @@ function GraphCanvas({ graphData }) {
 
           <div className="h-5 w-[1px] bg-gray-700 mx-1" />
 
-          {/* Node Limit Slider */}
+          {/* Node Limit Slider & Direct Type Input */}
           <div className="flex items-center gap-1.5 text-xs text-gray-300">
             <span>Limit:</span>
             <input
               type="range"
-              min="20"
-              max="350"
+              min="15"
+              max="1092"
               value={nodeLimit}
-              step="10"
-              onChange={e => setNodeLimit(parseInt(e.target.value, 10))}
+              step="5"
+              onChange={e => setNodeLimit(Math.min(1092, Math.max(1, parseInt(e.target.value, 10) || 1)))}
               className="w-16 accent-blue-500 cursor-pointer"
             />
-            <span className="font-mono text-blue-400 font-semibold">{nodeLimit}</span>
+            <input
+              type="number"
+              min="1"
+              max="1092"
+              value={nodeLimit}
+              onChange={e => setNodeLimit(Math.min(1092, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+              className="w-14 bg-gray-900 border border-gray-700 text-blue-400 font-mono font-semibold rounded px-1 py-0.5 text-xs text-center focus:outline-none focus:border-blue-500"
+            />
+            <span className="text-gray-500 text-[10px]">/ 1,091</span>
           </div>
 
           <div className="h-5 w-[1px] bg-gray-700 mx-1" />

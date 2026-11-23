@@ -36,6 +36,8 @@ dist-ssr/
 *.local
 
 # Scan Artifacts (preserve structure, ignore generated outputs)
+artifacts/discovery/*
+!artifacts/discovery/.gitkeep
 artifacts/sbom/*
 !artifacts/sbom/.gitkeep
 artifacts/scans/*
