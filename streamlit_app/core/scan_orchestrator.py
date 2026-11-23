@@ -67,6 +67,22 @@ class _Ctx:
         self.http = HttpClient(timeout=settings.http_timeout_s, retries=settings.http_retries)
 
 
+def friendly_clone_error(raw: str, ref: Optional[str]) -> str:
+    """Translate raw git failures into actionable messages."""
+    low = raw.lower()
+    if "timed out" in low:
+        return "The clone timed out. The repository is probably too large for the 3-minute clone limit; try a smaller repository or a specific branch."
+    if "remote branch" in low and "not found" in low:
+        return f"Branch or tag '{ref}' does not exist in this repository. Leave the branch field empty to use the default branch."
+    if any(k in low for k in ("not found", "could not read username", "authentication failed", "terminal prompts disabled", "repository access blocked")):
+        return "Repository not found, or it is private. Only public GitHub repositories are supported (check the owner/name spelling)."
+    if any(k in low for k in ("could not resolve host", "unable to access", "connection", "ssl", "tls")):
+        return "GitHub could not be reached (network problem). Check your internet connection or proxy and try again."
+    if "size limit" in low:
+        return raw
+    return "Clone failed: " + raw[:300]
+
+
 def resolve_remote_sha(url: str, ref: str | None) -> Optional[str]:
     try:
         out = gm.run_git(["ls-remote", "--", url, ref or "HEAD"], timeout=30).stdout.split()
@@ -76,16 +92,24 @@ def resolve_remote_sha(url: str, ref: str | None) -> Optional[str]:
 
 
 # ============================================================================================ entry points
+def _legacy_progress(progress: Optional[Callable]) -> Optional[OnEvent]:
+    """Adapter so callers written for the old ``progress(stage, fraction, message)`` callback keep working."""
+    if progress is None:
+        return None
+    return lambda e: progress(e["step"], e["progress"], e["message"])
+
+
 def run_scan(options: ScanOptions, settings: Settings | None = None, db: Database | None = None,
-             on_event: Optional[OnEvent] = None) -> dict[str, Any]:
-    """Scan a public GitHub repository with the agent pipeline."""
+             on_event: Optional[OnEvent] = None, progress: Optional[Callable] = None, **_ignored: Any) -> dict[str, Any]:
+    """Scan a public GitHub repository with the agent pipeline (``progress`` is a deprecated alias of ``on_event``)."""
+    on_event = on_event or _legacy_progress(progress)
     s = settings or get_settings()
     db = db or Database(s.db_path)
     rt = Runtime(on_event)
     rt.begin("validate", "Validating the repository URL (HTTPS GitHub only, no credentials, no local paths)")
     try:
         repo_ref = validate_github_url(options.url)
-        ref = validate_ref(options.ref)
+        ref = validate_ref(options.ref) or repo_ref.ref
     except Exception as e:
         rt.fail("validate", str(e))
         raise
@@ -113,7 +137,7 @@ def run_scan(options: ScanOptions, settings: Settings | None = None, db: Databas
                 if rt.status[step] == "pending":
                     rt.skip(step, "clone failed")
             gm.cleanup(ws)
-            return {"status": "failed", "error": f"Clone failed: {rt.errors[-1]['error']}", "agent_trace": rt.trace(),
+            return {"status": "failed", "error": friendly_clone_error(rt.errors[-1]["error"], ref), "agent_trace": rt.trace(),
                     "repo": {"scan_id": scan_id, "url": repo_ref.web_url, "name": repo_ref.name, "ref": ref, "commit_sha": "", "scan_timestamp": _now()}}
         info = RepoInfo(scan_id=scan_id, url=repo_ref.web_url, name=repo_ref.name, owner=repo_ref.owner, ref=ref,
                         branch=gm.current_branch(repo_dir) or ref, commit_sha=gm.head_sha(repo_dir), scan_timestamp=_now(),
@@ -127,8 +151,9 @@ def run_scan(options: ScanOptions, settings: Settings | None = None, db: Databas
 
 
 def scan_local_directory(path: Path, options: ScanOptions | None = None, settings: Settings | None = None, db: Database | None = None,
-                         on_event: Optional[OnEvent] = None, name: str | None = None) -> dict[str, Any]:
+                         on_event: Optional[OnEvent] = None, name: str | None = None, progress: Optional[Callable] = None) -> dict[str, Any]:
     """Analyse an existing local directory (developer/CLI use only; never reachable from the UI URL box)."""
+    on_event = on_event or _legacy_progress(progress)
     options = options or ScanOptions()
     s = settings or get_settings()
     db = db or Database(s.db_path)

@@ -15,14 +15,29 @@ sc-guardian/
 
 ## Run
 
+The environment is self-contained in `streamlit_app/.venv` (Python 3.11 recommended). One command creates it on first use and starts the app:
+
 ```bash
 cd streamlit_app
-python -m venv .venv && .venv/Scripts/activate          # Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
-scripts/install_syft.sh                                 # or: winget install Anchore.Syft / brew install syft  (set SYFT_BIN if not on PATH)
-python scripts/verify_environment.py                    # checks Python deps, Git, Syft scan + CycloneDX parse, network sources
-streamlit run app.py                                    # http://localhost:8501
+run.bat            # Windows (double-click works too)
+./run.sh           # Linux / macOS / Git Bash
 ```
+
+or manually:
+
+```bash
+cd streamlit_app
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt        # Linux/macOS: .venv/bin/python
+.venv\Scripts\python scripts/verify_environment.py             # Python deps, Git, Syft scan + CycloneDX parse, network sources
+.venv\Scripts\python -m streamlit run app.py                   # http://localhost:8501
+```
+
+Syft is the one external tool: `scripts/install_syft.sh` (Git Bash/Linux/macOS), `winget install Anchore.Syft` or `brew install syft`; set `SYFT_BIN` if it is not on PATH.
+**After updating the code, stop the running Streamlit server (Ctrl+C) and start it again** - a long-running server can keep old page modules in memory.
+
+Accepted repository addresses: `https://github.com/owner/repo`, `.git` and trailing-slash forms, `github.com/owner/repo`, `git@github.com:owner/repo.git`,
+and browser URLs such as `https://github.com/owner/repo/tree/<branch>` (the branch is taken from the URL). Only public repositories can be cloned.
 
 In the app enter e.g. `https://github.com/OWASP/NodeGoat` and press **Start scan**. Optional environment variables (see `.env.example`): `NVD_API_KEY`
 (higher NVD limits), `ANTHROPIC_API_KEY` (LLM-phrased explanations), `SYFT_BIN`. Nothing is required.
