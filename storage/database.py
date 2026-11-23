@@ -34,6 +34,44 @@ CREATE TABLE IF NOT EXISTS findings (
     payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_findings_scan ON findings(scan_id, kind);
+CREATE TABLE IF NOT EXISTS finding_state (
+    repo_url TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT,
+    severity TEXT,
+    risk_label TEXT,
+    status TEXT NOT NULL,              -- open | fixed
+    first_seen_scan TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_scan TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    fixed_scan TEXT,
+    times_seen INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (repo_url, fingerprint)
+);
+CREATE TABLE IF NOT EXISTS decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_url TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    decision TEXT NOT NULL,            -- accepted_risk | false_positive | suppress
+    reason TEXT NOT NULL,
+    title TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    author TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_decisions_repo ON decisions(repo_url, fingerprint);
+CREATE TABLE IF NOT EXISTS package_seen (
+    ecosystem TEXT NOT NULL,
+    name TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    repos_seen INTEGER NOT NULL DEFAULT 1,
+    scans_seen INTEGER NOT NULL DEFAULT 1,
+    last_repo TEXT,
+    PRIMARY KEY (ecosystem, name)
+);
 CREATE TABLE IF NOT EXISTS cache (
     namespace TEXT NOT NULL,
     key TEXT NOT NULL,

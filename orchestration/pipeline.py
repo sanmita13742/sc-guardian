@@ -28,6 +28,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from agents.runtime import Runtime
+from agents.memory_agent import MemoryAgent
 from agents.specialists import (AnalystAgent, GraphAgent, ReconAgent, RiskAgent, SBOMAgent, ScanState, ThreatAgent, VerificationAgent,
                                 VulnerabilityAgent)
 from core import git_manager as gm
@@ -45,6 +46,7 @@ _REG: dict[str, tuple[ScanState, Runtime, Optional[Path]]] = {}
 # node -> (callable(st, rt, workspace), runtime steps owned by the node, steps that must not have failed)
 NODES: dict[str, tuple[Callable, tuple[str, ...], tuple[str, ...]]] = {}
 
+memory = MemoryAgent()
 recon, sbom, graph_agent, vuln, ver, threat, risk, analyst = (ReconAgent(), SBOMAgent(), GraphAgent(), VulnerabilityAgent(), VerificationAgent(),
                                                              ThreatAgent(), RiskAgent(), AnalystAgent())
 
@@ -78,6 +80,7 @@ _register("typosquat", lambda st, rt, ws: threat.typosquat(st, rt), ("typosquat"
 _register("lockfile_history", lambda st, rt, ws: threat.lockfile_history(st, rt), ("lockfile_history",))
 _register("risk", lambda st, rt, ws: risk.score(st, rt), ("risk",))
 _register("explain", lambda st, rt, ws: risk.explain(st, rt), ("explain",), ("risk",))
+_register("memory", lambda st, rt, ws: memory.run(st, rt), ("memory",))
 _register("assemble", lambda st, rt, ws: sup.assemble(st, rt, ws))
 _register("summary", lambda st, rt, ws: analyst.summarize(st, rt), ("summary",), ("risk",))
 _register("export", _export, ("export",))
@@ -131,7 +134,7 @@ def build_graph() -> StateGraph:
     g.add_edge("vulnerability", "verification")
     g.add_edge("typosquat", "lockfile_history")
     g.add_edge(["verification", "lockfile_history"], "risk")  # join: waits for both branches
-    for a, b in (("risk", "explain"), ("explain", "assemble"), ("assemble", "summary"), ("summary", "export"), ("export", "finalize"), ("finalize", END)):
+    for a, b in (("risk", "explain"), ("explain", "memory"), ("memory", "assemble"), ("assemble", "summary"), ("summary", "export"), ("export", "finalize"), ("finalize", END)):
         g.add_edge(a, b)
     return g
 

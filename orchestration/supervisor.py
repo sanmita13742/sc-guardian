@@ -92,6 +92,7 @@ def assemble(st: ScanState, rt: Runtime, workspace: Optional[Path]) -> None:
     res.setdefault("evidence", {})
     res.setdefault("typosquatting", [f.model_dump() for f in st.typo["findings"]])
     res.setdefault("source_package_view", [])
+    res.setdefault("memory", {"diff": None, "fingerprints": {}, "titles": {}})
     if res["source_status"].get("OSV", {}).get("state") in ("unavailable", "partial", "failed"):
         res["limitations"].append(f"OSV was {res['source_status']['OSV']['state']}: vulnerability results are incomplete (see coverage).")
 

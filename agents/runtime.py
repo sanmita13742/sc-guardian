@@ -32,6 +32,7 @@ STEPS: list[tuple[str, str, str]] = [
     ("lockfile_history", "Threat Agent", "Compare lockfiles against Git history"),
     ("risk", "Risk Agent", "Deterministic risk scoring and correlation"),
     ("explain", "Risk Agent", "Evidence-grounded explanations"),
+    ("memory", "Memory Agent", "Compare with previous scans and record finding history"),
     ("summary", "Analyst Agent", "Executive summary and prioritised actions"),
     ("export", "Analyst Agent", "Write reports and save to SQLite"),
     ("cleanup", "Supervisor", "Clean up the temporary workspace"),
@@ -48,6 +49,7 @@ AGENT_ROLES = {
     "Verification Agent": "Independently re-checks findings against the ground-truth database via a second query route.",
     "Threat Agent": "Detects suspicious dependency changes: typosquatting and modified lockfiles in Git history.",
     "Risk Agent": "Scores risk with transparent rules, correlates detections and writes evidence-grounded explanations.",
+    "Memory Agent": "Remembers every scan: tells new findings from persisting and fixed ones, keeps analyst decisions with reasons and expiry.",
     "Analyst Agent": "Summarises results, prioritises actions, and produces reports.",
 }
 

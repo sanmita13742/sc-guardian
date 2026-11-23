@@ -8,6 +8,7 @@ from sbom.scanner_engine import SCANNER_CHOICES, SCANNER_LABELS, available_scann
 from core.scan_orchestrator import ScanOptions, run_scan
 from core.url_validator import InvalidRepositoryURL
 from storage.database import Database
+from ui.components.memory_panel import history_banner
 from ui.components.common import df, get_result, page_header, repo_caption
 from ui.components.live_progress import LiveProgress
 
@@ -88,6 +89,7 @@ def _overview(r: dict) -> None:
     c[2].metric("Components", sm.get("components", 0))
     c[3].metric("Confirmed Vulns", sm.get("vulnerabilities_confirmed", 0))
 
+    history_banner(r)
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
