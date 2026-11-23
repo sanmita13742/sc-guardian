@@ -11,21 +11,12 @@ venv/
 .env.*
 !.env.example
 
-# Node
-node_modules/
-
-# Streamlit app runtime data (clones, cache DB, generated SBOMs/reports)
-streamlit_app/.workspaces/
-streamlit_app/data/*.db
-streamlit_app/data/*.sqlite*
-streamlit_app/artifacts/sbom/*
-!streamlit_app/artifacts/sbom/.gitkeep
-streamlit_app/artifacts/scans/*
-!streamlit_app/artifacts/scans/.gitkeep
-streamlit_app/artifacts/reports/*
-!streamlit_app/artifacts/reports/.gitkeep
-streamlit_app/artifacts/graphs/*
-!streamlit_app/artifacts/graphs/.gitkeep
+# Runtime data (clones, cache DB, generated SBOMs/reports/graphs)
+.workspaces/
+data/*
+!data/.gitkeep
+artifacts/*/*
+!artifacts/*/.gitkeep
 
 # IDE & OS
 .idea/
