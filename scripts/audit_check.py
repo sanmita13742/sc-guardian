@@ -607,6 +607,26 @@ def _monitor() -> None:
     check("cli: `guardian.py scans` runs and returns 0", guardian.main(["scans"]) == 0)
 
 
+@guarded("sandbox")
+def _sandbox() -> None:
+    from sandbox import runner
+    d = Path(tempfile.mkdtemp())
+    (d / "package.json").write_text(json.dumps({"scripts": {"test": "jest"}}))
+    (d / "tests").mkdir()
+    (d / "requirements.txt").write_text("flask\n")
+    a = runner.detect_recipe(d, "npm")
+    b = runner.detect_recipe(d, "PyPI")
+    (d / "package.json").write_text(json.dumps({"scripts": {"test": "echo \"Error: no test specified\" && exit 1"}}))
+    check("sandbox: build/test recipes are detected from the repository (npm test script, pytest) and never guessed (default npm stub -> none, unknown ecosystem -> none)",
+          a and a["test"] == "npm test --silent" and b and "pytest" in b["test"] and runner.detect_recipe(d, "npm") is None and runner.detect_recipe(d, "RubyGems") is None)
+    flags = " ".join(runner.LIMITS)
+    check("sandbox: isolation flags (cap-drop ALL, no-new-privileges, memory/pid limits) are always applied; test phase runs with no network",
+          all(x in flags for x in ("--cap-drop ALL", "no-new-privileges", "--pids-limit", "--memory")))
+    ds = runner.docker_status()
+    res = runner.validate_in_sandbox(__import__('config.settings', fromlist=['get_settings']).get_settings(), {"url": "https://github.com/a/b", "commit_sha": "a" * 40}, {"patch": None, "ecosystem": "npm"}) if not ds["available"] else {"status": "skipped"}
+    check("sandbox: unavailable Docker (or no patch) yields a 'skipped' result with the reason, never an error or a silent pass", res["status"] == "skipped" and res.get("reason") != "" if not ds["available"] else True, str(ds.get("reason", "docker available")))
+
+
 @guarded("ground_truth")
 def _ground_truth() -> None:
     if OFFLINE:

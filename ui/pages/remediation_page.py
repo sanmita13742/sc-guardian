@@ -118,7 +118,36 @@ def render() -> None:
         st.markdown(f"- Patch applies cleanly (`git apply --check`): **{val.get('patch_applies')}**")
         st.markdown(f"- Static what-if rescan: **{'done' if val.get('what_if_run') else 'not possible'}**")
         bt = val.get("build_tests") or {}
-        st.markdown(f"- Build and tests: **{bt.get('status', 'not_run')}** - {bt.get('reason', '')}")
+        st.markdown(f"- Build and tests: **{bt.get('status', 'not_run')}** - {bt.get('reason', '') or bt.get('attribution', '')}")
+        for run in bt.get("runs", []):
+            with st.expander(f"{run['phase']} - exit code {run['exit_code']} ({run['seconds']}s)"):
+                st.code(run["log_tail"] or "(no output)", language="text")
+        if bt.get("baseline"):
+            st.caption(f"Baseline (without the patch): {bt['baseline']['status']}")
+        from sandbox.runner import docker_status
+        ds = docker_status()
+        ap_ = approvals.get(i["fingerprint"])
+        if i.get("patch") and ap_ and ap_["state"] == "approved":
+            if not ds["available"]:
+                st.info("Optional sandbox validation is unavailable: " + ds["reason"])
+            else:
+                st.warning("Sandbox validation downloads dependencies and RUNS this repository's own build/test commands inside an isolated Docker container (tests run without network).")
+                ok = st.checkbox("I approve running this repository's build and tests in a Docker sandbox", key=f"sbx_ok_{i['id']}")
+                if st.button("Run sandbox validation", disabled=not ok, key=f"sbx_{i['id']}"):
+                    from sandbox.runner import validate_in_sandbox
+                    mem.audit(repo["url"], ap_["actor"], "sandbox_validation_started", i["title"], "approved by checkbox")
+                    box = st.status("Running in Docker ...", expanded=True)
+                    res_ = validate_in_sandbox(get_settings(), repo, i, progress=lambda m: box.write(m))
+                    box.update(label=f"Sandbox result: {res_['status']}", state="complete")
+                    i.setdefault("validation", {})["build_tests"] = res_
+                    try:
+                        Database(get_settings().db_path).save_scan(r)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    mem.audit(repo["url"], ap_["actor"], f"sandbox_validation_{res_['status']}", i["title"], str(res_.get("reason") or res_.get("attribution") or ""))
+                    st.rerun()
+        else:
+            st.caption("Sandbox validation becomes available after a reviewer approves this proposal.")
         if i.get("evidence_id"):
             st.caption(f"Evidence `{i['evidence_id']}`")
     with t_appr:
