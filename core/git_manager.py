@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import Settings, get_settings
+from core.safe_env import scrubbed_env
 from core.url_validator import GitHubRepo, validate_ref
 
 SAFE_CONFIG = [
@@ -27,7 +28,7 @@ class GitError(RuntimeError):
 
 
 def _env() -> dict[str, str]:
-    env = dict(os.environ)
+    env = scrubbed_env()
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_ASKPASS"] = "echo"
     env["GCM_INTERACTIVE"] = "never"
@@ -81,6 +82,34 @@ def new_workspace(settings: Settings | None = None) -> tuple[str, Path]:
     ws = s.workspace_dir / scan_id
     ws.mkdir(parents=True, exist_ok=False)
     return scan_id, ws
+
+
+def reap_stale_workspaces(settings: Settings | None = None) -> int:
+    """Delete clone workspaces left behind by crashed/killed scans (older than ``workspace_max_age_s``)."""
+    import time
+    s = settings or get_settings()
+    removed = 0
+    try:
+        for d in s.workspace_dir.iterdir():
+            try:
+                if d.is_dir() and time.time() - d.stat().st_mtime > s.workspace_max_age_s:
+                    _rmtree_force(d)
+                    removed += 1
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return removed
+
+
+def remove_artifacts(settings: Settings, scan_id: str) -> None:
+    """Delete every generated artifact of a pruned scan (files are named ``<scan_id>-*``)."""
+    for sub in ("sbom", "scans", "reports", "graphs"):
+        for f in (settings.artifacts_dir / sub).glob(f"{scan_id}-*"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 def clone_repository(repo: GitHubRepo, workspace: Path, ref: str | None = None, settings: Settings | None = None) -> Path:

@@ -456,8 +456,7 @@ class AnalystAgent:
             paths["report_md"] = str(s.artifacts_dir / "reports" / f"{st.prefix}-report.md")
             paths["report_html"] = str(s.artifacts_dir / "reports" / f"{st.prefix}-report.html")
             res["artifacts"] = paths
-            st.ctx.db.save_scan(res)
-            b["message"] = f"{len(paths)} files written; scan saved to SQLite"
+            b["message"] = f"{len(paths)} report/artifact files written (the scan is saved to SQLite when the run finishes)"
 
 
 def source_package_view(vulns: list[dict], risks: dict[str, dict]) -> list[dict]:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import Settings, get_settings
+from core.safe_env import scrubbed_env
 
 
 @dataclass
@@ -44,7 +45,7 @@ def resolve_syft(settings: Settings | None = None) -> Optional[str]:
 def syft_version(syft_bin: str) -> Optional[str]:
     try:
         p = subprocess.run([syft_bin, "version"], capture_output=True, text=True, timeout=60, shell=False,
-                           env=dict(os.environ, SYFT_CHECK_FOR_APP_UPDATE="false"))
+                           env=scrubbed_env({"SYFT_CHECK_FOR_APP_UPDATE": "false"}))
     except (OSError, subprocess.TimeoutExpired):
         return None
     for line in p.stdout.splitlines():
@@ -68,7 +69,8 @@ def run_syft(repo_dir: Path, out_path: Path, settings: Settings | None = None) -
         out_path.unlink()
     cmd = build_command(syft, repo_dir, out_path)
     res = SyftResult(ok=False, command=cmd, version=syft_version(syft))
-    env = dict(os.environ, SYFT_CHECK_FOR_APP_UPDATE="false", SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES="true")
+    env = scrubbed_env({"SYFT_CHECK_FOR_APP_UPDATE": "false", "SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES": "true",
+                        "SYFT_JAVA_USE_NETWORK": "false", "SYFT_PYTHON_SEARCH_REMOTE_LICENSES": "false", "SYFT_JAVASCRIPT_SEARCH_REMOTE_LICENSES": "false"})
     t0 = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",

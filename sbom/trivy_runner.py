@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import Settings, get_settings
+from core.safe_env import scrubbed_env
 from sbom.syft_runner import SyftResult  # same result shape for every scanner
 
 
@@ -37,7 +38,7 @@ def trivy_version(trivy_bin: str) -> Optional[str]:
 
 def build_command(trivy_bin: str, repo_dir: Path, out_path: Path) -> list[str]:
     return [trivy_bin, "fs", "--format", "cyclonedx", "--scanners", "license", "--include-dev-deps",
-            "--skip-db-update", "--skip-java-db-update", "--quiet", "--output", str(Path(out_path).resolve()),
+            "--skip-db-update", "--skip-java-db-update", "--offline-scan", "--quiet", "--output", str(Path(out_path).resolve()),
             str(Path(repo_dir).resolve())]
 
 
@@ -55,7 +56,7 @@ def run_trivy(repo_dir: Path, out_path: Path, settings: Settings | None = None) 
     t0 = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=s.syft_timeout_s, shell=False, env=dict(os.environ, TRIVY_DISABLE_TELEMETRY="true"))
+                           timeout=s.syft_timeout_s, shell=False, env=scrubbed_env({"TRIVY_DISABLE_TELEMETRY": "true", "TRIVY_SKIP_VERSION_CHECK": "true"}))
     except subprocess.TimeoutExpired:
         res.duration_s = round(time.time() - t0, 2)
         res.error = f"Trivy timed out after {s.syft_timeout_s}s"

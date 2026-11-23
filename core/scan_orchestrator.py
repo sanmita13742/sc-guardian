@@ -7,6 +7,9 @@ in ``result["agent_trace"]`` and streamed to ``on_event`` for the live progress 
 """
 from __future__ import annotations
 
+import calendar
+import hashlib
+import json
 import platform
 import time
 import uuid
@@ -51,6 +54,42 @@ class ScanOptions:
     use_llm: bool = False
     rules_path: Optional[str] = None
     sbom_scanner: str = "auto"  # auto | syft | trivy | builtin
+
+
+_FP_FIELDS = ("use_nvd", "use_kev", "enrich_metadata", "registry_checks", "lockfile_commits", "baseline", "use_llm", "rules_path")
+
+
+def options_fingerprint(o: "ScanOptions") -> str:
+    """Hash of every option that changes the analysis result (not of url/ref/keep/reuse/scanner choice)."""
+    return hashlib.sha256(json.dumps({k: getattr(o, k) for k in _FP_FIELDS}, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def _age_s(ts: str) -> float:
+    try:
+        return time.time() - calendar.timegm(time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ"))
+    except (ValueError, TypeError):
+        return float("inf")
+
+
+def reusable(res: Optional[dict], options: "ScanOptions", s: Settings) -> tuple[bool, str]:
+    """A stored scan may be reused only if it is fresh and was produced by the same code, rules and options."""
+    if not res:
+        return False, "no stored scan"
+    if res.get("status") == "failed":
+        return False, "stored scan failed"
+    age = _age_s((res.get("repo") or {}).get("scan_timestamp", ""))
+    if age > s.scan_cache_ttl_s:
+        return False, f"stored scan is older than {s.scan_cache_ttl_s // 3600}h (new advisories may exist)"
+    if (res.get("tool_versions") or {}).get("scanner") != SCANNER_VERSION or res.get("risk_rules_version") != RULES_VERSION:
+        return False, "scanner or risk-rule version changed"
+    if res.get("options_fp") != options_fingerprint(options):
+        return False, "scan options differ"
+    tool = res.get("sbom_tool") or {}
+    if not (tool.get("used") and res.get("sbom_path") and Path(res["sbom_path"]).exists()):
+        return False, "stored scan has no SBOM file"
+    if options.sbom_scanner not in ("auto", None) and tool.get("used") != options.sbom_scanner:
+        return False, "a different SBOM scanner was used"
+    return True, f"{int(age // 60)} min old"
 
 
 def _now() -> str:
@@ -119,16 +158,17 @@ def run_scan(options: ScanOptions, settings: Settings | None = None, db: Databas
         sha = resolve_remote_sha(repo_ref.clone_url, ref)
         cached = db.find_scan(repo_ref.web_url, sha) if sha else None
         res = db.load_scan(cached) if cached else None
-        if res and not (res.get("sbom_tool") and res.get("sbom_path") and Path(res["sbom_path"]).exists()
-                        and (options.sbom_scanner in ("auto", None) or res["sbom_tool"].get("used") == options.sbom_scanner)):
-            res = None  # stored scan predates scanner selection / has no SBOM file / used a different scanner: rescan
-        if res:
-            rt.decide("validate", f"Reuse the stored scan of commit {sha[:10]}", reason="Identical commit already analysed; untick 'Reuse cached scan' to force a rescan.", agent="Supervisor")
+        ok, why = reusable(res, options, s)
+        if cached and not ok:
+            rt.observe("validate", f"A stored scan of this commit exists but is not reused: {why}")
+        if ok:
+            rt.decide("validate", f"Reuse the stored scan of commit {sha[:10]} ({why})", reason="Identical commit, same scanner/rules/options and still fresh; untick 'Reuse cached scan' to force a rescan.", agent="Supervisor")
             for step in rt.status:
                 if rt.status[step] == "pending":
                     rt.skip(step, "reused stored result")
             res["from_cache"] = True
             return res
+    gm.reap_stale_workspaces(s)
     scan_id, ws = gm.new_workspace(s)
     ctx = _Ctx(s, db)
     result: dict[str, Any] = {}
@@ -181,7 +221,7 @@ def analyze(repo_dir: Path, info: RepoInfo, options: ScanOptions, ctx: _Ctx, rt:
     s, db = ctx.s, ctx.db
     st = ScanState(repo_dir=repo_dir, info=info, options=options, ctx=ctx, rules=load_rules(options.rules_path), git_history=git_history)
     st.prefix = f"{info.scan_id}-{_safe_name(info.name)}"
-    st.result = {"status": "running", "repo": info.model_dump(), "from_cache": False, "limitations": []}
+    st.result = {"status": "running", "repo": info.model_dump(), "from_cache": False, "limitations": [], "options_fp": options_fingerprint(options)}
     res = st.result
 
     recon, sbom, graph, vuln, ver, threat, risk, analyst = (ReconAgent(), SBOMAgent(), GraphAgent(), VulnerabilityAgent(), VerificationAgent(),
@@ -210,8 +250,12 @@ def analyze(repo_dir: Path, info: RepoInfo, options: ScanOptions, ctx: _Ctx, rt:
     try:
         json_exporter.write_all(res, s.artifacts_dir / "scans", st.prefix)
         db.save_scan(res)
-    except Exception:
-        pass
+        for old in db.prune_repo(info.url, s.keep_scans_per_repo):
+            gm.remove_artifacts(s, old)
+    except Exception as e:  # never silent: the user must know the result was not persisted
+        res.setdefault("errors", []).append({"stage": "persist", "error": f"{type(e).__name__}: {str(e)[:300]}"})
+        res["status"] = "completed_with_errors"
+        res["limitations"].append("The result could not be saved to the database/artifacts; it is shown for this session only.")
     return res
 
 

@@ -111,6 +111,15 @@ class Database:
                           " ORDER BY scan_timestamp DESC LIMIT 1", (repo_url, commit_sha)).fetchone()
         return r["scan_id"] if r else None
 
+    def prune_repo(self, repo_url: str, keep: int) -> list[str]:
+        """Keep the newest ``keep`` scans of a repository; return the ids that were deleted."""
+        with self.connect() as c:
+            ids = [r["scan_id"] for r in c.execute("SELECT scan_id FROM scans WHERE repo_url=? ORDER BY scan_timestamp DESC, rowid DESC", (repo_url,)).fetchall()]
+            old = ids[keep:]
+            for sid in old:
+                c.execute("DELETE FROM scans WHERE scan_id=?", (sid,))
+        return old
+
     def findings(self, scan_id: str, kind: str | None = None) -> list[dict]:
         q, args = "SELECT payload FROM findings WHERE scan_id=?", [scan_id]
         if kind:

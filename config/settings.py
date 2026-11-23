@@ -48,6 +48,11 @@ class Settings:
     nvd_max_cves_no_key: int = 20
     nvd_max_cves_with_key: int = 300
 
+    # freshness / retention
+    scan_cache_ttl_s: int = 24 * 3600  # a stored scan of the same commit is reused only while younger than this
+    workspace_max_age_s: int = 3600  # orphaned clone workspaces older than this are removed at start
+    keep_scans_per_repo: int = 20
+
     # graph
     max_paths_per_target: int = 25
     max_path_depth: int = 40
