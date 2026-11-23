@@ -24,6 +24,7 @@ class SyftResult:
     version: Optional[str] = None
     sbom_path: Optional[str] = None
     error: Optional[str] = None
+    options: dict = field(default_factory=lambda: {"javascript.include-dev-dependencies": True})
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -66,7 +67,7 @@ def run_syft(repo_dir: Path, out_path: Path, settings: Settings | None = None) -
         out_path.unlink()
     cmd = build_command(syft, repo_dir, out_path)
     res = SyftResult(ok=False, command=cmd, version=syft_version(syft))
-    env = dict(os.environ, SYFT_CHECK_FOR_APP_UPDATE="false")
+    env = dict(os.environ, SYFT_CHECK_FOR_APP_UPDATE="false", SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES="true")
     t0 = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",

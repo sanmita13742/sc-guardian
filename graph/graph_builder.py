@@ -133,7 +133,23 @@ def build_graph(sbom_doc: dict, components: list[Component], lock_deps: list[Loc
         if g.in_degree(ref) == 0 and c.service_dir is not None and ref not in non_direct_known:
             g.add_edge(root_id(c.service_dir), ref, provenance="inferred-no-parent")
             info["inferred_edges"] += 1
-    # anything still parentless (e.g. non-direct per lockfile but no recorded parent) stays parentless -> reported
+    # components still unreachable from every root (dependency cycles or parents that are themselves unrooted):
+    # attach the *entry* components of each unreachable strongly-connected group, flagged as inferred.
+    roots = roots_of(g)
+    reachable = set()
+    for r in roots:
+        reachable |= nx.descendants(g, r)
+    unreachable = [n for n in seen if n not in reachable]
+    if unreachable:
+        sub = g.subgraph(unreachable)
+        cond = nx.condensation(sub)
+        for cn in cond.nodes:
+            if cond.in_degree(cn) == 0:
+                for member in cond.nodes[cn]["members"]:
+                    svc = g.nodes[member].get("service_dir")
+                    if svc is not None and root_id(svc) in g:
+                        g.add_edge(root_id(svc), member, provenance="inferred-no-parent")
+                        info["inferred_edges"] += 1
     return g, info
 
 
