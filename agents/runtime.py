@@ -36,6 +36,8 @@ STEPS: list[tuple[str, str, str]] = [
     ("lockfile_history", "Threat Agent", "Compare lockfiles against Git history"),
     ("risk", "Risk Agent", "Deterministic risk scoring and correlation"),
     ("explain", "Risk Agent", "Evidence-grounded explanations"),
+    ("remediate", "Remediation Agent", "Plan the smallest safe change per source package"),
+    ("validate_fix", "Validator Agent", "Validate proposals: what-if rescan, before/after SBOM, patch check"),
     ("memory", "Memory Agent", "Compare with previous scans and record finding history"),
     ("summary", "Analyst Agent", "Executive summary and prioritised actions"),
     ("export", "Analyst Agent", "Write reports and save to SQLite"),
@@ -55,6 +57,8 @@ AGENT_ROLES = {
     "Verification Agent": "Independently re-checks findings against the ground-truth database via a second query route.",
     "Threat Agent": "Detects suspicious dependency changes: typosquatting and modified lockfiles in Git history.",
     "Risk Agent": "Scores risk with transparent rules, correlates detections and writes evidence-grounded explanations.",
+    "Remediation Agent": "Chooses upgrade / pin / remove / mitigate / block / escalate per source package, searches parent versions via registry resolution, and drafts a reviewable patch with rationale and rollback.",
+    "Validator Agent": "Proves a proposal without running repository code: re-resolves the dependency tree, re-matches advisories (fixed, remaining, newly introduced), diffs the SBOM and checks the patch applies.",
     "Memory Agent": "Remembers every scan: tells new findings from persisting and fixed ones, keeps analyst decisions with reasons and expiry.",
     "Analyst Agent": "Summarises results, prioritises actions, and produces reports.",
 }

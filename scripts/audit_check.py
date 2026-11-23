@@ -480,6 +480,67 @@ def _investigator() -> None:
     check("llm: deterministic mode makes zero LLM calls (no key -> no client)", llmc.from_settings(SimpleNamespace(llm_api_key=None)) is None and not llmc.CALL_LOG)
 
 
+@guarded("remediation")
+def _remediation() -> None:
+    from core import git_manager as gm
+    from remediation import patchers
+    from remediation.export import pr_markdown
+    from remediation.versions import candidates, change_kind
+    from remediation.whatif import evaluate, sbom_diff
+    from storage.database import Database
+    from storage.memory import Memory
+
+    cases = [
+        ("npm", "package.json", '{\n  "name": "a",\n  "dependencies": {\n    "minimist": "^1.2.0"\n  }\n}\n', "minimist", "1.2.6", "bump", "package-lock.json"),
+        ("npm", "package.json", '{\n  "name": "a",\n  "dependencies": {}\n}\n', "qs", "6.14.3", "pin", "package-lock.json"),
+        ("npm", "package.json", '{\n  "name": "a"\n}\n', "qs", "6.14.3", "pin", "yarn.lock"),
+        ("PyPI", "requirements.txt", "flask==2.0.0\nrequests>=2.0\n", "requests", "2.31.0", "bump", ""),
+        ("PyPI", "requirements.txt", "flask==2.0.0\n", "urllib3", "2.2.2", "pin", ""),
+        ("Maven", "pom.xml", "<project>\n<dependencies>\n  <dependency>\n    <groupId>org.x</groupId>\n    <artifactId>lib</artifactId>\n    <version>1.0</version>\n  </dependency>\n</dependencies>\n</project>\n", "org.x:lib", "1.1", "bump", ""),
+        ("Maven", "pom.xml", "<project>\n<dependencies>\n  <dependency>\n    <groupId>a</groupId>\n    <artifactId>b</artifactId>\n    <version>1</version>\n  </dependency>\n</dependencies>\n</project>\n", "org.y:child", "2.0", "pin", ""),
+        ("Go", "go.mod", "module m\n\ngo 1.22\n\nrequire (\n\tgithub.com/a/b v1.0.0\n)\n", "github.com/a/b", "v1.2.0", "bump", ""),
+        ("crates.io", "Cargo.toml", '[dependencies]\nserde = "1.0.100"\n', "serde", "1.0.200", "bump", ""),
+        ("Packagist", "composer.json", '{\n    "require": {\n        "a/b": "^1.0"\n    }\n}\n', "a/b", "1.5.0", "bump", ""),
+        ("NuGet", "x.csproj", '<Project>\n  <ItemGroup>\n    <PackageReference Include="Foo" Version="1.0.0" />\n  </ItemGroup>\n</Project>\n', "Foo", "1.1.0", "bump", ""),
+    ]
+    bad = []
+    for eco, path, text, name, to, kind, hint in cases:
+        res = patchers.patch_for(eco, path, text, name, to, kind, hint)
+        if not res:
+            bad.append(f"{eco}/{kind}: no patch")
+            continue
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / path).write_text(text, encoding="utf-8", newline="")
+            (Path(td) / "x.patch").write_text(res["diff"], encoding="utf-8", newline="")
+            if gm.run_git(["apply", "--check", "x.patch"], cwd=Path(td), check=False).returncode != 0 or to.lstrip("v") not in res["new_text"]:
+                bad.append(f"{eco}/{kind}: patch invalid")
+    check("remediation: generated patches for npm/PyPI/Maven/Go/Cargo/Composer/NuGet (bump and pin) pass `git apply --check` and contain the target version", not bad, "; ".join(bad))
+    check("remediation: npm major-prefix is preserved on bump (^1.2.0 -> ^1.2.6) and yarn pins use `resolutions`",
+          '"^1.2.6"' in patchers.patch_for("npm", "package.json", cases[0][2], "minimist", "1.2.6", "bump")["new_text"] and '"resolutions"' in patchers.patch_for("npm", "package.json", cases[2][2], "qs", "6.14.3", "pin", "yarn.lock")["new_text"])
+    check("remediation: version helpers (candidates exclude pre-releases and older versions, same major first; change kind)",
+          candidates("npm", "1.2.0", ["1.1.0", "1.2.3", "1.3.0-beta.1", "1.3.0", "2.0.0", "1.2.0"]) == ["1.2.3", "1.3.0", "2.0.0"] and change_kind("1.2.0", "2.0.1") == "major" and change_kind("1.2.0", "1.3.0") == "minor")
+    before = [{"package_name": "lib", "installed_version": "1.0", "ecosystem": "npm", "vulnerability_ids": ["GHSA-1"], "primary_id": "CVE-1", "severity": "HIGH"}]
+    after = [{"id": "CVE-9", "ids": ["GHSA-9"], "package": "other", "version": "2", "severity": "MEDIUM", "ecosystem": "npm"}, {"id": "CVE-8", "ids": ["GHSA-8"], "package": "elsewhere", "version": "1", "severity": "HIGH", "ecosystem": "npm"}]
+    known = [{"package_name": "elsewhere", "installed_version": "1", "ecosystem": "npm", "vulnerability_ids": ["GHSA-8"], "primary_id": "CVE-8", "severity": "HIGH"}]
+    wi = evaluate(before, after, {("lib", "1.0")}, {("lib", "1.1"), ("other", "2")}, known_all=known)
+    check("what-if: fixed vs remaining vs newly-introduced is computed; advisories already present elsewhere are not 'introduced'",
+          len(wi["fixed"]) == 1 and len(wi["newly_introduced"]) == 1 and wi["already_present_elsewhere"] == 1 and wi["verdict"] == "partial" and sbom_diff({("lib", "1.0")}, {("lib", "1.1")})["changed"][0]["to"] == "1.1", str(wi["verdict"]))
+    db = Database(Path(tempfile.mkdtemp()) / "a.db")
+    m = Memory(db)
+    try:
+        m.set_approval("u", "rem|x", "approved", "  ")
+        needs_reason = False
+    except ValueError:
+        needs_reason = True
+    m.set_approval("u", "rem|x", "approved", "tested locally", "Upgrade x", "alice")
+    ap = m.approvals("u")["rem|x"]
+    log = m.audit_log("u")
+    rem = {"id": "REM-001", "title": "Upgrade x", "action": "upgrade", "priority": "P1", "rationale": "because", "finding_ids": ["VULN-001"], "rollback": ["revert"], "what_if": wi, "validation": {"patch_applies": True}}
+    md = pr_markdown(rem, {"url": "u", "commit_sha": "abc"}, ap)
+    check("approval: a reason is required, the decision and actor are stored, every decision lands in the audit log, the PR text records the approval",
+          needs_reason and ap["state"] == "approved" and ap["actor"] == "alice" and log and log[0]["action"] == "remediation_approved" and "Approved by **alice**" in md and "No change was applied automatically" in md)
+
+
 @guarded("ground_truth")
 def _ground_truth() -> None:
     if OFFLINE:

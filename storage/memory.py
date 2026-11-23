@@ -122,3 +122,25 @@ class Memory:
                     c.execute("UPDATE package_seen SET last_seen_at=?, scans_seen=scans_seen+1, repos_seen=repos_seen+?, last_repo=? WHERE ecosystem=? AND name=?",
                               (now, 1 if other else 0, repo_url, eco, name))
         return prior
+
+    # ------------------------------------------------------------------ approvals (human-in-the-loop) and audit trail
+    def set_approval(self, repo_url: str, fingerprint: str, state: str, reason: str, title_: str = "", actor: str = "analyst") -> None:
+        if state not in ("approved", "rejected", "needs_review"):
+            raise ValueError("state must be approved, rejected or needs_review")
+        if not reason.strip():
+            raise ValueError("a reason is required")
+        with self.db.connect() as c:
+            c.execute("INSERT OR REPLACE INTO approvals(repo_url,fingerprint,state,reason,title,actor,decided_at) VALUES (?,?,?,?,?,?,?)", (repo_url, fingerprint, state, reason.strip(), title_, actor, _now()))
+        self.audit(repo_url, actor, f"remediation_{state}", title_ or fingerprint, reason.strip())
+
+    def approvals(self, repo_url: str) -> dict[str, dict]:
+        with self.db.connect() as c:
+            return {r["fingerprint"]: dict(r) for r in c.execute("SELECT * FROM approvals WHERE repo_url=?", (repo_url,)).fetchall()}
+
+    def audit(self, repo_url: str, actor: str, action: str, subject: str = "", detail: str = "") -> None:
+        with self.db.connect() as c:
+            c.execute("INSERT INTO audit_log(repo_url,at,actor,action,subject,detail) VALUES (?,?,?,?,?,?)", (repo_url, _now(), actor, action, subject[:200], detail[:1000]))
+
+    def audit_log(self, repo_url: str, limit: int = 200) -> list[dict]:
+        with self.db.connect() as c:
+            return [dict(r) for r in c.execute("SELECT at, actor, action, subject, detail FROM audit_log WHERE repo_url=? ORDER BY id DESC LIMIT ?", (repo_url, limit)).fetchall()]

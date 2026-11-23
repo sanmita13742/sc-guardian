@@ -62,6 +62,10 @@ class Settings:
     investigator_llm_max: int = 8  # findings the optional LLM may investigate per scan
     investigator_max_steps: int = 5  # tool calls per LLM investigation
 
+    # remediation
+    remediation_max_groups: int = 12  # source-package groups planned per scan (highest priority first)
+    remediation_budget_s: int = 150  # wall-clock budget for planning
+
     # cache bounds
     cache_max_rows: int = 2_000_000
     cache_max_age_days: int = 120

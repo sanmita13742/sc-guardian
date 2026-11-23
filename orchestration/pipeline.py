@@ -31,6 +31,7 @@ from agents.runtime import Runtime
 from agents.investigator import InvestigatorAgent
 from agents.memory_agent import MemoryAgent
 from agents.pipeline_agent import PipelineAgent
+from agents.remediation_agent import RemediationAgent, ValidatorAgent
 from agents.specialists import (AnalystAgent, GraphAgent, ReconAgent, RiskAgent, SBOMAgent, ScanState, ThreatAgent, VerificationAgent,
                                 VulnerabilityAgent)
 from core import git_manager as gm
@@ -50,6 +51,8 @@ NODES: dict[str, tuple[Callable, tuple[str, ...], tuple[str, ...]]] = {}
 
 memory = MemoryAgent()
 investigator = InvestigatorAgent()
+remediation_agent = RemediationAgent()
+validator_agent = ValidatorAgent()
 pipeline_agent = PipelineAgent()
 recon, sbom, graph_agent, vuln, ver, threat, risk, analyst = (ReconAgent(), SBOMAgent(), GraphAgent(), VulnerabilityAgent(), VerificationAgent(),
                                                              ThreatAgent(), RiskAgent(), AnalystAgent())
@@ -88,6 +91,8 @@ _register("package_risk", lambda st, rt, ws: threat.package_risk(st, rt), ("pack
 _register("lockfile_history", lambda st, rt, ws: threat.lockfile_history(st, rt), ("lockfile_history",))
 _register("risk", lambda st, rt, ws: risk.score(st, rt), ("risk",))
 _register("explain", lambda st, rt, ws: risk.explain(st, rt), ("explain",), ("risk",))
+_register("remediate", lambda st, rt, ws: remediation_agent.run(st, rt), ("remediate",))
+_register("validate_fix", lambda st, rt, ws: validator_agent.run(st, rt), ("validate_fix",), ("remediate",))
 _register("memory", lambda st, rt, ws: memory.run(st, rt), ("memory",))
 _register("assemble", lambda st, rt, ws: sup.assemble(st, rt, ws))
 _register("summary", lambda st, rt, ws: analyst.summarize(st, rt), ("summary",), ("risk",))
@@ -145,7 +150,7 @@ def build_graph() -> StateGraph:
     g.add_edge("typosquat", "lockfile_history")
     g.add_edge("lockfile_history", "package_risk")
     g.add_edge(["investigator", "package_risk"], "risk")  # join: waits for both branches
-    for a, b in (("risk", "explain"), ("explain", "memory"), ("memory", "assemble"), ("assemble", "summary"), ("summary", "export"), ("export", "finalize"), ("finalize", END)):
+    for a, b in (("risk", "explain"), ("explain", "remediate"), ("remediate", "validate_fix"), ("validate_fix", "memory"), ("memory", "assemble"), ("assemble", "summary"), ("summary", "export"), ("export", "finalize"), ("finalize", END)):
         g.add_edge(a, b)
     return g
 

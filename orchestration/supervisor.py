@@ -97,6 +97,7 @@ def assemble(st: ScanState, rt: Runtime, workspace: Optional[Path]) -> None:
     res["pipeline"] = st.pipe
     res.setdefault("investigations", {})
     res["package_risk"] = st.pkgrisk
+    res["remediation"] = st.remediation or {"items": [], "manifests": {}, "groups_total": 0, "groups_not_planned": 0}
     res["evidence_store"] = st.evidence.to_list()
     if res["source_status"].get("OSV", {}).get("state") in ("unavailable", "partial", "failed"):
         res["limitations"].append(f"OSV was {res['source_status']['OSV']['state']}: vulnerability results are incomplete (see coverage).")

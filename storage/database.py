@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-SCHEMA_VERSION = 2  # 1: scans/findings/cache  2: + memory tables, graph tables, scans.scanner_version
+SCHEMA_VERSION = 3  # 1: scans/findings/cache  2: + memory tables, graph tables, scans.scanner_version
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS scans (
@@ -95,6 +95,26 @@ CREATE TABLE IF NOT EXISTS graph_edges (
     PRIMARY KEY (scan_id, src, dst)
 );
 CREATE INDEX IF NOT EXISTS idx_graph_nodes_key ON graph_nodes(node_key);
+CREATE TABLE IF NOT EXISTS approvals (
+    repo_url TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    state TEXT NOT NULL,               -- approved | rejected | needs_review
+    reason TEXT NOT NULL,
+    title TEXT,
+    actor TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    PRIMARY KEY (repo_url, fingerprint)
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_url TEXT NOT NULL,
+    at TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    subject TEXT,
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_repo ON audit_log(repo_url, id);
 CREATE TABLE IF NOT EXISTS cache (
     namespace TEXT NOT NULL,
     key TEXT NOT NULL,
