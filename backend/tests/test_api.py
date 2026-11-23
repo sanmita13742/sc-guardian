@@ -1,45 +1,36 @@
-import pytest
+import json
+
 from fastapi.testclient import TestClient
-from app.main import app
 
-client = TestClient(app)
+from app import main
 
 
-def test_api_health():
-    response = client.get("/health")
+client = TestClient(main.app)
+
+
+def test_health():
+    response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    assert response.json()["status"] == "ok"
 
 
-def test_api_repositories():
-    response = client.get("/api/repositories")
+def test_invalid_url_rejected_without_starting_job():
+    response = client.post("/api/analyses", json={"repository_url": "https://example.com/a/b"})
+    assert response.status_code == 422
+
+
+def test_fixture_graph_and_artifact_allowlist(tmp_path, monkeypatch):
+    job_id = "c" * 32
+    run_dir = tmp_path / job_id
+    run_dir.mkdir()
+    graph = {"format": "nodegoat-guardian-graph-v1", "root": "r", "nodes": [], "edges": [], "stats": {}, "info": {}}
+    (run_dir / "graph.json").write_text(json.dumps(graph), encoding="utf-8")
+    (run_dir / "report.md").write_text("# report", encoding="utf-8")
+    monkeypatch.setattr(main, "RUNS_DIR", tmp_path.resolve())
+    response = client.get(f"/api/analyses/{job_id}/graph")
     assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 1
-    assert data[0]["repository"] == "nodegoat"
-
-
-def test_api_dependencies():
-    response = client.get("/api/dependencies/nodegoat")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total_components"] == 1091
-    assert data["direct_dependencies"] == 36
-    assert data["transitive_dependencies"] == 1055
-
-
-def test_api_graph():
-    response = client.get("/api/graph/nodegoat")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["summary"]["total_nodes"] == 1092
-    assert data["summary"]["total_edges"] > 1000
-
-
-def test_api_sbom():
-    response = client.get("/api/sbom/nodegoat?format=comparison")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total_sbom_components"] > 0
-    assert data["validation_status"].startswith("valid")
+    assert response.json()["format"] == "nodegoat-guardian-graph-v1"
+    assert client.get(f"/api/analyses/{job_id}/artifacts/graph.json").status_code == 200
+    assert client.get(f"/api/analyses/{job_id}/artifacts/report.md").status_code == 200
+    assert client.get(f"/api/analyses/{job_id}/artifacts/secrets.txt").status_code == 404
+    assert client.get(f"/api/analyses/{job_id}/artifacts/..%2Fmanifest.json").status_code in {404, 422}

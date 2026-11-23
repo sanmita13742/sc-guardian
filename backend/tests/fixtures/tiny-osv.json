@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "source": {"path": "package-lock.json", "type": "lockfile"},
+      "packages": [
+        {
+          "package": {"name": "direct-a", "version": "1", "ecosystem": "npm", "purl": "pkg:npm/direct-a@1"},
+          "dependency_groups": ["prod"],
+          "groups": [{"ids": ["GHSA-aaaa-bbbb-cccc"], "aliases": ["CVE-2025-0001"], "max_severity": "7.5"}],
+          "vulnerabilities": [
+            {
+              "id": "GHSA-aaaa-bbbb-cccc",
+              "aliases": ["CVE-2025-0001"],
+              "summary": "Fixture advisory",
+              "affected": [{"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "2"}]}]}],
+              "references": [{"type": "ADVISORY", "url": "https://example.test/advisory"}]
+            }
+          ]
+        },
+        {
+          "package": {"name": "same", "version": "2", "ecosystem": "npm"},
+          "groups": [{"ids": ["OSV-TEST-2"], "aliases": [], "max_severity": null}],
+          "vulnerabilities": [{"id": "OSV-TEST-2", "aliases": [], "affected": []}]
+        }
+      ]
+    }
+  ]
+}
+

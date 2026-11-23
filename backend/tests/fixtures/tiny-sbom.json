@@ -1,0 +1,24 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "metadata": {
+    "component": {"bom-ref": "app@1.0.0", "type": "application", "name": "Åpp", "version": "1.0.0"}
+  },
+  "components": [
+    {"bom-ref": "direct-a@1", "type": "library", "name": "direct-a", "version": "1", "scope": "required"},
+    {"bom-ref": "same-name-instance-1", "type": "library", "name": "same", "version": "2"},
+    {"bom-ref": "same-name-instance-2", "type": "library", "name": "same", "version": "2"},
+    {"bom-ref": "hub@1", "type": "library", "name": "hub", "version": "1"},
+    {"bom-ref": "orphan@1", "type": "library", "name": "orphan", "version": "1"}
+  ],
+  "dependencies": [
+    {"ref": "app@1.0.0", "dependsOn": ["direct-a@1", "same-name-instance-1", "same-name-instance-2"]},
+    {"ref": "app@1.0.0", "dependsOn": ["direct-a@1"]},
+    {"ref": "direct-a@1", "dependsOn": ["hub@1", "missing@3"]},
+    {"ref": "same-name-instance-1", "dependsOn": ["hub@1"]},
+    {"ref": "same-name-instance-2", "dependsOn": []},
+    {"ref": "hub@1", "dependsOn": []},
+    {"ref": "orphan@1", "dependsOn": ["orphan-leaf@1"]}
+  ]
+}
+
