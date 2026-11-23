@@ -72,6 +72,10 @@ def render() -> None:
     vmap = _vuln_map(r)
     vulns = r.get("vulnerabilities", [])
     roots = roots_of(g)
+    if not roots or not any(a.get("kind") == "component" for _, a in g.nodes(data=True)):
+        st.info("This repository has no package dependencies to graph (no lockfile/manifest packages were found). "
+                "Container images and CI actions are listed on the Pipeline & Containers page.")
+        return
     labels = {n: g.nodes[n].get("label", n) for n in g.nodes}
     comps = [n for n, a in g.nodes(data=True) if a.get("kind") == "component"]
     direct_nodes = {n for n, per in rel.items() if any(v.startswith("direct") for v in per.values())}

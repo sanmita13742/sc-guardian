@@ -1,6 +1,6 @@
 """LangGraph state graph that runs the agent pipeline.
 
-  discover -> classify -> plan -> lockfiles -> sbom_generate -> sbom_validate -> sbom_quality
+  discover -> classify -> plan -> lockfiles -> sbom_generate -> sbom_validate -> pipeline (Docker/CI) -> sbom_quality
         -> (conditional) sbom_second_pass -> sbom_metadata (fusion) -> graph
   graph -> [ vulnerability -> verification ]  ||  [ typosquat -> lockfile_history ]     (parallel branches)
         -> risk (joins both) -> explain -> assemble -> summary -> export -> finalize
@@ -29,6 +29,7 @@ from langgraph.graph import END, START, StateGraph
 
 from agents.runtime import Runtime
 from agents.memory_agent import MemoryAgent
+from agents.pipeline_agent import PipelineAgent
 from agents.specialists import (AnalystAgent, GraphAgent, ReconAgent, RiskAgent, SBOMAgent, ScanState, ThreatAgent, VerificationAgent,
                                 VulnerabilityAgent)
 from core import git_manager as gm
@@ -47,6 +48,7 @@ _REG: dict[str, tuple[ScanState, Runtime, Optional[Path]]] = {}
 NODES: dict[str, tuple[Callable, tuple[str, ...], tuple[str, ...]]] = {}
 
 memory = MemoryAgent()
+pipeline_agent = PipelineAgent()
 recon, sbom, graph_agent, vuln, ver, threat, risk, analyst = (ReconAgent(), SBOMAgent(), GraphAgent(), VulnerabilityAgent(), VerificationAgent(),
                                                              ThreatAgent(), RiskAgent(), AnalystAgent())
 
@@ -71,6 +73,7 @@ _register("plan", lambda st, rt, ws: sup.plan(st, rt), ("plan",))
 _register("lockfiles", lambda st, rt, ws: sbom.lockfiles(st, rt), ("lockfiles",))
 _register("sbom_generate", lambda st, rt, ws: sbom.generate(st, rt), ("sbom_generate",))
 _register("sbom_validate", lambda st, rt, ws: sbom.validate(st, rt), ("sbom_validate",))
+_register("pipeline", lambda st, rt, ws: pipeline_agent.run(st, rt), ("pipeline",))
 _register("sbom_quality", lambda st, rt, ws: sbom.quality(st, rt), ("quality",))
 _register("sbom_second_pass", lambda st, rt, ws: sbom.second_pass(st, rt), ("quality",))
 _register("sbom_metadata", lambda st, rt, ws: sbom.fuse_metadata(st, rt), ("metadata",))
@@ -120,7 +123,7 @@ def build_graph() -> StateGraph:
     g = StateGraph(GraphState)
     for name in NODES:
         g.add_node(name, _wrap(name))
-    chain = ["discover", "classify", "plan", "lockfiles", "sbom_generate", "sbom_validate", "sbom_quality"]
+    chain = ["discover", "classify", "plan", "lockfiles", "sbom_generate", "sbom_validate", "pipeline", "sbom_quality"]
     g.add_edge(START, chain[0])
     for a, b in zip(chain, chain[1:]):
         g.add_edge(a, b)

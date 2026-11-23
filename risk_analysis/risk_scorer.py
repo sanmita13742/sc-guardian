@@ -91,6 +91,22 @@ def score_vulnerability(f: dict, rules: dict | None = None, related: dict | None
     return _assessment(f["finding_id"], "vulnerability", total, factors, rules, cap, unknowns, cvss_severity=sev)
 
 
+def score_pipeline(f: dict, rules: dict | None = None) -> dict[str, Any]:
+    rules = rules or DEFAULT_RULES
+    r = rules["pipeline"]
+    pts = r["severity_points"].get(f["severity"], 4)
+    factors = [{"factor": "Rule severity", "points": pts, "detail": f"{f['rule_id']} {f['severity']}: {f['title']}"}]
+    total = pts
+    if f.get("evidence_strength") == "medium":
+        total += r["heuristic_penalty"]
+        factors.append({"factor": "Heuristic evidence", "points": r["heuristic_penalty"], "detail": "pattern-based, not directly provable from the file alone"})
+    if (f.get("extra") or {}).get("third_party"):
+        total += r["third_party_unpinned_action"]
+        factors.append({"factor": "Third-party action", "points": r["third_party_unpinned_action"], "detail": "the action is maintained outside GitHub/known first-party orgs"})
+    unknowns = ["Static analysis of the file only; whether the workflow/container is used in production is not known."]
+    return _assessment(f["finding_id"], "pipeline", total, factors, rules, None, unknowns)
+
+
 def score_typosquat(f: dict, rules: dict | None = None, related: dict | None = None) -> dict[str, Any]:
     rules = rules or DEFAULT_RULES
     r = rules["typosquatting"]

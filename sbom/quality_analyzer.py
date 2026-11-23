@@ -23,7 +23,7 @@ def analyze_quality(components: list[Component], sbom_doc: dict, lock_deps: list
     lock_errors = lock_errors or []
     lock_deps = [d for d in lock_deps if not d.derived]  # registry-resolved records are not repository evidence
     limitations: list[str] = []
-    pkgs = [c for c in components if c.type != "file" and not c.is_self]
+    pkgs = [c for c in components if c.type not in ("file", "container") and c.purl_type not in ("docker", "github") and not c.is_self]
 
     # ---- metadata gaps
     miss = {"version": [], "purl": [], "license": [], "supplier": [], "hashes": []}

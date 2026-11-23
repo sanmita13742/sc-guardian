@@ -41,8 +41,8 @@ def build_graph(sbom_doc: dict, components: list[Component], lock_deps: list[Loc
     seen: dict[str, Component] = {}
     self_refs: dict[str, str] = {}
     for c in components:
-        if c.type == "file":
-            continue
+        if c.type in ("file", "container") or c.purl_type in ("docker", "github"):
+            continue  # images and CI actions are pipeline dependencies (Pipeline tab), not part of the package dependency graph
         if c.is_self and c.service_dir is not None:
             self_refs[c.bom_ref] = c.service_dir  # the application itself == its service root
             continue

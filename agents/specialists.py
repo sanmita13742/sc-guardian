@@ -20,6 +20,7 @@ from core.models import Component, InspectionResult, LockDependency, RepoInfo
 from core.repository_inspector import headline_languages, inspect_repository, own_package_identities
 from explainability.explanation_engine import explain
 from llm.client import from_settings as llm_from_settings
+from evidence.store import EvidenceStore
 from graph.dependency_tracer import classify_all
 from graph.graph_builder import build_graph
 from graph.graph_exporter import graph_to_json
@@ -63,6 +64,8 @@ class ScanState:
     sbom_tool: dict = field(default_factory=dict)
     fused_path: Optional[str] = None
     fusion: dict = field(default_factory=dict)  # metadata fusion report
+    pipe: dict = field(default_factory=lambda: {"findings": [], "images": [], "actions": [], "files": [], "summary": {}})
+    evidence: EvidenceStore = field(default_factory=EvidenceStore)
     sbom_files: list = field(default_factory=list)  # [{label, path}] files shown in the SBOM viewer
     sbom_doc: dict = field(default_factory=dict)
     sbom_path: Optional[str] = None
@@ -468,7 +471,7 @@ class RiskAgent:
 
     def score(self, st: ScanState, rt: Runtime) -> None:
         with rt.step("risk") as b:
-            st.risk = correlate_findings(st.vulns, [f.model_dump() for f in st.typo["findings"]], st.lres["findings"], st.rules)
+            st.risk = correlate_findings(st.vulns, [f.model_dump() for f in st.typo["findings"]], st.lres["findings"], st.rules, st.pipe["findings"])
             res = st.result
             res["risk_assessments"], res["correlations"] = st.risk["assessments"], st.risk["correlations"]
             res["risk_by_root"] = summarize_by_root(st.vulns, st.risk["assessments"])
@@ -505,6 +508,15 @@ class RiskAgent:
                     bundle = normalize_bundle(collect(f))
                     evidence[f["finding_id"]] = {k: v for k, v in bundle.items() if k != "corpus"}
                     out[f["finding_id"]] = explain(bundle, risks[f["finding_id"]], f, llm if f["finding_id"] in top else None)
+            for f in st.pipe["findings"]:
+                a = risks.get(f["finding_id"])
+                if not a:
+                    continue
+                out[f["finding_id"]] = {"headline": f"{a['label']} risk - {f['title']}", "source": "template", "validation": {"grounded": True, "removed_sections": [], "checked": "template"},
+                                        "evidence_ids": [f["evidence_id"]] if f.get("evidence_id") else [],
+                                        "sections": {"impact": f["why"], "how_entered": f"{f['file']}" + (f":{f['line']}" if f["line"] else "") + (f" - `{f['snippet']}`" if f["snippet"] else ""),
+                                                     "direct_transitive": f"{f['ecosystem']} configuration ({f['rule_id']}), not a package dependency", "remediation": f["remediation"]}}
+                evidence[f["finding_id"]] = {"kind": "pipeline", "rule": f["rule_id"], "file": f["file"], "line": f["line"], "evidence_id": f.get("evidence_id")}
             st.result["explanations"], st.result["evidence"] = out, evidence
             replaced = sum(len(e["validation"].get("removed_sections", [])) for e in out.values())
             if replaced:
@@ -533,6 +545,9 @@ class AnalystAgent:
             if trans:
                 lines.append(f"{len(trans)} transitive findings are introduced by {len({p for f in trans for p in f['source_packages']})} direct dependencies - "
                              "fixing a handful of those usually removes most of them.")
+            if st.pipe["findings"]:
+                ph = sm["pipeline_critical_high"]
+                lines.append(f"{len(st.pipe['findings'])} container/CI-CD hygiene finding(s)" + (f", {ph} of them critical or high" if ph else "") + " (Dockerfile, compose and workflow analysis).")
             if st.typo["findings"]:
                 lines.append(f"{len(st.typo['findings'])} package name(s) resemble popular packages (signal only, not proof).")
             ls = [c for c in st.lres["findings"] if c["classification"] != "insufficient_baseline"]
@@ -608,11 +623,12 @@ def _summary(st: ScanState, result: dict) -> dict:
         by_risk[a["label"]] = by_risk.get(a["label"], 0) + 1
     confirmed = [f for f in v if f["affected_status"] == "confirmed_affected"]
     return {
-        "components": len([c for c in st.components if c.type != "file" and not c.is_self]), "by_ecosystem": st.quality.get("components_by_ecosystem", {}),
+        "components": len([c for c in st.components if c.type not in ("file", "container") and c.purl_type not in ("docker", "github") and not c.is_self]), "by_ecosystem": st.quality.get("components_by_ecosystem", {}),
         "vulnerabilities_confirmed": len(confirmed), "vulnerabilities_unknown": len(v) - len(confirmed), "by_cvss_severity": by_sev,
         "vuln_direct": sum(f["dependency_type"].startswith("direct") for f in v), "vuln_transitive": sum(f["dependency_type"] == "transitive" for f in v),
         "kev": sum(f["kev"] for f in v), "with_fix": sum(bool(f["fixed_versions"]) for f in v),
         "typosquatting": len(st.typo["findings"]),
+        "pipeline_findings": len(st.pipe["findings"]), "pipeline_critical_high": sum(1 for f in st.pipe["findings"] if f["severity"] in ("CRITICAL", "HIGH")),
         "lockfile_findings": len([c for c in st.lres["findings"] if c["classification"] != "insufficient_baseline"]),
         "by_risk": by_risk, "services": len(st.insp.services), "cross_verified": (result.get("verification") or {}).get("findings_cross_verified"),
     }

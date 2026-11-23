@@ -24,6 +24,11 @@ DEFAULT_RULES: dict = {
         "unconfirmed_applicability_cap": "MEDIUM",
         "correlated_lockfile_change": 5,
     },
+    "pipeline": {
+        "severity_points": {"CRITICAL": 75, "HIGH": 50, "MEDIUM": 28, "LOW": 12, "INFO": 4},
+        "heuristic_penalty": -8,  # evidence_strength 'medium' (heuristic rather than directly visible)
+        "third_party_unpinned_action": 5,
+    },
     "typosquatting": {
         "strength_points": {"high": 45, "medium": 30, "low": 15},
         "exposure": {"direct": 5, "direct_inferred": 4, "transitive": 0, "unknown": 0},

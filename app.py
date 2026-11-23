@@ -21,7 +21,7 @@ if _missing:
     st.markdown("or run `run.bat` (Windows) / `./run.sh`. Alternatively: `python -m pip install -r requirements.txt` in the current environment.")
     st.stop()
 
-from ui.pages import (agents_page, graph_page, health_page, reports_page, risk_page,
+from ui.pages import (agents_page, graph_page, health_page, pipeline_page, reports_page, risk_page,
                       sbom_page, scan_page, suspicious_page, vulns_page)
 from ui.state import get_active_scan, list_recent_scans, load_scan_from_db
 from ui.theme import status_pill_html
@@ -40,6 +40,7 @@ PAGES = {
     "SBOM Explorer": sbom_page,
     "Dependency Graph": graph_page,
     "Vulnerability Findings": vulns_page,
+    "Pipeline & Containers": pipeline_page,
     "Suspicious Changes": suspicious_page,
     "Risk & Explainability": risk_page,
     "Agent Activity": agents_page,
@@ -53,6 +54,7 @@ NAVIGATION_PAGES = {
         st.Page(sbom_page.render, title="SBOM Explorer", icon="📦", url_path="sbom"),
         st.Page(graph_page.render, title="Dependency Graph", icon="🕸️", url_path="graph"),
         st.Page(vulns_page.render, title="Vulnerability Findings", icon="🚨", url_path="vulnerabilities"),
+        st.Page(pipeline_page.render, title="Pipeline & Containers", icon="🐳", url_path="pipeline"),
         st.Page(suspicious_page.render, title="Suspicious Changes", icon="⚠️", url_path="suspicious"),
         st.Page(risk_page.render, title="Risk & Explainability", icon="🧭", url_path="risk"),
     ],

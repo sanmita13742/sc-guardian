@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from risk_analysis.risk_scorer import score_lockfile_change, score_typosquat, score_vulnerability
+from risk_analysis.risk_scorer import score_lockfile_change, score_pipeline, score_typosquat, score_vulnerability
 from sbom.package_extractors.common import normalize_name
 
 
@@ -12,7 +12,7 @@ def _k(eco: str, name: str) -> tuple[str, str]:
     return (eco, normalize_name(eco, name))
 
 
-def correlate_findings(vulns: list[dict], typos: list[dict], locks: list[dict], rules: dict | None = None) -> dict[str, Any]:
+def correlate_findings(vulns: list[dict], typos: list[dict], locks: list[dict], rules: dict | None = None, pipes: list[dict] | None = None) -> dict[str, Any]:
     """Return {assessments: [...], correlations: [...]} (assessments are deterministic and rule-based)."""
     v_by = defaultdict(list)
     t_by = defaultdict(list)
@@ -55,6 +55,8 @@ def correlate_findings(vulns: list[dict], typos: list[dict], locks: list[dict], 
         if t_by.get(key):
             rel["typosquat"] = f"{t_by[key][0]['finding_id']} resembles {t_by[key][0]['similar_to']}"
         assessments.append(score_lockfile_change(c, rules, rel))
+    for p in pipes or []:
+        assessments.append(score_pipeline(p, rules))
     return {"assessments": assessments, "correlations": correlations}
 
 

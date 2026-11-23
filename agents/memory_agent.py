@@ -16,11 +16,12 @@ class MemoryAgent:
             typos = [f.model_dump() for f in st.typo["findings"]]
             locks = [c for c in st.lres["findings"] if c["classification"] != "insufficient_baseline"]
             items = ([("vulnerability", f, labels.get(f["finding_id"])) for f in st.vulns] + [("typosquatting", f, labels.get(f["finding_id"])) for f in typos]
+                     + [("pipeline", f, labels.get(f["finding_id"])) for f in st.pipe["findings"]]
                      + [("lockfile_change", f, labels.get(f["finding_id"])) for f in locks])
             diff = mem.record_scan(st.info.url, st.info.scan_id, st.info.scan_timestamp, items)
             fps = {f["finding_id"]: fingerprint(k, f) for k, f, _ in items}
             titles = {f["finding_id"]: title(k, f) for k, f, _ in items}
-            seen = mem.record_packages(st.info.url, {(c.ecosystem or "", c.name) for c in st.components if not c.is_self and c.type != "file"})
+            seen = mem.record_packages(st.info.url, {(c.ecosystem or "", c.name) for c in st.components if not c.is_self and c.type != "file" and c.ecosystem})
             typo_seen = {f["package_name"]: seen[(f["ecosystem"], f["package_name"])] for f in typos if (f["ecosystem"], f["package_name"]) in seen}
             st.result["memory"] = {"diff": diff, "fingerprints": fps, "titles": titles, "packages_seen_in_other_repos": len(seen), "typosquat_candidates_seen_elsewhere": typo_seen}
             c = diff["counts"]

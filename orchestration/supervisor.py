@@ -40,8 +40,8 @@ def plan(st: ScanState, rt: Runtime) -> None:
                    f"Found {', '.join(sorted(set(names)))}")
         if insp.unsupported:
             decide("Report unsupported ecosystems instead of guessing", "; ".join(insp.unsupported))
-        if insp.dockerfiles or insp.container_files:
-            decide("Record container files as context only", "Images are never built or scanned in this MVP.")
+        if insp.dockerfiles or insp.container_files or insp.ci_files:
+            decide("Analyse Dockerfiles, compose files and CI/CD workflows statically (Pipeline Agent)", "Container and pipeline definitions are part of the supply chain: unpinned bases/actions, root containers, remote scripts, injectable workflows. Nothing is built or executed.")
         if st.git_history:
             decide(f"Compare lockfiles for the last {o.lockfile_commits} commit(s) against their parents" + (f" (explicit baseline {o.baseline})" if o.baseline else ""),
                    "Git history is available" + (" but shallow (depth-limited); missing parents are reported, not guessed" if st.info.shallow else ""))
@@ -94,6 +94,8 @@ def assemble(st: ScanState, rt: Runtime, workspace: Optional[Path]) -> None:
     res.setdefault("typosquatting", [f.model_dump() for f in st.typo["findings"]])
     res.setdefault("source_package_view", [])
     res.setdefault("memory", {"diff": None, "fingerprints": {}, "titles": {}})
+    res["pipeline"] = st.pipe
+    res["evidence_store"] = st.evidence.to_list()
     if res["source_status"].get("OSV", {}).get("state") in ("unavailable", "partial", "failed"):
         res["limitations"].append(f"OSV was {res['source_status']['OSV']['state']}: vulnerability results are incomplete (see coverage).")
 
