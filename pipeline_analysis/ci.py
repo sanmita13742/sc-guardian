@@ -16,6 +16,9 @@ from pipeline_analysis.models import SECRET_LITERAL, PipelineFinding, redact_lin
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 FIRST_PARTY = ("actions/", "github/", "docker/", "aws-actions/", "azure/", "google-github-actions/", "hashicorp/")
+# first-party actions whose older majors run on end-of-life Node runtimes or were shut down by GitHub (table reviewed 2026-11)
+DEPRECATED_BELOW = {"actions/checkout": 4, "actions/setup-node": 4, "actions/cache": 4, "actions/upload-artifact": 4, "actions/download-artifact": 4, "actions/setup-python": 5,
+                    "actions/setup-java": 4, "actions/setup-go": 5, "actions/github-script": 7}
 UNTRUSTED_TRIGGERS = {"pull_request_target", "workflow_run", "issue_comment", "issues", "pull_request_review", "pull_request_review_comment", "discussion", "discussion_comment"}
 INJECTABLE = re.compile(r"\$\{\{\s*(github\.event\.(issue|pull_request|comment|review|review_comment|discussion|head_commit|commits|pages|inputs|client_payload)[\w.\[\]*\-]*"
                         r"|github\.head_ref|github\.event\.workflow_run\.(head_branch|head_commit|display_title)[\w.]*|inputs\.[\w\-]+)\s*\}\}", re.I)
@@ -110,6 +113,12 @@ def analyze_github_workflow(text: str, path: str) -> tuple[list[PipelineFinding]
                                        "(this is how the tj-actions/changed-files supply-chain compromise spread).",
                                        f"Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: {ref['name']}@<sha> # {ref['ref']}`.",
                                        refs=["https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"], third_party=not ref.get("first_party")))
+                if ref and ref.get("kind") == "action" and ref["name"].lower() in DEPRECATED_BELOW:
+                    mm = re.match(r"^v?(\d+)", ref["ref"] or "")
+                    if mm and int(mm.group(1)) < DEPRECATED_BELOW[ref["name"].lower()]:
+                        findings.append(_f("GHA012", f"Action '{ref['name']}@{ref['ref']}' is an outdated major version", "MEDIUM", "GitHub Actions", path, ln, f"uses: {uses}", uses + "#outdated",
+                                           "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
+                                           f"Upgrade to {ref['name']}@v{DEPRECATED_BELOW[ref['name'].lower()]} or newer (pinned to a commit SHA).", strength="medium"))
                 if isinstance(uses, str) and "checkout" in uses:
                     r = str(withd.get("ref", ""))
                     if "pull_request.head" in r or "head_ref" in r or "workflow_run.head" in r:
