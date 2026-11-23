@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-import streamlit.components.v1 as components
+import streamlit as st
 
 CYTOSCAPE_URL = "https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"
 
@@ -61,4 +61,8 @@ if (typeof cytoscape === 'undefined') {
 def render_cytoscape(elements: list[dict], height: int = 560) -> None:
     payload = json.dumps(elements).replace("</", "<\\/")
     html = TEMPLATE.replace("__ELEMENTS__", payload).replace("__URL__", CYTOSCAPE_URL).replace("__H__", str(height))
-    components.html(html, height=height + 150, scrolling=False)
+    if hasattr(st, "iframe"):
+        st.iframe(html, height=height + 150, alt="Dependency Graph Canvas")
+    else:
+        import streamlit.components.v1 as components
+        components.html(html, height=height + 150, scrolling=False)

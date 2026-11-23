@@ -7,37 +7,39 @@ from config.settings import get_settings
 from core.scan_orchestrator import ScanOptions, run_scan
 from core.url_validator import InvalidRepositoryURL
 from storage.database import Database
-from ui.components.common import df, get_result, repo_caption
+from ui.components.common import df, get_result, page_header, repo_caption
 from ui.components.live_progress import LiveProgress
 
 
 def render() -> None:
-    st.header("Repository Scan")
+    page_header("Repository Scan", "Analyze software supply chain security for public GitHub repositories statically.")
     s = get_settings()
-    st.write("Analyse the software supply chain of a **public GitHub repository**. The repository is cloned shallowly into an isolated "
-             "temporary folder and inspected statically — no repository code, install script or build is ever executed.")
+
     with st.form("scan_form"):
         url = st.text_input("GitHub repository URL", placeholder="https://github.com/OWASP/NodeGoat", value=st.session_state.get("last_url", ""))
         c1, c2 = st.columns(2)
-        ref = c1.text_input("Branch or tag (optional)", help="Defaults to the repository's default branch.")
-        commits = c2.number_input("Lockfile history: recent commits to analyse", 1, 25, 1,
-                                  help="Each commit's lockfile changes are compared with its parent.")
-        with st.expander("Options"):
+        ref = c1.text_input("Branch or tag (optional)", help="Defaults to default branch.")
+        commits = c2.number_input("Lockfile history commits", 1, 25, 1, help="Commits to inspect for lockfile tampering.")
+        with st.expander("Scan Options", expanded=False):
             o1, o2, o3 = st.columns(3)
-            use_nvd = o1.checkbox("NVD enrichment (CVSS)", True, help="Optional; rate-limited without NVD_API_KEY.")
-            use_kev = o1.checkbox("CISA KEV (known exploited)", True)
-            registry = o2.checkbox("Registry checks for typosquatting", True)
-            enrich = o2.checkbox("Enrich missing SBOM metadata from registries", False)
-            reuse = o3.checkbox("Reuse cached scan for identical commit", True)
-            keep = o3.checkbox("Keep the cloned repository on disk", False, help="Normally the temporary clone is deleted when the scan ends.")
-            llm = o3.checkbox("LLM-written explanations", False, disabled=not s.llm_api_key,
-                              help="Requires ANTHROPIC_API_KEY. Output is validated against evidence; templates are used otherwise.")
-            baseline = st.text_input("Explicit comparison baseline (commit/ref, optional)", help="Overrides the parent commit for the newest commit.")
-        go = st.form_submit_button("Start scan", type="primary")
+            use_nvd = o1.checkbox("NVD CVSS enrichment", True)
+            use_kev = o1.checkbox("CISA KEV known exploited", True)
+            registry = o2.checkbox("Typosquatting checks", True)
+            enrich = o2.checkbox("Enrich missing metadata", False)
+            reuse = o3.checkbox("Reuse cached scan", True)
+            keep = o3.checkbox("Keep clone workspace", False)
+            llm = o3.checkbox("LLM explanations", False, disabled=not s.llm_api_key)
+            baseline = st.text_input("Comparison baseline (optional)")
+        go = st.form_submit_button("Start Security Scan", type="primary", use_container_width=True)
+
     if go:
-        _run(url, ref, ScanOptions(url=url, ref=ref or None, use_nvd=use_nvd, use_kev=use_kev, registry_checks=registry, enrich_metadata=enrich,
-                                   lockfile_commits=int(commits), baseline=baseline or None, reuse_cached=reuse, use_llm=llm, keep_workspace=keep))
-    _history()
+        _run(url, ref, ScanOptions(
+            url=url, ref=ref or None, use_nvd=use_nvd, use_kev=use_kev,
+            registry_checks=registry, enrich_metadata=enrich,
+            lockfile_commits=int(commits), baseline=baseline or None,
+            reuse_cached=reuse, use_llm=llm, keep_workspace=keep,
+        ))
+
     r = get_result()
     if r and r.get("status") != "failed":
         _overview(r)
@@ -45,7 +47,6 @@ def render() -> None:
 
 def _run(url: str, ref: str, opts: ScanOptions) -> None:
     st.session_state["last_url"] = url
-    st.subheader("Agent pipeline")
     live = LiveProgress()
     try:
         result = run_scan(opts, on_event=live)
@@ -53,88 +54,53 @@ def _run(url: str, ref: str, opts: ScanOptions) -> None:
         live.finish(False)
         st.error(f"Invalid repository URL: {e}")
         return
-    except Exception as e:  # last-resort guard: never show a raw crash to the user
+    except Exception as e:
         live.finish(False)
-        st.error(f"The scan failed unexpectedly: {type(e).__name__}: {e}")
+        st.error(f"Scan failed unexpectedly: {type(e).__name__}: {e}")
         return
+
     live.finish(result.get("status") != "failed")
     if result.get("status") == "failed":
         st.error(result.get("error", "Scan failed"))
         return
+
     st.session_state["result"] = result
     if result.get("from_cache"):
-        st.info("An identical commit was scanned before; showing the stored result. Untick 'Reuse cached scan' to rescan.")
+        st.info("Loaded cached scan for this commit.")
     elif result["status"] == "completed_with_errors":
-        st.warning("Scan finished with stage errors - see 'Coverage and limitations' below. Results may be incomplete.")
+        st.warning("Scan finished with stage warnings - see limitations below.")
     else:
-        st.success("Scan completed. Explore the other pages from the sidebar.")
-
-
-def _history() -> None:
-    try:
-        scans = Database(get_settings().db_path).list_scans(15)
-    except Exception:
-        scans = []
-    if scans:
-        with st.expander(f"Previous scans ({len(scans)})"):
-            df([{"scan": s["scan_id"], "repository": s["repo_url"], "commit": s["commit_sha"][:10], "when": s["scan_timestamp"], "status": s["status"],
-                 "findings": (s["summary"] or {}).get("vulnerabilities_confirmed")} for s in scans])
-            pick = st.selectbox("Load a scan", [""] + [s["scan_id"] for s in scans], key="hist_pick")
-            if pick and st.button("Load selected scan"):
-                st.session_state["result"] = Database(get_settings().db_path).load_scan(pick)
-                st.rerun()
+        st.success("Scan completed. Navigate via sidebar to inspect results.")
 
 
 def _overview(r: dict) -> None:
     repo, insp, sm = r["repo"], r["inspection"], r.get("summary", {})
-    st.subheader("Repository overview")
+    st.markdown("#### Scan Summary")
+
     c = st.columns(4)
     c[0].metric("Repository", repo["name"])
-    c[1].metric("Branch", repo.get("branch") or repo.get("ref") or "default")
-    c[2].metric("Commit", repo["commit_sha"][:10] if repo["commit_sha"] else "n/a")
-    c[3].metric("Scan status", r["status"].replace("_", " "))
-    st.write(f"**URL:** {repo['url']}  \n**Full commit SHA:** `{repo['commit_sha']}`  \n**Scan time:** {repo['scan_timestamp']}  \n**Scan ID:** `{repo['scan_id']}`"
-             + ("  \n**Clone depth:** shallow" if repo.get("shallow") else ""))
-    l, f, e = st.columns(3)
-    with l:
-        st.markdown("**Languages** (by file extension)")
-        df([{"Language": k, "Files": v["files"], "KB": round(v["bytes"] / 1024, 1)} for k, v in insp["languages"].items()][:12])
-    with f:
-        st.markdown("**Frameworks** (from manifests/config)")
-        df([{"Framework": h["name"], "Service": h["service_dir"], "Evidence": h["evidence"]} for h in insp["frameworks"]])
-    with e:
-        st.markdown("**Ecosystems**")
-        st.write(", ".join(insp["ecosystems"]) or "none detected")
-        st.markdown("**Services / monorepo roots**")
-        df([{"Directory": s_["dir"], "Ecosystems": ", ".join(s_["ecosystems"]), "Frameworks": ", ".join(s_["frameworks"])} for s_ in insp["services"]])
-    with st.expander("Manifests, lockfiles and context files"):
-        df([{"Path": m["path"], "Kind": m["kind"], "Ecosystem": m["ecosystem"]} for m in insp["manifests"]])
-        st.write("**Dockerfiles:**", ", ".join(insp["dockerfiles"]) or "none", " | **Compose/container files:**", ", ".join(insp["container_files"]) or "none")
-        st.write("**CI/CD files:**", ", ".join(insp["ci_files"]) or "none")
-        st.caption("Container and CI/CD files are recorded as security context only; images are never built or scanned in this MVP.")
-    ws = r.get("workspace") or {}
-    with st.expander("Where was the repository stored while it was analysed?"):
-        st.markdown(f"* Clone location: `{ws.get('clone_path')}`")
-        st.markdown(f"* Temporary workspace: `{ws.get('location')}`")
-        st.markdown(f"* Kept after the scan: **{ws.get('kept')}** · removed: **{ws.get('removed')}**")
-        st.markdown(f"* {ws.get('note', '')}")
-        st.caption("The workspace lives under streamlit_app/.workspaces/<scan-id>/ (git-ignored). Only static reads are performed on it.")
-    if r.get("analyst"):
-        st.subheader("Analyst summary")
-        st.markdown(f"**{r['analyst']['headline']}**")
-        for p_ in r["analyst"]["paragraphs"]:
-            st.markdown(f"- {p_}")
-        if r["analyst"]["priorities"]:
-            st.markdown("**Prioritised actions**")
-            for p_ in r["analyst"]["priorities"]:
-                st.markdown(f"1. {p_}")
-    st.subheader("Coverage and limitations")
-    st.caption("A scan with few or no findings does not prove the repository is safe.")
-    for lim in r.get("limitations", []):
-        st.markdown(f"- {lim}")
-    for k, v in r.get("source_status", {}).items():
-        st.markdown(f"- **{k}**: {v.get('state')}" + (f" — {v['errors'][:1]}" if v.get("errors") else ""))
-    for err in r.get("errors", []):
-        st.error(f"Stage '{err['stage']}' error: {err['error']}")
-    with st.expander("Timings and tool versions"):
-        st.json({"tool_versions": r.get("tool_versions"), "timings_seconds": r.get("timings")})
+    c[1].metric("Commit", repo["commit_sha"][:8] if repo.get("commit_sha") else "n/a")
+    c[2].metric("Components", sm.get("components", 0))
+    c[3].metric("Confirmed Vulns", sm.get("vulnerabilities_confirmed", 0))
+
+    col_left, col_right = st.columns([1, 1])
+
+    with col_left:
+        st.markdown("**Analyst Assessment**")
+        if r.get("analyst"):
+            st.markdown(f"_{r['analyst']['headline']}_")
+            for pri in r["analyst"].get("priorities", [])[:3]:
+                st.markdown(f"• {pri}")
+        else:
+            st.caption("No analyst assessment generated.")
+
+    with col_right:
+        st.markdown("**Detected Ecosystems & Languages**")
+        st.markdown(f"**Ecosystems:** {', '.join(insp.get('ecosystems', [])) or 'None'}")
+        langs = [f"{k} ({round(v['bytes']/1024, 1)} KB)" for k, v in insp.get("languages", {}).items()][:6]
+        st.markdown(f"**Languages:** {', '.join(langs) or 'None'}")
+
+    with st.expander("Manifests & Coverage Details", expanded=False):
+        df([{"Path": m["path"], "Kind": m["kind"], "Ecosystem": m["ecosystem"]} for m in insp.get("manifests", [])], height=200)
+        for lim in r.get("limitations", [])[:4]:
+            st.caption(f"• {lim}")
