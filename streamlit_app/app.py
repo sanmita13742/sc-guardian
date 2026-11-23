@@ -4,7 +4,22 @@ Run:  streamlit run app.py
 """
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import streamlit as st
+
+_REQUIRED = ["rapidfuzz", "pandas", "networkx", "pydantic", "requests", "packaging", "jsonschema", "yaml"]
+_missing = [m for m in _REQUIRED if importlib.util.find_spec(m) is None]
+if _missing:
+    _venv_py = Path(__file__).parent / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    st.set_page_config(page_title="SC Guardian", page_icon="🛡️")
+    st.error(f"This Streamlit is running in the wrong Python environment (`{sys.prefix}`). Missing packages: {', '.join(_missing)}.")
+    st.markdown("Stop the server (Ctrl+C) and start the app with the project's own environment:")
+    st.code(f'"{_venv_py}" -m streamlit run app.py', language="bash")
+    st.markdown("or run `run.bat` (Windows) / `./run.sh`. Alternatively: `python -m pip install -r requirements.txt` in the current environment.")
+    st.stop()
 
 from ui.pages import agents_page, graph_page, reports_page, risk_page, sbom_page, scan_page, suspicious_page, vulns_page
 

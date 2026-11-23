@@ -23,6 +23,8 @@ run.bat            # Windows (double-click works too)
 ./run.sh           # Linux / macOS / Git Bash
 ```
 
+Always start with `python -m streamlit` (or `run.bat`), not the bare `streamlit` command: with Anaconda installed, bare `streamlit` can resolve to Anaconda's copy, which lacks this app's packages (the app now detects this and shows the fix).
+
 or manually:
 
 ```bash
