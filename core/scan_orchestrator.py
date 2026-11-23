@@ -33,7 +33,6 @@ from risk_analysis.risk_rules import RULES_VERSION, load_rules
 from storage.cache import Cache
 from storage.database import Database
 
-STAGES = [s[0] for s in STEPS]  # kept for UI compatibility
 
 OnEvent = Callable[[dict], None]
 

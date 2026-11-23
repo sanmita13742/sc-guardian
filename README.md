@@ -132,4 +132,4 @@ HTTPS GitHub URL allow-list; no shell (argument lists only); depth-limited clone
 Public GitHub only · shallow history (depth 50) limits lockfile baselines · Maven/Packagist/NuGet/RubyGems ordering is approximate · OSV GIT-type ranges and CVSS v4 vectors cannot be evaluated locally ·
 reachability of vulnerable code is not assessed · typosquatting uses a small curated list and registry checks only for npm/PyPI · Docker/CI files are recorded, not analysed ·
 the built-in rule engine only inventories packages declared in parsed lockfiles/manifests · the Cytoscape canvas loads from a CDN · LLM explanations were validated with a mocked model only ·
-developed and tested on Windows. Details: `docs/IMPLEMENTATION_PROGRESS.md`.
+developed and tested on Windows. Details: `docs/ARCHITECTURE.md`.

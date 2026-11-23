@@ -5,7 +5,6 @@ pydantic>=2.6,<3
 requests>=2.31,<3
 rapidfuzz>=3.6,<4
 packaging>=24.0
-semantic-version>=2.10,<3
 jsonschema>=4.21,<5
 python-dotenv>=1.0,<2
 tomli>=2.0;python_version<"3.11"

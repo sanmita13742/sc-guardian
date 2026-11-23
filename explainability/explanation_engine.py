@@ -92,15 +92,6 @@ def _headline(b: dict, risk: dict) -> str:
     return f"{risk['label']} risk - {b['change']['classification'].replace('_', ' ')}: {b['change']['package']}"
 
 
-def anthropic_call(api_key: str, model: str, system: str, user: str, timeout: int = 60) -> str:
-    import requests
-    r = requests.post("https://api.anthropic.com/v1/messages", timeout=timeout,
-                      headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                      json={"model": model, "max_tokens": 1500, "system": system, "messages": [{"role": "user", "content": user}]})
-    r.raise_for_status()
-    return "".join(b.get("text", "") for b in r.json().get("content", []))
-
-
 def explain(bundle: dict, risk: dict, finding: dict, llm: Optional[Callable[[str, str], str]] = None) -> dict:
     """Deterministic explanation, optionally rephrased by ``llm(system, user) -> str`` with per-section validation."""
     base = explain_deterministic(bundle, risk, finding)

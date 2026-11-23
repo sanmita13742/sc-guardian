@@ -85,7 +85,7 @@ def main() -> int:
             except Exception as e:
                 check(f"network: {name}", False, type(e).__name__, required=False)
     check("NVD_API_KEY (optional)", bool(s.nvd_api_key), "configured" if s.nvd_api_key else "not set - NVD enrichment works at a lower rate limit", required=False)
-    check("ANTHROPIC_API_KEY (optional)", bool(s.llm_api_key), "configured" if s.llm_api_key else "not set - deterministic explanation templates are used", required=False)
+    check("LLM_API_KEY (optional)", bool(s.llm_api_key), "configured" if s.llm_api_key else "not set - fully deterministic mode (no LLM calls)", required=False)
     print("\nResult:", "ALL REQUIRED CHECKS PASSED" if not failures else f"FAILED: {', '.join(failures)}")
     return 1 if failures else 0
 

@@ -42,7 +42,7 @@ TUNABLES: dict[str, tuple[type, float, float, str]] = {
     "max_paths_per_target": (int, 1, 500, "dependency paths kept per finding"),
     "max_path_depth": (int, 2, 200, "deepest dependency path enumerated"),
 }
-STRINGS = {"syft_bin": "Syft executable", "trivy_bin": "Trivy executable", "llm_model": "model used for optional explanation text"}
+STRINGS = {"syft_bin": "Syft executable", "trivy_bin": "Trivy executable", "llm_model": "optional LLM model name (default per provider)", "llm_provider": "optional LLM provider (auto-detected from LLM_API_KEY)", "llm_base_url": "base URL for an OpenAI-compatible LLM endpoint"}
 PATHS = {"data_dir": "SQLite database folder", "workspace_dir": "temporary clone folder"}
 SECRETS = {"nvd_api_key", "llm_api_key", "anthropic_api_key"}
 ROOT = Path(__file__).resolve().parent.parent
@@ -105,7 +105,7 @@ def apply(settings: Any) -> Any:
         sources[name] = "default"
     for name in STRINGS:
         raw, src = pick(name)
-        legacy = {"syft_bin": "SYFT_BIN", "trivy_bin": "TRIVY_BIN", "llm_model": "EXPLAIN_LLM_MODEL"}[name]
+        legacy = {"syft_bin": "SYFT_BIN", "trivy_bin": "TRIVY_BIN", "llm_model": "LLM_MODEL", "llm_provider": "LLM_PROVIDER", "llm_base_url": "LLM_BASE_URL"}[name]
         if src == "default" and os.environ.get(legacy):
             raw, src = os.environ[legacy], "env"
         if src != "default" and isinstance(raw, str) and raw.strip():
@@ -123,8 +123,8 @@ def apply(settings: Any) -> Any:
             sources[name] = src
         else:
             sources[name] = "default"
-    for sec, env in (("nvd_api_key", "NVD_API_KEY"), ("llm_api_key", "ANTHROPIC_API_KEY")):
-        sources[sec] = "env" if os.environ.get(env) else "unset"
+    for sec, envs in (("nvd_api_key", ("NVD_API_KEY",)), ("llm_api_key", ("LLM_API_KEY", "ANTHROPIC_API_KEY"))):
+        sources[sec] = "env" if any(os.environ.get(e) for e in envs) else "unset"
     if settings.nvd_max_cves_with_key < settings.nvd_max_cves_no_key:
         problems.append("nvd_max_cves_with_key is lower than nvd_max_cves_no_key")
     settings.sources, settings.problems, settings.config_file = sources, problems, (str(cf) if file_found else None)
@@ -138,6 +138,6 @@ def effective(settings: Any) -> list[dict]:
         rows.append({"setting": name, "value": getattr(settings, name), "source": settings.sources.get(name, "default"), "allowed": f"{int(lo)}..{int(hi)}", "meaning": doc})
     for name, doc in {**STRINGS, **PATHS}.items():
         rows.append({"setting": name, "value": str(getattr(settings, name)), "source": settings.sources.get(name, "default"), "allowed": "text", "meaning": doc})
-    for name, label in (("nvd_api_key", "NVD API key (env NVD_API_KEY)"), ("llm_api_key", "Anthropic API key (env ANTHROPIC_API_KEY)")):
+    for name, label in (("nvd_api_key", "NVD API key (env NVD_API_KEY)"), ("llm_api_key", "optional LLM API key (env LLM_API_KEY: Groq, Gemini, Anthropic or OpenAI-compatible)")):
         rows.append({"setting": name, "value": "set (hidden)" if getattr(settings, name) else "not set", "source": settings.sources.get(name, "unset"), "allowed": "environment only", "meaning": label})
     return rows

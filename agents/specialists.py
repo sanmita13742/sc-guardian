@@ -18,7 +18,8 @@ from agents.runtime import Runtime
 from core import git_manager as gm
 from core.models import Component, InspectionResult, LockDependency, RepoInfo
 from core.repository_inspector import headline_languages, inspect_repository, own_package_identities
-from explainability.explanation_engine import anthropic_call, explain
+from explainability.explanation_engine import explain
+from llm.client import from_settings as llm_from_settings
 from graph.dependency_tracer import classify_all
 from graph.graph_builder import build_graph
 from graph.graph_exporter import graph_to_json
@@ -483,10 +484,11 @@ class RiskAgent:
         s, o = st.ctx.s, st.options
         with rt.step("explain") as b:
             llm = None
-            if o.use_llm and s.llm_api_key:
-                llm = lambda sys_, usr: anthropic_call(s.llm_api_key, s.llm_model, sys_, usr)  # noqa: E731
+            client = llm_from_settings(s) if o.use_llm else None
+            if client:
+                llm = lambda sys_, usr: client.complete(sys_, usr, max_tokens=1500)  # noqa: E731
             elif o.use_llm:
-                rt.warn("explain", "LLM explanations requested but ANTHROPIC_API_KEY is not set - using deterministic templates")
+                rt.warn("explain", "LLM explanations requested but LLM_API_KEY is not set - using deterministic templates")
             risks = {a["finding_id"]: a for a in st.risk["assessments"]}
             top = {a["finding_id"] for a in sorted(st.risk["assessments"], key=lambda a: -a["score"])[:LLM_EXPLAIN_TOP_N]}
             if llm:

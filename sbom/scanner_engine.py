@@ -22,7 +22,7 @@ from core.models import LockDependency
 from sbom.adapters import get_adapter
 from sbom.builtin_generator import TOOL_NAME, generate_cyclonedx
 from sbom.cyclonedx_validator import load_sbom
-from sbom.syft_runner import SyftResult, resolve_syft, run_syft
+from sbom.syft_runner import ScannerResult, resolve_syft, run_syft
 from sbom.trivy_runner import resolve_trivy, run_trivy
 
 SCANNER_CHOICES = ("auto", "syft", "trivy", "builtin")
@@ -34,7 +34,7 @@ class SbomOutcome:
     scanner: Optional[str] = None  # syft | trivy | builtin | None
     raw_path: Optional[str] = None  # file exactly as the scanner wrote it
     doc: dict = field(default_factory=dict)  # normalised document used for analysis
-    run: Optional[SyftResult] = None  # command/version/duration of the winning external scanner
+    run: Optional[ScannerResult] = None  # command/version/duration of the winning external scanner
     attempts: list[dict] = field(default_factory=list)
     engine_stats: dict = field(default_factory=dict)  # built-in rule engine counters
     requested: str = "auto"

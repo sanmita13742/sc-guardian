@@ -15,7 +15,7 @@ from core.safe_env import scrubbed_env
 
 
 @dataclass
-class SyftResult:
+class ScannerResult:
     ok: bool
     command: list[str] = field(default_factory=list)
     exit_code: Optional[int] = None
@@ -58,17 +58,17 @@ def build_command(syft_bin: str, repo_dir: Path, out_path: Path) -> list[str]:
     return [syft_bin, "scan", f"dir:{Path(repo_dir).resolve()}", "-o", f"cyclonedx-json={Path(out_path).resolve()}", "-q"]
 
 
-def run_syft(repo_dir: Path, out_path: Path, settings: Settings | None = None) -> SyftResult:
+def run_syft(repo_dir: Path, out_path: Path, settings: Settings | None = None) -> ScannerResult:
     s = settings or get_settings()
     syft = resolve_syft(s)
     if not syft:
-        return SyftResult(ok=False, error="Syft executable not found. Install Syft (see README) or set SYFT_BIN.")
+        return ScannerResult(ok=False, error="Syft executable not found. Install Syft (see README) or set SYFT_BIN.")
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists():
         out_path.unlink()
     cmd = build_command(syft, repo_dir, out_path)
-    res = SyftResult(ok=False, command=cmd, version=syft_version(syft))
+    res = ScannerResult(ok=False, command=cmd, version=syft_version(syft))
     env = scrubbed_env({"SYFT_CHECK_FOR_APP_UPDATE": "false", "SYFT_JAVASCRIPT_INCLUDE_DEV_DEPENDENCIES": "true",
                         "SYFT_JAVA_USE_NETWORK": "false", "SYFT_PYTHON_SEARCH_REMOTE_LICENSES": "false", "SYFT_JAVASCRIPT_SEARCH_REMOTE_LICENSES": "false"})
     t0 = time.time()

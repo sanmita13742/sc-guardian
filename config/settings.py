@@ -29,8 +29,10 @@ class Settings:
     syft_bin: str = field(default_factory=lambda: os.environ.get("SYFT_BIN") or shutil.which("syft") or "syft")
     trivy_bin: str = field(default_factory=lambda: os.environ.get("TRIVY_BIN") or shutil.which("trivy") or "trivy")
     nvd_api_key: str | None = field(default_factory=lambda: os.environ.get("NVD_API_KEY") or None)
-    llm_api_key: str | None = field(default_factory=lambda: os.environ.get("ANTHROPIC_API_KEY") or None)
-    llm_model: str = field(default_factory=lambda: os.environ.get("EXPLAIN_LLM_MODEL", "claude-sonnet-5-5"))
+    llm_api_key: str | None = field(default_factory=lambda: os.environ.get("LLM_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or None)
+    llm_provider: str | None = field(default_factory=lambda: os.environ.get("LLM_PROVIDER") or None)  # groq | gemini | anthropic | openai | openai_compatible (auto-detected from the key)
+    llm_model: str | None = field(default_factory=lambda: os.environ.get("LLM_MODEL") or os.environ.get("EXPLAIN_LLM_MODEL") or None)
+    llm_base_url: str | None = field(default_factory=lambda: os.environ.get("LLM_BASE_URL") or None)
 
     # clone / scan limits
     clone_timeout_s: int = 180

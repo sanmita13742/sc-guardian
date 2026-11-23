@@ -15,7 +15,7 @@ from typing import Optional
 
 from config.settings import Settings, get_settings
 from core.safe_env import scrubbed_env
-from sbom.syft_runner import SyftResult  # same result shape for every scanner
+from sbom.syft_runner import ScannerResult  # same result shape for every scanner
 
 
 def resolve_trivy(settings: Settings | None = None) -> Optional[str]:
@@ -42,17 +42,17 @@ def build_command(trivy_bin: str, repo_dir: Path, out_path: Path) -> list[str]:
             str(Path(repo_dir).resolve())]
 
 
-def run_trivy(repo_dir: Path, out_path: Path, settings: Settings | None = None) -> SyftResult:
+def run_trivy(repo_dir: Path, out_path: Path, settings: Settings | None = None) -> ScannerResult:
     s = settings or get_settings()
     trivy = resolve_trivy(s)
     if not trivy:
-        return SyftResult(ok=False, error="Trivy executable not found. Install Trivy (see README) or set TRIVY_BIN.", options={})
+        return ScannerResult(ok=False, error="Trivy executable not found. Install Trivy (see README) or set TRIVY_BIN.", options={})
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists():
         out_path.unlink()
     cmd = build_command(trivy, repo_dir, out_path)
-    res = SyftResult(ok=False, command=cmd, version=trivy_version(trivy), options={"include-dev-deps": True, "scanners": "license"})
+    res = ScannerResult(ok=False, command=cmd, version=trivy_version(trivy), options={"include-dev-deps": True, "scanners": "license"})
     t0 = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
