@@ -9,7 +9,7 @@ import copy
 import json
 from pathlib import Path
 
-RULES_VERSION = "1.0"
+RULES_VERSION = "2.0"
 
 DEFAULT_RULES: dict = {
     "thresholds": {"CRITICAL": 70, "HIGH": 45, "MEDIUM": 25, "LOW": 10},  # score >= threshold -> label
@@ -23,6 +23,8 @@ DEFAULT_RULES: dict = {
         "dev_dependency": -10,
         "unconfirmed_applicability_cap": "MEDIUM",
         "correlated_lockfile_change": 5,
+        "epss": [[0.5, 20], [0.1, 10], [0.01, 3]],  # [min probability, points]; EPSS is an estimate, so it only nudges the score
+        "reachability": {"used_by_app": 20, "reachable_via_dependency": 8, "used_in_tests_only": -5, "not_imported": -15, "unknown": 0},
     },
     "pipeline": {
         "severity_points": {"CRITICAL": 75, "HIGH": 50, "MEDIUM": 28, "LOW": 12, "INFO": 4},

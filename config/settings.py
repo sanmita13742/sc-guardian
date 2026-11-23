@@ -58,6 +58,10 @@ class Settings:
     workspace_max_age_s: int = 3600  # orphaned clone workspaces older than this are removed at start
     keep_scans_per_repo: int = 20
 
+    # investigator
+    investigator_llm_max: int = 8  # findings the optional LLM may investigate per scan
+    investigator_max_steps: int = 5  # tool calls per LLM investigation
+
     # cache bounds
     cache_max_rows: int = 2_000_000
     cache_max_age_days: int = 120

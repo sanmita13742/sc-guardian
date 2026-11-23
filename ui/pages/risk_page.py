@@ -56,7 +56,7 @@ def render() -> None:
             continue
         d_ = decided.get(a_["finding_id"])
         tag = f" · 🔕 {LABELS[d_['decision']]}" if d_ else ""
-        with st.expander(f"{badge(a_['label'])} · {a_['finding_id']} · {e['headline'].split(' - ', 1)[-1]} (Score {a_['score']}){tag}", expanded=False):
+        with st.expander(f"{badge(a_['label'])} · {a_.get('priority', '')} · {a_['finding_id']} · {e['headline'].split(' - ', 1)[-1]} (Score {a_['score']}, confidence {(a_.get('confidence') or {}).get('label', 'n/a')}){tag}", expanded=False):
             if d_:
                 st.info(f"{LABELS[d_['decision']]}: {d_['reason']}" + (f" (expires {d_['expires_at'][:10]})" if d_["expires_at"] else ""))
             sec = e.get("sections", {})

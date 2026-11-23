@@ -87,7 +87,8 @@ def render() -> None:
          "CVSS": v["cvss_score"] if v["cvss_score"] is not None else "n/a",
          "Fixed in": ", ".join(v["fixed_versions"][:2]) or "none",
          "Type": v["dependency_type"], "Source Pkg": ", ".join(v["source_packages"][:2]) or "self",
-         "Risk": risks.get(v["finding_id"], {}).get("label", "n/a")} for v in rows], height=380)
+         "Verdict": (v.get("verdict") or "").replace("_", " "), "EPSS": f"{v['epss']:.1%}" if v.get("epss") is not None else "n/a",
+         "Priority": risks.get(v["finding_id"], {}).get("priority", ""), "Risk": risks.get(v["finding_id"], {}).get("label", "n/a")} for v in rows], height=380)
 
     if rows:
         st.markdown("#### Finding Detail")
@@ -113,6 +114,31 @@ def render() -> None:
         path0 = next((p for e_ in v.get("exposures", []) for p in e_.get("paths", [])), [])
         if path0:
             st.markdown(f"**Path:** `{' → '.join(path0)}`")
+
+        inv = (r.get("investigations") or {}).get(v["finding_id"])
+        if inv:
+            st.markdown("#### Investigation")
+            ic = st.columns(4)
+            ic[0].metric("Verdict", inv["verdict"].replace("_", " "))
+            ic[1].metric("Confidence", f"{inv['confidence']['label']} ({inv['confidence']['score']})")
+            ic[2].metric("Priority", a.get("priority", "n/a"))
+            ic[3].metric("Reasoned by", "AI (grounded)" if inv.get("ai_assisted") else "rules (deterministic)")
+            st.markdown(inv["rationale"])
+            llm = inv.get("llm")
+            if llm and llm.get("status") == "rejected":
+                st.warning("An AI proposal for this finding was rejected by the grounding gate: " + "; ".join(llm.get("problems", [])))
+            elif llm and llm.get("status") == "error":
+                st.caption(f"AI reasoning unavailable for this finding ({llm.get('error')}); deterministic result shown.")
+            with st.expander("How this was determined (tool trace and evidence)"):
+                df([{"Step": i + 1, "Tool": s["tool"], "By": s.get("by", "planner"), "Arguments": ", ".join(f"{k}={v}" for k, v in s["args"].items()), "Evidence": s.get("evidence_id") or (s.get("error") or "")}
+                    for i, s in enumerate(inv["steps"])], height="content")
+                store = {e["id"]: e for e in r.get("evidence_store", [])}
+                for eid in inv["evidence_ids"]:
+                    e = store.get(eid)
+                    if e:
+                        st.markdown(f"- `{eid}` - {e['summary']}" + (f" ({e['source']})" if e.get("source") else "") + ("" if e.get("verified", True) else " *(inferred)*"))
+                if a.get("confidence"):
+                    st.caption("Confidence basis: " + "; ".join(a["confidence"].get("basis", [])))
 
         if v.get("remediation"):
             st.markdown(f"**Remediation:** {v['remediation']}")

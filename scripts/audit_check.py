@@ -418,6 +418,68 @@ def _pipeline() -> None:
     check("pipeline: end-of-life table flags node:16 / python:3.8 but not python:3.13 or unknown images", eol_note("node", "16") and eol_note("python", "3.8-slim") and not eol_note("python", "3.13") and not eol_note("myorg/node", "10"))
 
 
+@guarded("investigator")
+def _investigator() -> None:
+    from types import SimpleNamespace
+    from agents.investigator import InvestigatorAgent, VERDICTS, decide
+    from evidence.store import EvidenceStore
+    from llm import client as llmc
+    from reachability.scanners import build_index, package_usage
+    from tools.registry import ToolContext, call, catalogue
+
+    d = Path(tempfile.mkdtemp())
+    (d / "src").mkdir()
+    (d / "tests").mkdir()
+    (d / "src" / "app.py").write_text("import yaml\nfrom flask import Flask\n")
+    (d / "tests" / "test_a.py").write_text("import PIL.Image\n")
+    (d / "a.js").write_text("const m = require('minimist'); import x from '@scope/pkg/sub';\n")
+    (d / "M.java").write_text("package a;\nimport org.apache.logging.log4j.Logger;\n")
+    (d / "main.go").write_text('package main\nimport (\n  "fmt"\n  "github.com/gin-gonic/gin"\n)\n')
+    idx = build_index(d)
+    got = {(e, n_): package_usage(idx, e, n_)["status"] for e, n_ in [("PyPI", "pyyaml"), ("PyPI", "pillow"), ("PyPI", "django"), ("npm", "minimist"), ("npm", "@scope/pkg"),
+                                                                    ("Maven", "org.apache.logging.log4j:log4j-core"), ("Go", "github.com/gin-gonic/gin"), ("crates.io", "serde")]}
+    check("reachability: Python/JS/Java/Go import evidence (app vs tests-only vs absent; alias pyyaml->yaml; scoped npm)",
+          got[("PyPI", "pyyaml")] == "used_by_app" and got[("PyPI", "pillow")] == "used_in_tests_only" and got[("PyPI", "django")] == "not_imported" and got[("npm", "minimist")] == "used_by_app"
+          and got[("npm", "@scope/pkg")] == "used_by_app" and got[("Maven", "org.apache.logging.log4j:log4j-core")] == "used_by_app" and got[("Go", "github.com/gin-gonic/gin")] == "used_by_app"
+          and got[("crates.io", "serde")] == "unknown", str(got))
+
+    f = {"finding_id": "VULN-001", "package_name": "minimist", "installed_version": "1.2.0", "ecosystem": "npm", "primary_id": "CVE-2020-7598", "vulnerability_ids": ["GHSA-vh95-rmgr-6w4m"], "cve_ids": ["CVE-2020-7598"],
+         "severity": "MEDIUM", "cvss_score": 5.6, "affected_status": "confirmed_affected", "kev": False, "cross_verified": True, "fixed_versions": ["1.2.2"], "dependency_type": "direct", "source_packages": ["minimist@1.2.0"],
+         "exposures": [{"depth": 1, "paths": [["app", "minimist@1.2.0"]]}], "roots": ["app"], "dev_dependency": None, "affected_ranges": [], "advisory_urls": []}
+    st = SimpleNamespace(vulns=[f], components=[], epss={}, source_index=idx)
+    ev = EvidenceStore()
+    ctx = ToolContext(repo_dir=d, evidence=ev, state=st)
+    inv = InvestigatorAgent()._investigate(ctx, f)
+    check("investigator: deterministic planner -> reachable with cited evidence ids and a tool trace", inv["verdict"] == "reachable" and len(inv["evidence_ids"]) >= 3 and [s_["tool"] for s_ in inv["steps"]][:3] == ["advisory_facts", "dependency_path", "find_imports"], str(inv["verdict"]))
+    check("investigator: verdict rules are conservative (KEV + imported -> exploitable_likely; unconfirmed range -> needs_review; never 'safe')",
+          decide({**f, "kev": True}, {"status": "used_by_app"}, None) == "exploitable_likely" and decide({**f, "affected_status": "unknown"}, {"status": "used_by_app"}, None) == "needs_review"
+          and "safe" not in " ".join(VERDICTS))
+    check("tools: unknown tool / unexpected argument are rejected, never raised", "error" in call(ctx, "rm_rf", {}) and "error" in call(ctx, "epss", {"cve": "CVE-1", "evil": 1}))
+    check("tools: read_snippet only reads files already cited as import evidence", "error" in call(ctx, "read_snippet", {"path": "src/app.py", "line": 1, "radius": 2}) and "snippet" in call(ctx, "read_snippet", {"path": "a.js", "line": 1, "radius": 1}))
+
+    good_id = inv["evidence_ids"][0]
+    base = {"verdict": "exploitable_likely", "rationale": f"Imported [{good_id}].", "cites": [good_id], "steps": []}
+    inv2 = {**inv, "epss": {"epss": 0.7}}
+    checks = [("accepts a grounded proposal", {**base, "verdict": "reachable"}, True), ("rejects an invented evidence id", {**base, "verdict": "reachable", "cites": ["osv:fake#000000"]}, False),
+              ("rejects 'no import evidence' when an import exists", {**base, "verdict": "no_import_evidence"}, False), ("rejects an advisory id from another finding", {**base, "verdict": "reachable", "rationale": "See CVE-1999-0001"}, False),
+              ("rejects exploitable_likely without KEV/EPSS/CVSS support", {**base, "verdict": "exploitable_likely"}, False), ("rejects a verdict outside the allowed set", {**base, "verdict": "safe"}, False)]
+    bad = [name for name, prop, ok in checks if (not InvestigatorAgent.guard(prop, f, inv, ctx)) != ok]
+    check("grounding gate: " + "; ".join(c[0] for c in checks), not bad, str(bad))
+
+    class Fake:
+        label = "fake:model"
+        def __init__(self, replies): self.replies = list(replies)
+        def complete(self, system, user, max_tokens=700, json_mode=False): return self.replies.pop(0)
+    fake = Fake([json.dumps({"tool": "find_imports", "args": {"package": "minimist", "ecosystem": "npm"}}), json.dumps({"final": {"verdict": "reachable", "rationale": "Imported by a.js.", "cites": [good_id]}})])
+    prop = InvestigatorAgent()._llm_loop(ctx, fake, f, inv, 5)
+    check("investigator: LLM tool loop executes allowed tools and returns a final proposal", prop["verdict"] == "reachable" and prop["steps"][0]["tool"] == "find_imports" and not InvestigatorAgent.guard(prop, f, inv, ctx))
+    llmc.CALL_LOG.clear()
+    check("llm: provider detection from the key prefix and secret redaction of outgoing text",
+          llmc.detect_provider("gsk_abc") == "groq" and llmc.detect_provider("AIzaSy") == "gemini" and llmc.detect_provider("sk-ant-x") == "anthropic" and llmc.detect_provider(None) is None
+          and "gsk_" not in llmc.redact("token gsk_" + "a" * 30) and "ghp_" not in llmc.redact("ghp_" + "b" * 36))
+    check("llm: deterministic mode makes zero LLM calls (no key -> no client)", llmc.from_settings(SimpleNamespace(llm_api_key=None)) is None and not llmc.CALL_LOG)
+
+
 @guarded("ground_truth")
 def _ground_truth() -> None:
     if OFFLINE:

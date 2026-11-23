@@ -34,6 +34,13 @@ def _assessment(fid: str, kind: str, score: int, factors: list[dict], rules: dic
             "thresholds": rules["thresholds"]}
 
 
+def priority_for(label: str, f: dict, reach_status: str = "unknown") -> str:
+    """P0 act now / P1 this sprint / P2 plan / P3 monitor. KEV + application import always escalates to P0."""
+    if label == "CRITICAL" or (f.get("kev") and reach_status in ("used_by_app", "reachable_via_dependency")):
+        return "P0"
+    return {"HIGH": "P1", "MEDIUM": "P2"}.get(label, "P3")
+
+
 def score_vulnerability(f: dict, rules: dict | None = None, related: dict | None = None) -> dict[str, Any]:
     r = (rules or DEFAULT_RULES)["vulnerability"]
     rules = rules or DEFAULT_RULES
@@ -80,15 +87,40 @@ def score_vulnerability(f: dict, rules: dict | None = None, related: dict | None
     if related.get("lockfile_change"):
         total += r["correlated_lockfile_change"]
         factors.append({"factor": "Correlated lockfile change", "points": r["correlated_lockfile_change"], "detail": related["lockfile_change"]})
-    factors.append({"factor": "Reachability", "points": 0, "detail": "not assessed (unknown; NOT treated as unreachable)"})
-    unknowns.append("Reachability of the vulnerable code is not assessed.")
+    ep = f.get("epss")
+    if ep is not None:
+        pts = next((p for thr, p in r["epss"] if ep >= thr), 0)
+        total += pts
+        factors.append({"factor": "Exploitation probability (EPSS)", "points": pts, "detail": f"EPSS {ep:.1%} (percentile {((f.get('epss_percentile') or 0) * 100):.0f}) - a statistical estimate, not a fact"})
+    else:
+        factors.append({"factor": "Exploitation probability (EPSS)", "points": 0, "detail": "not available"})
+    reach = (f.get("reachability") or {})
+    rst = reach.get("status") or "unknown"
+    rp = r["reachability"].get(rst, 0)
+    total += rp
+    if rst == "unknown":
+        factors.append({"factor": "Reachability", "points": 0, "detail": "not assessed (unknown; NOT treated as unreachable)"})
+        unknowns.append("Reachability of the vulnerable code is not assessed.")
+    else:
+        loc = (reach.get("locations") or [{}])[0]
+        factors.append({"factor": "Reachability (static import evidence)", "points": rp,
+                        "detail": {"used_by_app": f"the application imports {reach.get('package')} ({loc.get('path')}:{loc.get('line')})",
+                                   "reachable_via_dependency": f"the application imports {', '.join(reach.get('via') or [reach.get('package')])}, which brings this package in (exact use of the vulnerable code unknown)",
+                                   "used_in_tests_only": "imported only by test code in the analysed source",
+                                   "not_imported": "no import found in analysed source; it may still be used via configuration, plugins or a CLI"}.get(rst, rst)})
+        unknowns.append("Reachability is package-level import evidence, not a call graph: it does not prove the vulnerable function is called.")
     cap = None
     if f.get("affected_status") != "confirmed_affected":
         cap = r["unconfirmed_applicability_cap"]
         unknowns.append("Applicability of the advisory to the installed version could not be confirmed locally.")
     if not f.get("fixed_versions"):
         unknowns.append("No fixed version is recorded in the advisory data.")
-    return _assessment(f["finding_id"], "vulnerability", total, factors, rules, cap, unknowns, cvss_severity=sev)
+    a = _assessment(f["finding_id"], "vulnerability", total, factors, rules, cap, unknowns, cvss_severity=sev)
+    vc = f.get("verdict_confidence")
+    a["confidence"] = vc or {"score": 30 + (20 if f.get("cross_verified") else 0) + (10 if sev else 0), "label": "Medium" if f.get("cross_verified") else "Low", "basis": ["investigation not run"]}
+    a["priority"] = priority_for(a["label"], f, rst)
+    a["verdict"] = f.get("verdict")
+    return a
 
 
 def score_pipeline(f: dict, rules: dict | None = None) -> dict[str, Any]:
@@ -104,7 +136,10 @@ def score_pipeline(f: dict, rules: dict | None = None) -> dict[str, Any]:
         total += r["third_party_unpinned_action"]
         factors.append({"factor": "Third-party action", "points": r["third_party_unpinned_action"], "detail": "the action is maintained outside GitHub/known first-party orgs"})
     unknowns = ["Static analysis of the file only; whether the workflow/container is used in production is not known."]
-    return _assessment(f["finding_id"], "pipeline", total, factors, rules, None, unknowns)
+    a = _assessment(f["finding_id"], "pipeline", total, factors, rules, None, unknowns)
+    a["confidence"] = {"score": 85 if f.get("evidence_strength") == "high" else 55, "label": "High" if f.get("evidence_strength") == "high" else "Medium", "basis": ["rule matched directly in the file" if f.get("evidence_strength") == "high" else "pattern-based rule"]}
+    a["priority"] = {"CRITICAL": "P0", "HIGH": "P1", "MEDIUM": "P2"}.get(a["label"], "P3")
+    return a
 
 
 def score_typosquat(f: dict, rules: dict | None = None, related: dict | None = None) -> dict[str, Any]:
@@ -131,7 +166,10 @@ def score_typosquat(f: dict, rules: dict | None = None, related: dict | None = N
         unknowns.append("Registry metadata was not available to corroborate this finding.")
     if reg.get("exists") is False:
         unknowns.append("The package was not found in the public registry; it may be private/internal.")
-    return _assessment(f["finding_id"], "typosquatting", total, factors, rules, r["cap"], unknowns)
+    a = _assessment(f["finding_id"], "typosquatting", total, factors, rules, r["cap"], unknowns)
+    a["confidence"] = {"score": 60 if reg.get("checked") else 35, "label": "Medium" if reg.get("checked") else "Low", "basis": ["name similarity", "registry corroboration" if reg.get("checked") else "no registry corroboration"]}
+    a["priority"] = {"CRITICAL": "P0", "HIGH": "P1", "MEDIUM": "P2"}.get(a["label"], "P3")
+    return a
 
 
 def score_lockfile_change(c: dict, rules: dict | None = None, related: dict | None = None) -> dict[str, Any]:
@@ -154,4 +192,7 @@ def score_lockfile_change(c: dict, rules: dict | None = None, related: dict | No
     unknowns = ["A lockfile change does not prove compromise; intent cannot be determined from the diff alone."]
     if cls == "insufficient_baseline":
         unknowns.append("No valid comparison baseline was available; nothing was inferred.")
-    return _assessment(c["finding_id"], "lockfile_change", total, factors, rules, r["cap"], unknowns)
+    a = _assessment(c["finding_id"], "lockfile_change", total, factors, rules, r["cap"], unknowns)
+    a["confidence"] = {"score": 40, "label": "Medium" if c.get("evidence_strength") == "high" else "Low", "basis": ["Git diff evidence"]}
+    a["priority"] = {"CRITICAL": "P0", "HIGH": "P1", "MEDIUM": "P2"}.get(a["label"], "P3")
+    return a

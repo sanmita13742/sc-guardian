@@ -51,10 +51,11 @@ class ScanOptions:
     use_llm: bool = False
     rules_path: Optional[str] = None
     sbom_scanner: str = "auto"  # auto | syft | trivy | builtin
+    investigate: bool = True  # Investigator Agent: reachability + EPSS + verdicts
     metadata_registry: bool = True  # fill missing metadata / verify digests against package registries
 
 
-_FP_FIELDS = ("use_nvd", "use_kev", "metadata_registry", "registry_checks", "lockfile_commits", "baseline", "use_llm", "rules_path")
+_FP_FIELDS = ("use_nvd", "use_kev", "investigate", "metadata_registry", "registry_checks", "lockfile_commits", "baseline", "use_llm", "rules_path")
 
 
 def options_fingerprint(o: "ScanOptions") -> str:

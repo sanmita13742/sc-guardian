@@ -2,7 +2,7 @@
 
   discover -> classify -> plan -> lockfiles -> sbom_generate -> sbom_validate -> pipeline (Docker/CI) -> sbom_quality
         -> (conditional) sbom_second_pass -> sbom_metadata (fusion) -> graph
-  graph -> [ vulnerability -> verification ]  ||  [ typosquat -> lockfile_history ]     (parallel branches)
+  graph -> [ vulnerability -> verification -> investigator ]  ||  [ typosquat -> lockfile_history ]     (parallel branches)
         -> risk (joins both) -> explain -> assemble -> summary -> export -> finalize
 
 Design rules
@@ -28,6 +28,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from agents.runtime import Runtime
+from agents.investigator import InvestigatorAgent
 from agents.memory_agent import MemoryAgent
 from agents.pipeline_agent import PipelineAgent
 from agents.specialists import (AnalystAgent, GraphAgent, ReconAgent, RiskAgent, SBOMAgent, ScanState, ThreatAgent, VerificationAgent,
@@ -48,6 +49,7 @@ _REG: dict[str, tuple[ScanState, Runtime, Optional[Path]]] = {}
 NODES: dict[str, tuple[Callable, tuple[str, ...], tuple[str, ...]]] = {}
 
 memory = MemoryAgent()
+investigator = InvestigatorAgent()
 pipeline_agent = PipelineAgent()
 recon, sbom, graph_agent, vuln, ver, threat, risk, analyst = (ReconAgent(), SBOMAgent(), GraphAgent(), VulnerabilityAgent(), VerificationAgent(),
                                                              ThreatAgent(), RiskAgent(), AnalystAgent())
@@ -80,6 +82,7 @@ _register("sbom_metadata", lambda st, rt, ws: sbom.fuse_metadata(st, rt), ("meta
 _register("graph", lambda st, rt, ws: graph_agent.build(st, rt), ("graph",))
 _register("vulnerability", lambda st, rt, ws: vuln.run(st, rt), ("osv", "enrich", "trace"))
 _register("verification", lambda st, rt, ws: ver.run(st, rt), ("verify",))
+_register("investigator", lambda st, rt, ws: investigator.run(st, rt), ("investigate",))
 _register("typosquat", lambda st, rt, ws: threat.typosquat(st, rt), ("typosquat",), ("graph",))
 _register("lockfile_history", lambda st, rt, ws: threat.lockfile_history(st, rt), ("lockfile_history",))
 _register("risk", lambda st, rt, ws: risk.score(st, rt), ("risk",))
@@ -137,8 +140,9 @@ def build_graph() -> StateGraph:
     g.add_edge("graph", "vulnerability")  # parallel branch A
     g.add_edge("graph", "typosquat")  # parallel branch B
     g.add_edge("vulnerability", "verification")
+    g.add_edge("verification", "investigator")
     g.add_edge("typosquat", "lockfile_history")
-    g.add_edge(["verification", "lockfile_history"], "risk")  # join: waits for both branches
+    g.add_edge(["investigator", "lockfile_history"], "risk")  # join: waits for both branches
     for a, b in (("risk", "explain"), ("explain", "memory"), ("memory", "assemble"), ("assemble", "summary"), ("summary", "export"), ("export", "finalize"), ("finalize", END)):
         g.add_edge(a, b)
     return g

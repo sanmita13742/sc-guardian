@@ -66,6 +66,9 @@ class ScanState:
     fusion: dict = field(default_factory=dict)  # metadata fusion report
     pipe: dict = field(default_factory=lambda: {"findings": [], "images": [], "actions": [], "files": [], "summary": {}})
     evidence: EvidenceStore = field(default_factory=EvidenceStore)
+    source_index: Any = None  # reachability.scanners.SourceIndex, built lazily by the Investigator tools
+    epss: dict = field(default_factory=dict)
+    investigations: dict = field(default_factory=dict)
     sbom_files: list = field(default_factory=list)  # [{label, path}] files shown in the SBOM viewer
     sbom_doc: dict = field(default_factory=dict)
     sbom_path: Optional[str] = None

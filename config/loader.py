@@ -37,6 +37,8 @@ TUNABLES: dict[str, tuple[type, float, float, str]] = {
     "scan_cache_ttl_s": (int, 0, 31_536_000, "reuse a stored scan of the same commit for at most this long (seconds)"),
     "workspace_max_age_s": (int, 60, 604_800, "orphaned clone workspaces older than this are deleted (seconds)"),
     "keep_scans_per_repo": (int, 1, 1000, "scans kept per repository"),
+    "investigator_llm_max": (int, 0, 100, "findings the optional LLM may investigate per scan"),
+    "investigator_max_steps": (int, 1, 12, "tool calls per LLM investigation"),
     "cache_max_rows": (int, 1000, 50_000_000, "upper bound for rows in the TTL cache"),
     "cache_max_age_days": (int, 1, 3650, "cache rows older than this are purged"),
     "max_paths_per_target": (int, 1, 500, "dependency paths kept per finding"),
