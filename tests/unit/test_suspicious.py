@@ -44,6 +44,7 @@ def test_detector_offline_findings_and_context():
     assert f.dependency_type == "transitive" and any("transitive" in c for c in f.caveats)
     assert any("does not prove malicious" in c for c in f.caveats)
     assert any("offline" in e for e in f.evidence)
+    assert f.evidence_strength == "low" and any("Uncorroborated" in c for c in f.caveats)  # never 'high' without registry evidence
     assert "malicious" not in f.classification
 
 

@@ -209,6 +209,9 @@ def detect_typosquatting(components: list[Component], http: HttpClient | None = 
             stats["below_threshold"] += 1
             continue
         strength = "high" if pts >= 6 else "medium" if pts >= 4 else "low"
+        if not sig.get("checked"):
+            strength = "low"  # name similarity alone is never more than low-strength evidence
+            caveats.append("Uncorroborated: no registry metadata was available, so evidence strength is capped at 'low'.")
         comps = groups[(eco, name)]
         deps = [dependency_info.get(c.bom_ref, {}) for c in comps]
         types = {d.get("type") for d in deps if d.get("type")}

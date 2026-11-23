@@ -25,6 +25,7 @@ semver inherits readable-stream through2 safe-buffer string_decoder util events 
 yaml js-yaml xml2js csv-parse marked handlebars ejs pug mustache underscore.string
 aws-sdk firebase stripe twilio nodemailer sendgrid winston bunyan pino log4js
 core-js regenerator-runtime tslib object-assign qs ms mime mime-types iconv-lite
+object.assign safer-buffer through through2 isarray core-util-is process-nextick-args util-deprecate
 @angular/core @angular/common @angular/cli @babel/core @babel/preset-env @types/node @types/react @types/jest @nestjs/core @nestjs/common
 """.split()
 

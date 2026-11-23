@@ -122,7 +122,7 @@ def parse_yarn_lock(text: str, lockfile: str, service_dir: str, package_json: Op
             k, _, v = line.partition(": ") if ": " in line else line.partition(" ")
             cur[k.strip('"')] = v.strip().strip('"')
         elif indent >= 4 and section == "deps":
-            nm = line.split(" ")[0].strip('"').rstrip(":")
+            nm = line.split(" ")[0].rstrip(":").strip('"').rstrip(":")
             reqs.append(nm)
     for specs, meta, rq in blocks:
         first = specs[0]

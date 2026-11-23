@@ -164,3 +164,22 @@ def test_nonexistent_repository_fails_cleanly(isolated):
     res = so.run_scan(ScanOptions(url="https://github.com/this-owner-does-not-exist-zzz/nope-nope-nope", reuse_cached=False), settings=s, db=db)
     assert res["status"] == "failed" and "Clone failed" in res["error"]
     assert not any(s.workspace_dir.iterdir())  # workspace cleaned up
+
+
+@pytest.mark.network
+@pytest.mark.skipif(not online("github.com"), reason="github unreachable")
+def test_real_github_clone_is_shallow_hookless_and_cleaned(isolated):
+    from core import git_manager as gm
+    from core.url_validator import validate_github_url
+    s, _ = isolated
+    ref = validate_github_url("https://github.com/OWASP/NodeGoat")
+    scan_id, ws = gm.new_workspace(s)
+    try:
+        repo = gm.clone_repository(ref, ws, None, s)
+        sha = gm.head_sha(repo)
+        assert len(sha) == 40 and gm.is_shallow(repo) and (repo / "package.json").exists()
+        assert not (repo / ".gitmodules").exists() or not any((repo / p).exists() for p in ("node_modules",))
+        assert gm.parent_sha(repo, sha)  # depth > 1: a baseline is available
+    finally:
+        gm.cleanup(ws)
+    assert not ws.exists()

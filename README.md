@@ -1,240 +1,111 @@
 # SC Guardian — Repository Supply Chain Security Scanner
 
-A repository-centric **software supply-chain security scanner** delivered as a **Streamlit** app.
-Given a public GitHub URL it clones the repository (safely, statically), detects languages / frameworks /
-ecosystems, generates and quality-checks a CycloneDX SBOM, builds a dependency graph, correlates components
-with known vulnerabilities, detects suspicious supply-chain changes, and presents evidence-backed findings.
+SC Guardian takes a **public GitHub repository URL** and produces an evidence-backed picture of its software supply chain:
+a validated CycloneDX SBOM, a directed dependency graph, known vulnerabilities (with CVE, severity, CVSS, fixed versions and the
+dependency path back to each application root), and two *suspicious-change* detectors (typosquatting and modified lockfiles) —
+all presented in a Streamlit dashboard with downloadable reports.
 
-This README is the project context and implementation blueprint. It is **not** a recreation of Snyk; it targets
-two hackathon requirements:
+> The scanner performs **static analysis only**. It never executes repository code, install scripts or builds.
+> **A scan with no findings does not prove a repository is safe** — every result lists its coverage and limitations.
 
-- **A. Detect Vulnerabilities**
-- **B. Detect Suspicious Changes** (MVP detectors: **typosquatting** and **modified lockfile**)
+The original hackathon specification is kept in [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md).
+Implementation status and test evidence: [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md).
+Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Risk rules: [docs/RISK_SCORING.md](docs/RISK_SCORING.md).
 
-Guiding principle: *automate inventory generation, validate it, correlate it with vulnerability intelligence,
-inspect suspicious dependency changes, and give explainable, evidence-backed findings.* Reliability, evidence and
-accurate relationships matter more than a long list of half-working detectors.
+## What it does
 
----
-
-## 1. Hackathon requirements
-
-### A. Detect vulnerabilities
-
-| Requirement | Expected functionality |
+| Stage | Behaviour |
 |---|---|
-| Correlate components with known vulnerabilities | Match SBOM components against vulnerability databases |
-| Capture CVE | Record CVE ids when available |
-| Capture severity | LOW / MEDIUM / HIGH / CRITICAL |
-| Capture available fixes | Fixed versions / remediation |
-| Trace vulnerable transitive dependencies | Show path back to the source/root component |
+| Ingest | Validates a `https://github.com/<owner>/<repo>` URL (no local paths, credentials, other hosts), shallow-clones into an isolated temp workspace (no submodules, no hooks, size/time limits), records URL, branch and **exact commit SHA**, cleans up afterwards. |
+| Inspect | Languages (extensions), ecosystems/frameworks (manifests, lockfiles, config), monorepo services, Dockerfiles/compose/CI files (recorded as context only). |
+| SBOM | Syft → **CycloneDX JSON**, validated (profile schema + `bom-ref` integrity). The original file is preserved byte-for-byte; enrichment is a separate overlay with per-field provenance. |
+| Quality | Compares manifests/lockfiles ↔ Syft components ↔ SBOM relationships *within the same ecosystem and service scope*; reports missing versions/PURLs/licenses/suppliers/relationships, duplicates, unresolved identities. Never says "complete". |
+| Graph | NetworkX digraph keyed by `bom-ref`, edge = parent → child, one synthetic root per service, edge provenance (`sbom`, `lockfile`, `lockfile-direct`, `inferred-*`), cycle/dangling/duplicate handling, **direct/transitive per root**, bounded multi-path tracing. |
+| Vulnerabilities | OSV.dev batch query + full advisories, local **ecosystem-aware range validation**, NVD CVSS enrichment (optional key), CISA KEV flag, SQLite cache, retry/backoff, explicit "source unavailable" states. |
+| Typosquatting | RapidFuzz/Damerau-Levenshtein vs curated popular packages in the *same ecosystem*, registry corroboration (npm/PyPI), established packages suppressed, evidence strength + caveats. |
+| Lockfile changes | Real Git history: parses the lockfile at the commit and its parent (or an explicit baseline) and classifies each change as `normal_update`, `unexplained_change`, `potentially_suspicious` or `insufficient_baseline`, with commit info, previous/new values and diff excerpt. |
+| Risk | Transparent additive rule engine (labels CRITICAL…INFORMATIONAL) kept separate from CVSS severity; every label lists its factors and unknowns. |
+| Explain | Evidence bundles + deterministic explanation templates. An optional LLM may rephrase them only if each section validates against the evidence (IDs, numbers, labels, certainty claims); otherwise the template is used. |
+| Report | Dashboard + downloads: CycloneDX SBOM, graph JSON, vulnerability JSON, suspicious-change JSON, consolidated JSON, Markdown/HTML report. |
 
-Finding fields: vulnerability id, package, installed version, severity, CVSS (if available), fixed version (if
-available), direct/transitive, dependency path (root → intermediate → vulnerable component).
-(CVE-2024-1234 / CVSS 9.8 in the hackathon text are illustrative only.)
+### Supported ecosystems
 
-Rules:
-1. Match on package identity + ecosystem + version, never name alone.
-2. Use PURLs where available.
-3. Validate affected ranges with ecosystem-appropriate version semantics (no lexicographic comparison).
-4. Never report unknown / insufficiently identified packages as confirmed vulnerable.
-5. Keep vulnerability source and retrieval timestamps.
-6. A vulnerability may lack CVE / severity / fix — represent that honestly, never invent values.
-7. Support direct and transitive findings; preserve all relevant dependency paths for shared components.
+| Ecosystem | Lockfile / manifest parsers | Vulnerability matching |
+|---|---|---|
+| npm / JavaScript / TypeScript | package-lock.json (v1–v3), npm-shrinkwrap.json, yarn.lock (v1, basic berry), pnpm-lock.yaml | semver |
+| Python | requirements*.txt, poetry.lock, uv.lock, Pipfile.lock, pyproject.toml (direct names) | PEP 440 |
+| Java | pom.xml (declared + properties + dependencyManagement), build.gradle(.kts), gradle.lockfile | Maven ordering (approximated) |
+| Go | go.mod, go.sum | semver |
+| Rust | Cargo.lock | semver |
+| PHP | composer.lock | loose numeric ordering |
+| .NET | packages.lock.json, *.csproj | loose numeric ordering |
 
-### B. Detect suspicious changes
+Other ecosystems Syft discovers (OS packages, GitHub Actions, …) appear in the SBOM but are reported as *not queried* for vulnerabilities. Ruby (`Gemfile`) is detected but has no lockfile parser — this is reported, not hidden.
 
-**Detector 1 — Typosquatting.** Extract package names from manifests/lockfiles, normalise per ecosystem, compare to
-popular packages in the same ecosystem (edit distance, e.g. RapidFuzz), add registry metadata as supporting signals.
-Output: suspicious package, similar known package, similarity score, evidence. Similarity is *suspicious*, not
-*malicious*.
+## Install
 
-**Detector 2 — Modified lockfile.** Compare a selected commit with its parent (or a chosen baseline) using Git
-history and ecosystem-aware lockfile parsing. Detect added / removed / changed packages, version, resolved-source and
-integrity-hash changes, and lockfile changes with no matching manifest change. Output: commit SHA, file, package,
-previous/new value, change type, diff evidence and *why it is suspicious*. A lockfile change is not inherently
-malicious; if history/baseline is unavailable, report the limitation instead of inventing a result.
+Requirements: Python 3.10+ (developed and tested on **3.11** on Windows 11), Git, and [Syft](https://oss.anchore.com/docs/installation/syft/).
 
-Out of scope for the MVP: unsafe install scripts, untrusted images, CI/CD analysis.
+```bash
+# 1. virtual environment (Python 3.11 recommended)
+python -m venv .venv
+.venv/Scripts/activate          # Windows (PowerShell: .venv\Scripts\Activate.ps1);  Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt  # or: pip install -r requirements-lock.txt   (exact versions used in development)
 
----
+# 2. Syft (user-level install, no admin rights)
+scripts/install_syft.sh          # Git Bash / Linux / macOS     (Windows alt: powershell scripts/install_syft.ps1)
+#    or: winget install Anchore.Syft   |   brew install syft
+#    If syft is not on PATH, set SYFT_BIN in .env.
 
-## 2. Pipeline
-
-```text
-GitHub URL -> clone (isolated) -> inspect -> language/framework detection -> manifest/lockfile discovery
-  -> Syft CycloneDX SBOM -> SBOM quality assessment -> NetworkX dependency graph
-      -> vulnerability detection (OSV + NVD [+ CISA KEV])   \
-      -> suspicious-change detection (typosquat, lockfile)   > unified risk correlation -> Streamlit dashboard -> reports
+# 3. verify the whole toolchain (Python deps, Git, Syft scan + CycloneDX parse, network sources)
+python scripts/verify_environment.py
 ```
 
-Users never generate an SBOM manually. Repository code is **never executed**.
+### Configuration (all optional)
 
-## 3. Ingestion and generic detection
+Copy `.env.example` to `.env`. **No key is required** for the scanner to work.
 
-- Public GitHub URLs only (MVP). Validate URL, block local paths and non-HTTPS/GitHub schemes, clone into an
-  isolated temp workspace with size/time limits, record URL, branch and exact commit SHA, clean up afterwards.
-- Languages from extensions **plus** manifests/lockfiles/config (py, js/jsx, ts/tsx, java, go, rs, cs, php, rb …).
-- Ecosystems/frameworks from `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `pyproject.toml`,
-  `requirements.txt`, `poetry.lock`, `uv.lock`, `pom.xml`, `build.gradle`, `Cargo.toml/.lock`, `go.mod/.sum`,
-  `composer.json`, `.csproj`.
-- Monorepos supported: multiple frameworks/services per repo, no single-framework forcing.
+| Variable | Purpose |
+|---|---|
+| `NVD_API_KEY` | Raises the NVD rate limit (default cap without key: 20 CVEs per scan, ~6.5 s apart). |
+| `ANTHROPIC_API_KEY`, `EXPLAIN_LLM_MODEL` | Enables validated LLM-phrased explanations (templates are used otherwise). |
+| `SYFT_BIN` | Path to the Syft executable. |
+| `SCANNER_DATA_DIR`, `SCANNER_WORKSPACE_DIR` | SQLite/cache location and temp clone location. |
 
-## 4. SBOM
+## Run
 
-- **Syft** (https://oss.anchore.com/docs/) → **CycloneDX JSON**, invoked via a controlled subprocess (no shell):
-  `syft dir:<repo> -o cyclonedx-json=<out>`. Capture exit status, stdout/stderr, duration, tool version, output path.
-  A successful Syft run never implies a complete SBOM.
-- Source/build SBOM and runtime/image SBOM are different scopes and are kept separate. Image scanning is optional.
-- **Quality assessment** (own module) using lockfiles, Syft output and optional image scan: lockfile-only vs
-  Syft-only packages, missing versions / PURLs / licences / suppliers / relationships, duplicates, unresolved
-  identities. Compare only within the same ecosystem and scope (OS packages absent from a lockfile are not a defect).
-- **Enrichment** from npm / PyPI / Maven Central only when verifiable; record the source of every enriched field;
-  keep original Syft evidence; never invent metadata.
-- Emit an internal quality report (inventory status, relationship status, metadata status, unresolved count,
-  missing-metadata counts); never mark an SBOM complete just because a file was produced.
-
-## 5. Dependency graph (NetworkX)
-
-- Directed graph, edge = **parent → child** (parent depends on child); nodes keyed by CycloneDX `bom-ref`.
-- Parse components, metadata root, `dependencies`; validate dangling refs; detect duplicate refs / namespace
-  collisions when combining SBOMs; keep framework/service provenance; handle shared deps, cycles, malformed data.
-- No artificial frontend↔backend edges; monorepos keep separate roots/scopes.
-- Direct vs transitive classification; targeted traversal for paths to vulnerable nodes (no unrestricted
-  all-simple-paths enumeration on large graphs); keep multiple paths.
-- Visualisation: Cytoscape.js (or a Streamlit-compatible component). Never render thousands of nodes at once —
-  provide overview, per-service subgraphs, direct-dependency exploration, vulnerability-focused subgraphs.
-
-## 6. Vulnerability engine
-
-- **OSV.dev** primary: `POST https://api.osv.dev/v1/querybatch`, then fetch full records for ranges, severity,
-  fixed events. **NVD** for CVE/CVSS enrichment. **CISA KEV** optional prioritisation.
-- Normalised finding model: finding_id, component_ref, package, ecosystem, installed_version, purl,
-  vulnerability_ids, severity, cvss_score/vector (nullable), affected_status
-  (`confirmed_affected` | `not_affected` | `unknown`), fixed_versions, dependency_type, root_component,
-  dependency_paths, sources, remediation, scan_timestamp.
-- For transitive findings do not blindly recommend bumping the first parent; derive an upgrade path from real
-  constraints and advisory data.
-
-## 7. Risk correlation, dashboard, reports
-
-Unified correlator normalises vulnerability, typosquatting and lockfile findings, associates them to components,
-dedupes, preserves evidence/provenance, and does **not** force anomalies into CVSS.
-
-Dashboard sections: Repository Overview · SBOM Overview · Vulnerabilities (filter by severity, ecosystem, package,
-direct/transitive, id) · Dependency Graph · Suspicious Changes (typosquatting + modified lockfiles) · Reports.
-Downloads: CycloneDX SBOM, graph JSON, vulnerability JSON, suspicious-change JSON, consolidated report.
-
-## 8. Stack
-
-Streamlit · Python · GitPython or controlled `git` subprocess · custom inspector · Syft · CycloneDX JSON ·
-registry APIs (npm/PyPI/Maven) · OSV.dev · NVD · NetworkX · RapidFuzz · Cytoscape.js · SQLite · pytest.
-Avoid unnecessary dependencies; keep modules small with clear interfaces.
-
-## 9. Target structure (adapt to the repo)
-
-```text
-app.py
-core/            repository_manager, repository_inspector, framework_detector, scan_orchestrator
-sbom/            syft_generator, lockfile_analyzer, metadata_enricher, sbom_validator, quality_analyzer
-graph/           graph_builder, dependency_tracer, graph_exporter
-vulnerability/   osv_client, nvd_client, vulnerability_matcher, severity_analyzer, remediation_engine
-suspicious_changes/  typosquatting_detector, lockfile_change_detector
-reporting/       risk_correlator, report_generator, export_manager
-storage/         database, models
-tests/   generated/   requirements.txt   README.md
+```bash
+streamlit run app.py          # then open http://localhost:8501
 ```
 
-## 10. Security requirements (untrusted repositories)
+Pages: **Repository Scan** → **SBOM Explorer** → **Dependency Graph** → **Vulnerability Findings** → **Suspicious Changes** → **Risk & Explainability** → **Reports**. Previous scans are stored in SQLite (`data/scanner.db`) and can be reloaded; scanning the same commit again reuses the stored result unless you untick *Reuse cached scan*.
 
-Validate/restrict URLs (GitHub only); no local paths or odd schemes; isolated temp workspaces; size and clone-time
-limits; never run repo scripts; never run `npm/pip/poetry install`; never build Dockerfiles from untrusted repos
-outside an isolated environment; no shell interpolation for Git/Syft; API timeouts and retries; handle offline mode;
-no secrets in logs/commits; safe cleanup; malformed SBOMs/lockfiles must not crash the app.
+Generated artifacts (git-ignored): `artifacts/sbom/` (original CycloneDX), `artifacts/scans/` (JSON exports), `artifacts/graphs/`, `artifacts/reports/` (Markdown/HTML).
 
-## 11. Milestones
+## Test
 
-| M | Deliverable |
-|---|---|
-| M1 | Streamlit UI + repository ingestion |
-| M2 | Generic language/framework detection |
-| M3 | Automated Syft SBOM generation |
-| M4 | Lockfile analysis + SBOM quality assessment |
-| M5 | NetworkX dependency graph |
-| M6 | OSV/NVD vulnerability correlation |
-| M7 | Direct/transitive tracing |
-| M8 | Typosquatting detector |
-| M9 | Modified-lockfile detector |
-| M10 | Unified dashboard + reporting |
-| M11 | Integration tests + reliability |
+```bash
+python -m pytest tests/unit                    # fast, offline, deterministic (mocked OSV/NVD/KEV)
+python -m pytest tests/integration             # real Syft, live OSV/KEV/GitHub; ~10 min on a cold cache
+python -m pytest -m "not network"              # everything that needs no internet
+python -m pytest --cov=core --cov=sbom --cov=graph --cov=vulnerability --cov=suspicious_changes --cov=risk_analysis --cov=explainability --cov=reporting
+```
 
-Test each module before integrating it.
+Integration tests use the vendored `nodegoat/` directory, a multi-ecosystem monorepo fixture (`tests/fixtures/monorepo`) turned into a real Git repository with a deliberately suspicious second commit, and a real shallow clone of `OWASP/NodeGoat`. Live tests skip themselves when the network is unreachable. Each integration run appends a record (fixture, revision, SBOM/graph/OSV status, findings, sample paths) to `artifacts/scans/integration-test-records.json`.
 
-## 12. Acceptance criteria (summary)
+## Security considerations
 
-- **Repo analysis:** public repos clone; SHA recorded; multi-language/monorepo detection; unsupported ecosystems reported.
-- **SBOM:** valid CycloneDX from Syft; components/PURLs parsed; lockfile-vs-Syft comparison; missing metadata/relationships reported; completeness never assumed.
-- **Graph:** valid `bom-ref` nodes; real edges; direct/transitive distinguishable; multi-path tracing; malformed refs safe.
-- **Vulnerabilities:** OSV (+ NVD) working; IDs, severity, CVSS, fixed versions captured when present; accurate range matching; paths shown; unknowns not reported as confirmed.
-- **Suspicious changes:** evidence-backed typosquat findings; lockfile detector uses real Git history; reasons given; normal updates not auto-flagged.
-- **Dashboard:** repo info, SBOM summary, filterable findings, graph, suspicious changes, downloads.
-- **Engineering:** unit tests per detector, end-to-end integration tests, API failures don't crash a scan, no secrets committed, no repo code executed, existing functionality preserved.
+* URL allow-list (GitHub HTTPS only); branch/tag names validated; no shell — every subprocess uses an argument list.
+* Clone: depth-limited, `--no-recurse-submodules`, hooks disabled, `core.symlinks=false`, `GIT_TERMINAL_PROMPT=0`, timeout and repository-size limit, workspace always removed.
+* Repository files are only *read*: size-capped, symlinks skipped, path-traversal checked. Nothing is installed, built or executed; Dockerfiles are never built.
+* Malformed SBOMs/lockfiles/API payloads are recorded as errors and never abort a scan; API failures are reported (`unavailable`, `stale_cache`), never converted into "0 vulnerabilities".
+* Secrets only via environment variables; `.env` is git-ignored; API keys are never logged or sent anywhere except their own service.
+* No finding is invented: missing CVE/CVSS/fix stays `n/a`; unknown applicability is `unknown`, not "affected".
 
-## 13. Scope boundaries
+## Limitations (honest list)
 
-In MVP: generic ingestion, language/framework detection, SBOM + quality assessment, graph, vulnerability
-correlation (CVE, severity, fixes), transitive tracing, the two detectors, dashboard, reporting.
-Future: private-repo auth, install-script and image-trust detection, container OS vuln analysis, CI/CD analysis,
-runtime monitoring, reputation intelligence, continuous monitoring, reachability, VEX.
+See [docs/IMPLEMENTATION_PROGRESS.md](docs/IMPLEMENTATION_PROGRESS.md#known-limitations) for the full list. Highlights: public GitHub only; shallow history (depth 50) limits baseline availability; version semantics for Maven/Packagist/NuGet/RubyGems are approximations; OSV `GIT` ranges and CVSS v4 vectors cannot be evaluated locally; typosquatting uses a small curated reference list and registry checks only for npm/PyPI; reachability of vulnerable code is **not** assessed (treated as unknown); Docker images and CI/CD pipelines are recorded but not analysed; Cytoscape.js is loaded from a CDN so the graph canvas needs browser internet access.
 
----
+## Future extensions
 
-## 14. Current repository state (as of branch `streamlit-app`)
-
-Branch `streamlit-app` was created from base commit `d2de3d02986fe6cd15cab7659417f8343cd79e07`.
-
-| Path | Content |
-|---|---|
-| `nodegoat/` | OWASP NodeGoat (intentionally vulnerable Node.js app) — **test target**, not scanner code. Contains its own `README.md`; leave untouched. |
-| `artifacts/{sbom,scans,reports,graphs}/` | Placeholder output dirs (`.gitkeep`); generated outputs are git-ignored. |
-| `.gitignore` | Python/Node/IDE ignores + artifact-output rules. |
-
-The base commit has **no scanner source code**. An earlier FastAPI + React implementation (Milestones 1–6, NodeGoat
-only) exists on `main` / `origin/main` (commit `b2d80b8`) but is *not* part of this branch's base.
-
-## 15. Implementation plan
-
-Phase 0 — Prerequisites: install Syft; Python deps (`streamlit`, `rapidfuzz`, `GitPython` or subprocess git,
-`requests`, `packaging`, `pytest`, `networkx`, `pydantic`; optionally `univers`/`semantic_version` for version ranges,
-`streamlit-cytoscapejs`-style component or a small custom HTML component). Optional NVD API key via env var.
-
-Phase 1 (M1–M2) — `core/`: URL validator, shallow clone in temp dir with limits and SHA capture, inspector
-(extension + manifest evidence), framework/ecosystem detector, Streamlit shell with progress and status.
-Phase 2 (M3–M4) — `sbom/`: Syft subprocess wrapper, CycloneDX validator, lockfile parsers (npm first, then PyPI,
-Go, Maven, Cargo), quality analyzer, optional enricher.
-Phase 3 (M5, M7) — `graph/`: bom-ref graph builder, root/scope handling, targeted path tracer, JSON exporter.
-Phase 4 (M6) — `vulnerability/`: OSV batch + record fetch (cached in SQLite), ecosystem-aware version matching,
-NVD enrichment, KEV flag, remediation engine.
-Phase 5 (M8–M9) — `suspicious_changes/`: popular-package lists + RapidFuzz detector; Git-diff lockfile detector.
-Phase 6 (M10–M11) — `reporting/` correlator + exports, full dashboard, integration tests against NodeGoat and one
-Python/monorepo sample, reliability (timeouts, offline mode, malformed input).
-
-### Reuse candidates from `main` (to port, not depend on)
-
-`backend/app/sbom/sbom_generator.py` (Syft subprocess wrapper), `sbom_parser.py` (CycloneDX validation),
-`discovery/dependency_extractor.py` + `manifest_parser.py` (npm lockfile v1/v2 parsing), `graph/dependency_graph.py`
-(NetworkX builder), `models/schemas.py` (pydantic models), and `backend/tests/*`. They are npm/NodeGoat-specific and
-must be generalised (multi-ecosystem, bom-ref-keyed, no hardcoded filenames) before reuse.
-
-### Risks
-
-- Syft is not installed locally; Windows path handling and subprocess quoting need care.
-- Python 3.15 is very new; verify Streamlit/RapidFuzz wheels (fall back to Python 3.11 venv if needed).
-- Ecosystem-specific version semantics (npm semver, PEP 440, Maven) are the main correctness risk for matching.
-- OSV/NVD rate limits and offline operation; mitigate with caching, retries and graceful degradation.
-- Large monorepos and graph rendering size; mitigate with scoped subgraphs and node caps.
-
-## 16. Git workflow rules (current phase)
-
-Work stays **uncommitted** on `streamlit-app` until explicitly authorised: no commits, pushes, merges, rebases,
-resets or branch deletions, and no changes to unrelated files.
+Container-image SBOM and OS-package vulnerability analysis · Dockerfile and CI/CD pipeline security analysis · unsafe install-script detection · untrusted-image detection · more suspicious-dependency detectors · private-repository authentication · additional ecosystems and advisory providers · reachability analysis · VEX output. The module boundaries (`sbom/package_extractors`, `vulnerability/*_client.py`, `suspicious_changes/*`) are the intended extension points; none of these extensions is implemented yet.
