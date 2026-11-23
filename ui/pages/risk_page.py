@@ -41,7 +41,7 @@ def render() -> None:
     st.markdown("#### Finding Risk Explanations")
     a, b, d = st.columns([1, 1, 2])
     f_label = a.multiselect("Risk Level", ORDER, default=["CRITICAL", "HIGH"])
-    f_kind = b.multiselect("Finding Type", ["vulnerability", "typosquatting", "lockfile_change", "pipeline"])
+    f_kind = b.multiselect("Finding Type", ["vulnerability", "typosquatting", "lockfile_change", "pipeline", "package_risk"])
     text = d.text_input("Search finding ID or package", placeholder="e.g. lodash...")
 
     expl = r.get("explanations", {})

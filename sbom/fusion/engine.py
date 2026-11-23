@@ -194,6 +194,9 @@ def fetch_registry(components: list[Component], http: HttpClient, cache: Optiona
             for c in uniq[k]:
                 if rec:
                     _apply_record(c, rec)
+                    c.integrity["lookup"] = "found"
+                elif status == "not_found":
+                    c.integrity["lookup"] = "not_found"
             done += 1
             if on_progress and done % 50 == 0:
                 on_progress(f"{done}/{len(uniq)} package versions resolved against registries")
@@ -222,6 +225,7 @@ def _apply_record(c: Component, rec: dict) -> None:
         ledger.set_field(c, "external_refs", [{**l, "source": src_label} for l in rec["links"]], src_label, ev)
     if rec.get("provenance_attestations"):
         c.integrity["attestations"] = rec["provenance_attestations"]
+        c.integrity["attested"] = True
     if rec.get("yanked"):
         c.integrity["yanked"] = True
     # integrity triangulation

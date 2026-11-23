@@ -64,6 +64,7 @@ class ScanState:
     sbom_tool: dict = field(default_factory=dict)
     fused_path: Optional[str] = None
     fusion: dict = field(default_factory=dict)  # metadata fusion report
+    pkgrisk: dict = field(default_factory=lambda: {"findings": [], "provenance": {}})
     pipe: dict = field(default_factory=lambda: {"findings": [], "images": [], "actions": [], "files": [], "summary": {}})
     evidence: EvidenceStore = field(default_factory=EvidenceStore)
     source_index: Any = None  # reachability.scanners.SourceIndex, built lazily by the Investigator tools
@@ -444,6 +445,19 @@ class ThreatAgent:
                 rt.decide("typosquat", "Cap uncorroborated name matches at 'low' evidence", reason="Registry checks are disabled.", agent="Supervisor")
             b["message"] = f"{len(st.typo['findings'])} suspicious package name(s)"
 
+    def package_risk(self, st: ScanState, rt: Runtime) -> None:
+        from suspicious_changes.package_risk import assess
+        with rt.step("package_risk", "Checking fused package metadata for integrity, install-script, recency, deprecation and dependency-confusion signals") as b:
+            st.pkgrisk = assess(st.components, st.info.scan_timestamp)
+            fs = st.pkgrisk["findings"]
+            for f in fs:
+                f["evidence_id"] = st.evidence.add("registry", "package-risk", f["finding_id"], f"{f['rule_id']}: {f['title']}", {"rule": f["rule_id"], "package": f["subject"]})
+            pv = st.pkgrisk["provenance"]
+            rt.observe("package_risk", f"{len(fs)} signal(s); build provenance published for {pv['attested']} of {pv['with_registry_data']} packages with registry data (presence only, not cryptographically verified)")
+            if any(f["rule_id"] == "PKG-INT" for f in fs):
+                rt.decide("package_risk", "Escalate lockfile digest mismatches", reason="A pinned digest that does not match the registry is a strong supply-chain signal.", agent="Supervisor")
+            b["message"] = f"{len(fs)} package risk signal(s)"
+
     def lockfile_history(self, st: ScanState, rt: Runtime) -> None:
         o = st.options
         if not st.git_history:
@@ -474,7 +488,7 @@ class RiskAgent:
 
     def score(self, st: ScanState, rt: Runtime) -> None:
         with rt.step("risk") as b:
-            st.risk = correlate_findings(st.vulns, [f.model_dump() for f in st.typo["findings"]], st.lres["findings"], st.rules, st.pipe["findings"])
+            st.risk = correlate_findings(st.vulns, [f.model_dump() for f in st.typo["findings"]], st.lres["findings"], st.rules, st.pipe["findings"] + st.pkgrisk["findings"])
             res = st.result
             res["risk_assessments"], res["correlations"] = st.risk["assessments"], st.risk["correlations"]
             res["risk_by_root"] = summarize_by_root(st.vulns, st.risk["assessments"])
@@ -511,15 +525,15 @@ class RiskAgent:
                     bundle = normalize_bundle(collect(f))
                     evidence[f["finding_id"]] = {k: v for k, v in bundle.items() if k != "corpus"}
                     out[f["finding_id"]] = explain(bundle, risks[f["finding_id"]], f, llm if f["finding_id"] in top else None)
-            for f in st.pipe["findings"]:
+            for f in st.pipe["findings"] + st.pkgrisk["findings"]:
                 a = risks.get(f["finding_id"])
                 if not a:
                     continue
                 out[f["finding_id"]] = {"headline": f"{a['label']} risk - {f['title']}", "source": "template", "validation": {"grounded": True, "removed_sections": [], "checked": "template"},
                                         "evidence_ids": [f["evidence_id"]] if f.get("evidence_id") else [],
                                         "sections": {"impact": f["why"], "how_entered": f"{f['file']}" + (f":{f['line']}" if f["line"] else "") + (f" - `{f['snippet']}`" if f["snippet"] else ""),
-                                                     "direct_transitive": f"{f['ecosystem']} configuration ({f['rule_id']}), not a package dependency", "remediation": f["remediation"]}}
-                evidence[f["finding_id"]] = {"kind": "pipeline", "rule": f["rule_id"], "file": f["file"], "line": f["line"], "evidence_id": f.get("evidence_id")}
+                                                     "direct_transitive": (f"package signal {f['rule_id']} for {f['subject']}" if f.get("kind") == "package_risk" else f"{f['ecosystem']} configuration ({f['rule_id']}), not a package dependency"), "remediation": f["remediation"]}}
+                evidence[f["finding_id"]] = {"kind": f.get("kind", "pipeline"), "rule": f["rule_id"], "file": f["file"], "line": f["line"], "evidence_id": f.get("evidence_id")}
             st.result["explanations"], st.result["evidence"] = out, evidence
             replaced = sum(len(e["validation"].get("removed_sections", [])) for e in out.values())
             if replaced:

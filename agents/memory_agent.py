@@ -17,6 +17,7 @@ class MemoryAgent:
             locks = [c for c in st.lres["findings"] if c["classification"] != "insufficient_baseline"]
             items = ([("vulnerability", f, labels.get(f["finding_id"])) for f in st.vulns] + [("typosquatting", f, labels.get(f["finding_id"])) for f in typos]
                      + [("pipeline", f, labels.get(f["finding_id"])) for f in st.pipe["findings"]]
+                     + [("package_risk", f, labels.get(f["finding_id"])) for f in st.pkgrisk["findings"]]
                      + [("lockfile_change", f, labels.get(f["finding_id"])) for f in locks])
             diff = mem.record_scan(st.info.url, st.info.scan_id, st.info.scan_timestamp, items)
             fps = {f["finding_id"]: fingerprint(k, f) for k, f, _ in items}

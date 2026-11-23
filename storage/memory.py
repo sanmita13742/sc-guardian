@@ -26,6 +26,8 @@ def fingerprint(kind: str, f: dict) -> str:
         return "|".join(["vuln", f.get("ecosystem") or "", f.get("package_name") or "", f.get("installed_version") or "", f.get("primary_id") or "", f.get("service_dir") or "."])
     if kind == "typosquatting":
         return "|".join(["typo", f.get("ecosystem") or "", f.get("package_name") or "", f.get("similar_to") or ""])
+    if kind == "package_risk":
+        return "|".join(["pkgrisk", f.get("rule_id") or "", f.get("ecosystem") or "", f.get("subject") or ""])
     if kind == "pipeline":
         return "|".join(["pipe", f.get("rule_id") or "", f.get("file") or "", (f.get("subject") or "")[:80]])
     prev, new = f.get("previous") or {}, f.get("new") or {}
@@ -37,8 +39,8 @@ def title(kind: str, f: dict) -> str:
         return f"{f.get('primary_id')} in {f.get('package_name')}@{f.get('installed_version')}"
     if kind == "typosquatting":
         return f"{f.get('package_name')} resembles {f.get('similar_to')}"
-    if kind == "pipeline":
-        return f"{f.get('rule_id')} {f.get('title')} ({f.get('file')})"
+    if kind in ("pipeline", "package_risk"):
+        return f"{f.get('rule_id')} {f.get('title')}" + (f" ({f.get('file')})" if kind == "pipeline" else "")
     return f"{f.get('change_type')} {f.get('package_name')} in {f.get('file')}"
 
 

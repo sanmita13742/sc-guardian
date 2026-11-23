@@ -84,6 +84,8 @@ def npm(http: HttpClient, eco: str, name: str, version: str) -> dict:
     if d.get("deprecated"):
         rec["deprecated"] = True
     dist = d.get("dist") or {}
+    if (dist.get("attestations") or {}).get("url"):
+        rec["provenance_attestations"] = 1  # npm provenance statement (Sigstore) is published for this version
     dig = []
     for key in ("integrity", "shasum"):
         p = parse_digest(dist.get(key))

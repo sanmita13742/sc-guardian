@@ -2,7 +2,7 @@
 
   discover -> classify -> plan -> lockfiles -> sbom_generate -> sbom_validate -> pipeline (Docker/CI) -> sbom_quality
         -> (conditional) sbom_second_pass -> sbom_metadata (fusion) -> graph
-  graph -> [ vulnerability -> verification -> investigator ]  ||  [ typosquat -> lockfile_history ]     (parallel branches)
+  graph -> [ vulnerability -> verification -> investigator ]  ||  [ typosquat -> lockfile_history -> package_risk ]     (parallel branches)
         -> risk (joins both) -> explain -> assemble -> summary -> export -> finalize
 
 Design rules
@@ -84,6 +84,7 @@ _register("vulnerability", lambda st, rt, ws: vuln.run(st, rt), ("osv", "enrich"
 _register("verification", lambda st, rt, ws: ver.run(st, rt), ("verify",))
 _register("investigator", lambda st, rt, ws: investigator.run(st, rt), ("investigate",))
 _register("typosquat", lambda st, rt, ws: threat.typosquat(st, rt), ("typosquat",), ("graph",))
+_register("package_risk", lambda st, rt, ws: threat.package_risk(st, rt), ("package_risk",))
 _register("lockfile_history", lambda st, rt, ws: threat.lockfile_history(st, rt), ("lockfile_history",))
 _register("risk", lambda st, rt, ws: risk.score(st, rt), ("risk",))
 _register("explain", lambda st, rt, ws: risk.explain(st, rt), ("explain",), ("risk",))
@@ -142,7 +143,8 @@ def build_graph() -> StateGraph:
     g.add_edge("vulnerability", "verification")
     g.add_edge("verification", "investigator")
     g.add_edge("typosquat", "lockfile_history")
-    g.add_edge(["investigator", "lockfile_history"], "risk")  # join: waits for both branches
+    g.add_edge("lockfile_history", "package_risk")
+    g.add_edge(["investigator", "package_risk"], "risk")  # join: waits for both branches
     for a, b in (("risk", "explain"), ("explain", "memory"), ("memory", "assemble"), ("assemble", "summary"), ("summary", "export"), ("export", "finalize"), ("finalize", END)):
         g.add_edge(a, b)
     return g

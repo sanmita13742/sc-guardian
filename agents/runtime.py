@@ -32,6 +32,7 @@ STEPS: list[tuple[str, str, str]] = [
     ("verify", "Verification Agent", "Cross-check findings against OSV by PURL (ground truth)"),
     ("investigate", "Investigator Agent", "Investigate findings: reachability, EPSS exploitability, evidence-backed verdict"),
     ("typosquat", "Threat Agent", "Typosquatting analysis"),
+    ("package_risk", "Threat Agent", "Package risk: integrity, install scripts, provenance, dependency confusion"),
     ("lockfile_history", "Threat Agent", "Compare lockfiles against Git history"),
     ("risk", "Risk Agent", "Deterministic risk scoring and correlation"),
     ("explain", "Risk Agent", "Evidence-grounded explanations"),

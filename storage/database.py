@@ -152,6 +152,8 @@ class Database:
             findings.append(("lockfile_change", f))
         for f in (result.get("pipeline") or {}).get("findings", []):
             findings.append(("pipeline", f))
+        for f in (result.get("package_risk") or {}).get("findings", []):
+            findings.append(("package_risk", f))
         risks = {r["finding_id"]: r for r in result.get("risk_assessments", [])}
         with self.connect() as c:
             c.execute("DELETE FROM scans WHERE scan_id=?", (repo["scan_id"],))

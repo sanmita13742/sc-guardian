@@ -136,7 +136,7 @@ def score_pipeline(f: dict, rules: dict | None = None) -> dict[str, Any]:
         total += r["third_party_unpinned_action"]
         factors.append({"factor": "Third-party action", "points": r["third_party_unpinned_action"], "detail": "the action is maintained outside GitHub/known first-party orgs"})
     unknowns = ["Static analysis of the file only; whether the workflow/container is used in production is not known."]
-    a = _assessment(f["finding_id"], "pipeline", total, factors, rules, None, unknowns)
+    a = _assessment(f["finding_id"], f.get("kind", "pipeline"), total, factors, rules, None, unknowns)
     a["confidence"] = {"score": 85 if f.get("evidence_strength") == "high" else 55, "label": "High" if f.get("evidence_strength") == "high" else "Medium", "basis": ["rule matched directly in the file" if f.get("evidence_strength") == "high" else "pattern-based rule"]}
     a["priority"] = {"CRITICAL": "P0", "HIGH": "P1", "MEDIUM": "P2"}.get(a["label"], "P3")
     return a

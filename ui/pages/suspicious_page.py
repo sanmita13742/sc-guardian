@@ -13,7 +13,24 @@ def render() -> None:
         return
 
     risks = risk_by_id(r)
-    tab1, tab2 = st.tabs([f"Typosquatting ({len(r['typosquatting'])})", f"Modified Lockfiles ({len(r['lockfile_changes'])})"])
+    pkg = (r.get("package_risk") or {})
+    tab1, tab2, tab3 = st.tabs([f"Typosquatting ({len(r['typosquatting'])})", f"Modified Lockfiles ({len(r['lockfile_changes'])})", f"Package risk signals ({len(pkg.get('findings', []))})"])
+
+    with tab3:
+        pv = pkg.get("provenance") or {}
+        if pv:
+            st.caption(f"Build provenance (npm provenance / SLSA attestations) is published for {pv.get('attested', 0)} of {pv.get('with_registry_data', 0)} packages with registry data. "
+                       "Presence only - signatures are not cryptographically verified here.")
+        pf = pkg.get("findings", [])
+        if not pf:
+            st.success("No integrity, install-script, recency, deprecation or dependency-confusion signals.")
+        else:
+            df([{"ID": f["finding_id"], "Severity": f["severity"], "Signal": f["rule_id"], "Package": f["subject"], "Finding": f["title"], "Risk": risks.get(f["finding_id"], {}).get("label", "")} for f in pf], height=300)
+            for f in pf[:25]:
+                with st.expander(f"{f['finding_id']} · {f['rule_id']} · {f['title']}", expanded=False):
+                    st.markdown(f"**Why it matters:** {f['why']}")
+                    st.markdown(f"**What to do:** {f['remediation']}")
+                    st.caption(f"Evidence `{f.get('evidence_id')}` · {'directly observed' if f['evidence_strength'] == 'high' else 'heuristic signal, not proof'}")
 
     with tab1:
         meta = r.get("typosquatting_meta", {})
