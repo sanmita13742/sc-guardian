@@ -11,18 +11,21 @@ import {
   Workflow,
   Sparkles,
   Split,
-  AlertTriangle
+  AlertTriangle,
+  AlertOctagon
 } from 'lucide-react';
 import DependencyGraphView from './components/DependencyGraphView';
 import CrossValidationView from './components/CrossValidationView';
 import VulnerabilitiesView from './components/VulnerabilitiesView';
+import SuspiciousChangesView from './components/SuspiciousChangesView';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'vulnerabilities', 'validation', 'inventory', 'raw_sbom'
+  const [activeTab, setActiveTab] = useState('graph'); // 'graph', 'vulnerabilities', 'suspicious', 'validation', 'inventory'
   const [inventory, setInventory] = useState(null);
   const [sbomData, setSbomData] = useState(null);
   const [graphData, setGraphData] = useState(null);
   const [scanData, setScanData] = useState(null);
+  const [suspiciousData, setSuspiciousData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Search in Inventory
@@ -33,17 +36,19 @@ export default function App() {
     async function loadAll() {
       try {
         setLoading(true);
-        const [invRes, sbomRes, graphRes, scanRes] = await Promise.all([
+        const [invRes, sbomRes, graphRes, scanRes, suspRes] = await Promise.all([
           fetch('/component-inventory.json'),
           fetch('/nodegoat-sbom.json'),
           fetch('/nodegoat-dependency-graph.json'),
-          fetch('/nodegoat-vulnerabilities.json')
+          fetch('/nodegoat-vulnerabilities.json'),
+          fetch('/suspicious_changes.json')
         ]);
 
         if (invRes.ok) setInventory(await invRes.json());
         if (sbomRes.ok) setSbomData(await sbomRes.json());
         if (graphRes.ok) setGraphData(await graphRes.json());
         if (scanRes.ok) setScanData(await scanRes.json());
+        if (suspRes.ok) setSuspiciousData(await suspRes.json());
       } catch (e) {
         console.error('Failed to load local data files:', e);
       } finally {
@@ -125,13 +130,20 @@ export default function App() {
             <Download className="w-3.5 h-3.5 text-red-400" />
             OSV Scan JSON
           </button>
+          <button
+            onClick={() => downloadFile(suspiciousData, 'suspicious_changes.json')}
+            className="flex items-center gap-1.5 text-xs bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 px-3 py-1.5 rounded-lg border border-amber-800/60 transition"
+          >
+            <Download className="w-3.5 h-3.5 text-amber-400" />
+            Suspicious Changes JSON
+          </button>
         </div>
       </header>
 
       {/* Main Body */}
       <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
         {/* Metric Cards Banner */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
           <div className="bg-[#0E131F] border border-gray-800 p-3.5 rounded-xl shadow-sm">
             <span className="text-[11px] text-gray-400">Total Unique Packages</span>
             <div className="text-2xl font-bold text-white font-mono mt-0.5">
@@ -178,10 +190,31 @@ export default function App() {
               </span>
             </div>
             <div className="text-2xl font-bold text-red-400 font-mono mt-0.5">
-              {scanData?.metrics?.total_vulnerabilities || 201}
+              {scanData?.metrics?.total_vulnerabilities || 200}
             </div>
             <p className="text-[10px] text-red-500/80 mt-0.5">
-              {scanData?.metrics?.severity_counts?.CRITICAL || 22} Critical • {scanData?.metrics?.severity_counts?.HIGH || 106} High
+              {scanData?.metrics?.severity_counts?.CRITICAL || 22} Critical • {scanData?.metrics?.severity_counts?.HIGH || 105} High
+            </p>
+          </div>
+
+          <div
+            onClick={() => setActiveTab('suspicious')}
+            className="bg-[#0E131F] border border-amber-900/60 p-3.5 rounded-xl shadow-sm bg-gradient-to-b from-amber-950/20 to-transparent cursor-pointer hover:border-amber-600 transition"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-amber-400 font-semibold flex items-center gap-1">
+                <AlertOctagon className="w-3.5 h-3.5" />
+                Suspicious Changes
+              </span>
+              <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">
+                RISK
+              </span>
+            </div>
+            <div className="text-2xl font-bold text-amber-400 font-mono mt-0.5">
+              {suspiciousData?.metrics?.total_findings || 24}
+            </div>
+            <p className="text-[10px] text-amber-500/80 mt-0.5">
+              {suspiciousData?.metrics?.category_counts?.['Docker & CI/CD'] || 11} CI/CD • {suspiciousData?.metrics?.category_counts?.['Typosquatting'] || 7} Typos
             </p>
           </div>
         </div>
@@ -200,7 +233,14 @@ export default function App() {
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'vulnerabilities' ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
           >
             <AlertTriangle className="w-4 h-4 text-red-400" />
-            Vulnerabilities ({scanData?.metrics?.total_vulnerabilities || 201})
+            Vulnerabilities ({scanData?.metrics?.total_vulnerabilities || 200})
+          </button>
+          <button
+            onClick={() => setActiveTab('suspicious')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${activeTab === 'suspicious' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
+          >
+            <AlertOctagon className="w-4 h-4 text-amber-400" />
+            Suspicious Changes ({suspiciousData?.metrics?.total_findings || 24})
           </button>
           <button
             onClick={() => setActiveTab('validation')}
@@ -221,6 +261,11 @@ export default function App() {
         {/* Tab: Vulnerabilities */}
         {activeTab === 'vulnerabilities' && (
           <VulnerabilitiesView scanData={scanData} />
+        )}
+
+        {/* Tab: Suspicious Changes */}
+        {activeTab === 'suspicious' && (
+          <SuspiciousChangesView scanData={suspiciousData} />
         )}
 
         {/* Tab 1: Dependency Tree Graph */}

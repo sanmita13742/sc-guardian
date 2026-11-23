@@ -1,0 +1,291 @@
+{
+  "analysis_type": "Suspicious Supply Chain Change Detection",
+  "timestamp": "2026-11-23T17:30:00+05:30",
+  "target": "OWASP NodeGoat",
+  "metrics": {
+    "total_findings": 24,
+    "category_counts": {
+      "Dependency Change": 2,
+      "Typosquatting": 7,
+      "Lifecycle Script": 4,
+      "Docker & CI/CD": 11
+    },
+    "severity_counts": {
+      "HIGH": 11,
+      "LOW": 7,
+      "MEDIUM": 6
+    },
+    "confidence_counts": {
+      "CONFIRMED": 17,
+      "MEDIUM": 3,
+      "LOW": 3,
+      "HIGH": 1
+    }
+  },
+  "findings": [
+    {
+      "id": "SUSP-DEP-FLOATING-GRUNT-ENV",
+      "category": "Dependency Change",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 50,
+      "evidence": "\"grunt-env\": \"latest\",",
+      "explanation": "Package 'grunt-env' declares a floating 'latest' version constraint in 'devDependencies'. Floating constraints allow automated adoption of upstream breaking or malicious updates without manifest review.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin 'grunt-env' to a strict, immutable semantic version (e.g. '1.2.3')."
+    },
+    {
+      "id": "SUSP-DEP-COMMIT-d2de3d0",
+      "category": "Dependency Change",
+      "severity": "LOW",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 1,
+      "evidence": "Commit d2de3d02 by saiyesh1nth on 2026-11-23 14:23:07 +0530: 'feat: add nodegoat folder to repository root'",
+      "explanation": "Git manifest change tracked in commit d2de3d02 by saiyesh1nth. Verifies provenance and audit trail for dependency changes.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Verify commit signature and review pull request approvals."
+    },
+    {
+      "id": "SUSP-TYPO-BRAND-BCRYPT-NODEJS",
+      "category": "Typosquatting",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 1,
+      "evidence": "Package 'bcrypt-nodejs' variants popular package 'bcrypt' with prefix/suffix affix",
+      "explanation": "Package 'bcrypt-nodejs' uses the name of popular package 'bcrypt' with an affix. While frequently an unmaintained fork or legacy wrapper (e.g. bcrypt-nodejs vs native bcrypt), such patterns are also leveraged by typosquatters for dependency confusion.",
+      "confidence": "MEDIUM",
+      "recommended_action": "Verify upstream provenance of 'bcrypt-nodejs'. If an official, actively maintained package exists (such as 'bcrypt'), migrate to the canonical module."
+    },
+    {
+      "id": "SUSP-TYPO-EDIT2-COMMONDIR",
+      "category": "Typosquatting",
+      "severity": "LOW",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "evidence": "Package 'commondir' has edit distance of 2 from popular package 'commander'",
+      "explanation": "Package 'commondir' shares high string similarity with 'commander' (edit distance: 2). Recorded as a low-confidence typosquatting heuristic candidate for reviewer awareness.",
+      "confidence": "LOW",
+      "recommended_action": "Review dependency intent and maintainer authenticity for 'commondir'."
+    },
+    {
+      "id": "SUSP-TYPO-EDIT1-CSRF",
+      "category": "Typosquatting",
+      "severity": "MEDIUM",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "evidence": "Package 'csrf' has edit distance of 1 from popular package 'csurf'",
+      "explanation": "Package 'csrf' is visually and phonetically similar to 'csurf' (edit distance: 1). Attackers frequently publish packages with 1-character typos to hijack accidental misspellings.",
+      "confidence": "HIGH",
+      "recommended_action": "Confirm whether 'csrf' was intentionally chosen or a typo for 'csurf'."
+    },
+    {
+      "id": "SUSP-TYPO-EDIT2-CYPRESS",
+      "category": "Typosquatting",
+      "severity": "LOW",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 1,
+      "evidence": "Package 'cypress' has edit distance of 2 from popular package 'express'",
+      "explanation": "Package 'cypress' shares high string similarity with 'express' (edit distance: 2). Recorded as a low-confidence typosquatting heuristic candidate for reviewer awareness.",
+      "confidence": "LOW",
+      "recommended_action": "Review dependency intent and maintainer authenticity for 'cypress'."
+    },
+    {
+      "id": "SUSP-TYPO-BRAND-NODE-ESAPI",
+      "category": "Typosquatting",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 1,
+      "evidence": "Package 'node-esapi' variants popular package 'esapi' with prefix/suffix affix",
+      "explanation": "Package 'node-esapi' uses the name of popular package 'esapi' with an affix. While frequently an unmaintained fork or legacy wrapper (e.g. bcrypt-nodejs vs native bcrypt), such patterns are also leveraged by typosquatters for dependency confusion.",
+      "confidence": "MEDIUM",
+      "recommended_action": "Verify upstream provenance of 'node-esapi'. If an official, actively maintained package exists (such as 'esapi'), migrate to the canonical module."
+    },
+    {
+      "id": "SUSP-TYPO-BRAND-NODE-UUID",
+      "category": "Typosquatting",
+      "severity": "MEDIUM",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "evidence": "Package 'node-uuid' variants popular package 'uuid' with prefix/suffix affix",
+      "explanation": "Package 'node-uuid' uses the name of popular package 'uuid' with an affix. While frequently an unmaintained fork or legacy wrapper (e.g. bcrypt-nodejs vs native bcrypt), such patterns are also leveraged by typosquatters for dependency confusion.",
+      "confidence": "MEDIUM",
+      "recommended_action": "Verify upstream provenance of 'node-uuid'. If an official, actively maintained package exists (such as 'uuid'), migrate to the canonical module."
+    },
+    {
+      "id": "SUSP-TYPO-EDIT2-OSENV",
+      "category": "Typosquatting",
+      "severity": "LOW",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "evidence": "Package 'osenv' has edit distance of 2 from popular package 'dotenv'",
+      "explanation": "Package 'osenv' shares high string similarity with 'dotenv' (edit distance: 2). Recorded as a low-confidence typosquatting heuristic candidate for reviewer awareness.",
+      "confidence": "LOW",
+      "recommended_action": "Review dependency intent and maintainer authenticity for 'osenv'."
+    },
+    {
+      "id": "SUSP-SCRIPT-DOCKER-LATEST-DOCKER-MONGO",
+      "category": "Lifecycle Script",
+      "severity": "MEDIUM",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 36,
+      "evidence": "\"docker-mongo\": \"docker run -p 27017:27017 --name mongo  mongo:latest\",",
+      "explanation": "Unpinned Docker Execution in npm Script in script 'docker-mongo': npm script invokes 'docker run' using mutable ':latest' image tag instead of an immutable digest.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin the Docker container to a specific SHA256 digest or immutable version tag."
+    },
+    {
+      "id": "SUSP-SCRIPT-INSTALL-HOOK-CYPRESS",
+      "category": "Lifecycle Script",
+      "severity": "LOW",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "evidence": "\"node_modules/cypress\": {\"version\": \"3.3.1\", \"hasInstallScript\": true}",
+      "explanation": "Dependency 'cypress@3.3.1' registers automated install lifecycle hooks (preinstall/install/postinstall) that execute arbitrary commands when running 'npm install'.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Audit lifecycle hooks or invoke npm with '--ignore-scripts' in untrusted production builds."
+    },
+    {
+      "id": "SUSP-SCRIPT-INSTALL-HOOK-FSEVENTS",
+      "category": "Lifecycle Script",
+      "severity": "LOW",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "evidence": "\"node_modules/fsevents\": {\"version\": \"1.2.9\", \"hasInstallScript\": true}",
+      "explanation": "Dependency 'fsevents@1.2.9' registers automated install lifecycle hooks (preinstall/install/postinstall) that execute arbitrary commands when running 'npm install'.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Audit lifecycle hooks or invoke npm with '--ignore-scripts' in untrusted production builds."
+    },
+    {
+      "id": "SUSP-SCRIPT-INSTALL-HOOK-NODEMON",
+      "category": "Lifecycle Script",
+      "severity": "LOW",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "evidence": "\"node_modules/nodemon\": {\"version\": \"1.19.1\", \"hasInstallScript\": true}",
+      "explanation": "Dependency 'nodemon@1.19.1' registers automated install lifecycle hooks (preinstall/install/postinstall) that execute arbitrary commands when running 'npm install'.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Audit lifecycle hooks or invoke npm with '--ignore-scripts' in untrusted production builds."
+    },
+    {
+      "id": "SUSP-DOCKER-UNPINNED-BASE-L1",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/Dockerfile",
+      "line_number": 1,
+      "evidence": "FROM node:12-alpine",
+      "explanation": "Base image 'node:12-alpine' is referenced by a mutable tag rather than an immutable cryptographic digest (@sha256:...). Upstream registry tag mutations could inject compromised build environments.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin the base image using an immutable digest: 'FROM node:12-alpine@sha256:<digest>'."
+    },
+    {
+      "id": "SUSP-DOCKER-UNPINNED-BASE-L7",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/Dockerfile",
+      "line_number": 7,
+      "evidence": "FROM node:12-alpine",
+      "explanation": "Base image 'node:12-alpine' is referenced by a mutable tag rather than an immutable cryptographic digest (@sha256:...). Upstream registry tag mutations could inject compromised build environments.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin the base image using an immutable digest: 'FROM node:12-alpine@sha256:<digest>'."
+    },
+    {
+      "id": "SUSP-CICD-PERM-E2E_TEST",
+      "category": "Docker & CI/CD",
+      "severity": "MEDIUM",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 1,
+      "evidence": "Top-level workflow lacks 'permissions:' specification",
+      "explanation": "Workflow 'e2e-test.yml' does not define an explicit 'permissions:' block. GitHub Actions defaults to permissive read-write tokens (GITHUB_TOKEN), enabling potential unauthorized repository modifications if a step is compromised.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Add an explicit least-privilege block: 'permissions: { contents: read }'."
+    },
+    {
+      "id": "SUSP-CICD-UNPINNED-ACTION-E2E_TEST-L16",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 16,
+      "evidence": "uses: actions/checkout@v2",
+      "explanation": "GitHub Action 'actions/checkout' is pinned to mutable ref '@v2'. Tags and branch names can be overwritten or re-targeted upstream by compromised maintainers to execute malicious code in CI/CD runners.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin action 'actions/checkout' to a full 40-character commit SHA (e.g. 'actions/checkout@<commit-sha> # v2')."
+    },
+    {
+      "id": "SUSP-CICD-UNPINNED-ACTION-E2E_TEST-L21",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 21,
+      "evidence": "uses: actions/setup-node@v1",
+      "explanation": "GitHub Action 'actions/setup-node' is pinned to mutable ref '@v1'. Tags and branch names can be overwritten or re-targeted upstream by compromised maintainers to execute malicious code in CI/CD runners.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin action 'actions/setup-node' to a full 40-character commit SHA (e.g. 'actions/setup-node@<commit-sha> # v1')."
+    },
+    {
+      "id": "SUSP-CICD-UNPINNED-ACTION-E2E_TEST-L26",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 26,
+      "evidence": "uses: actions/cache@v2",
+      "explanation": "GitHub Action 'actions/cache' is pinned to mutable ref '@v2'. Tags and branch names can be overwritten or re-targeted upstream by compromised maintainers to execute malicious code in CI/CD runners.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin action 'actions/cache' to a full 40-character commit SHA (e.g. 'actions/cache@<commit-sha> # v2')."
+    },
+    {
+      "id": "SUSP-CICD-DOCKER-TAG-E2E_TEST-L40",
+      "category": "Docker & CI/CD",
+      "severity": "MEDIUM",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 40,
+      "evidence": "docker run -d -p 27017:27017 mongo:4.0",
+      "explanation": "CI workflow spawns container 'o:4.0' using a mutable tag. Container images pulled during CI runs should be pinned by digest to avoid poisoned layers.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin 'o' to an exact digest or internal mirror registry."
+    },
+    {
+      "id": "SUSP-CICD-UNPINNED-ACTION-E2E_TEST-L58",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 58,
+      "evidence": "uses: actions/upload-artifact@v2",
+      "explanation": "GitHub Action 'actions/upload-artifact' is pinned to mutable ref '@v2'. Tags and branch names can be overwritten or re-targeted upstream by compromised maintainers to execute malicious code in CI/CD runners.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin action 'actions/upload-artifact' to a full 40-character commit SHA (e.g. 'actions/upload-artifact@<commit-sha> # v2')."
+    },
+    {
+      "id": "SUSP-CICD-PERM-LINT",
+      "category": "Docker & CI/CD",
+      "severity": "MEDIUM",
+      "affected_file": "nodegoat/.github/workflows/lint.yml",
+      "line_number": 1,
+      "evidence": "Top-level workflow lacks 'permissions:' specification",
+      "explanation": "Workflow 'lint.yml' does not define an explicit 'permissions:' block. GitHub Actions defaults to permissive read-write tokens (GITHUB_TOKEN), enabling potential unauthorized repository modifications if a step is compromised.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Add an explicit least-privilege block: 'permissions: { contents: read }'."
+    },
+    {
+      "id": "SUSP-CICD-UNPINNED-ACTION-LINT-L16",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/.github/workflows/lint.yml",
+      "line_number": 16,
+      "evidence": "uses: actions/checkout@v2",
+      "explanation": "GitHub Action 'actions/checkout' is pinned to mutable ref '@v2'. Tags and branch names can be overwritten or re-targeted upstream by compromised maintainers to execute malicious code in CI/CD runners.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin action 'actions/checkout' to a full 40-character commit SHA (e.g. 'actions/checkout@<commit-sha> # v2')."
+    },
+    {
+      "id": "SUSP-CICD-UNPINNED-ACTION-LINT-L21",
+      "category": "Docker & CI/CD",
+      "severity": "HIGH",
+      "affected_file": "nodegoat/.github/workflows/lint.yml",
+      "line_number": 21,
+      "evidence": "uses: actions/setup-node@v1",
+      "explanation": "GitHub Action 'actions/setup-node' is pinned to mutable ref '@v1'. Tags and branch names can be overwritten or re-targeted upstream by compromised maintainers to execute malicious code in CI/CD runners.",
+      "confidence": "CONFIRMED",
+      "recommended_action": "Pin action 'actions/setup-node' to a full 40-character commit SHA (e.g. 'actions/setup-node@<commit-sha> # v1')."
+    }
+  ]
+}
