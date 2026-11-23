@@ -30,7 +30,10 @@ def render() -> None:
             enrich = o2.checkbox("Fill missing metadata from registries", True, help="deps.dev, npm, PyPI, crates.io, Maven Central: licenses, hashes, links; also verifies lockfile digests. Cached.")
             reuse = o3.checkbox("Reuse cached scan", True)
             keep = o3.checkbox("Keep clone workspace", False)
-            llm = o3.checkbox("LLM explanations", False, disabled=not s.llm_api_key)
+            from llm.client import detect_provider
+            llm = o3.checkbox("Optional LLM reasoning", False, disabled=not s.llm_api_key, help="Set LLM_API_KEY in .env (Groq, Gemini, Anthropic or OpenAI-compatible). Without it everything runs deterministically. AI output is validated against evidence." + (f" Detected provider: {s.llm_provider or detect_provider(s.llm_api_key)}." if s.llm_api_key else ""))
+            investigate = o3.checkbox("Investigator (reachability, EPSS)", True)
+            remediate = o3.checkbox("Remediation planning", True)
             sbom_scanner = st.selectbox("SBOM scanner", list(SCANNER_CHOICES), format_func=lambda k: SCANNER_LABELS[k],
                                         help="Auto tries Syft, then Trivy, then the built-in rule engine, so an SBOM is always produced.")
             avail = available_scanners(s)
@@ -43,7 +46,7 @@ def render() -> None:
             url=url, ref=ref or None, use_nvd=use_nvd, use_kev=use_kev,
             registry_checks=registry, metadata_registry=enrich,
             lockfile_commits=int(commits), baseline=baseline or None,
-            reuse_cached=reuse, use_llm=llm, keep_workspace=keep, sbom_scanner=sbom_scanner,
+            reuse_cached=reuse, use_llm=llm, keep_workspace=keep, sbom_scanner=sbom_scanner, investigate=investigate, remediate=remediate,
         ))
 
     r = get_result()

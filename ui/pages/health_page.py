@@ -43,6 +43,11 @@ def render() -> None:
         st.success("Configuration is valid.")
     st.caption(f"Config file: `{s.config_file or 'none (scanner.toml not found)'}` · precedence: environment `SCANNER_<NAME>` > `.env` > `scanner.toml` > defaults · secrets only via environment")
 
+    from llm.client import detect_provider
+    from sandbox.runner import docker_status
+    llm_on = bool(s.llm_api_key)
+    st.info(("LLM: **enabled** - " + f"{s.llm_provider or detect_provider(s.llm_api_key)} (model {s.llm_model or 'provider default'}); used only for validated reasoning text. " if llm_on else "LLM: **disabled** - fully deterministic mode (set `LLM_API_KEY` in `.env` to enable optional reasoning). ")
+            + "Docker sandbox: " + ("available" if docker_status()["available"] else "not available (optional)"))
     t_cfg, t_tools, t_db, t_cache, t_disk = st.tabs(["Configuration", "Tools", "Database", "Cache", "Disk"])
 
     with t_cfg:

@@ -1,115 +1,84 @@
 # SC Guardian — architecture
 
-Static analysis of a public GitHub repository's software supply chain. **Nothing from the repository is ever executed, installed or built.**
-Verified by `scripts/audit_check.py` (see "Invariants").
+An agentic guardian for the software supply chain: it **discovers** what a repository is built from (packages, container images, CI/CD actions), **detects** known and suspicious risks, **analyses and prioritises** them with evidence, **recommends and validates** safe fixes, and **reports** with an audit trail.
+Everything is static analysis: repository code is never executed, installed or built (the only exception is the opt-in Docker sandbox, §10). Diagram: `docs/architecture.mmd` (rendered on the in-app *Architecture* page).
 
-## 1. Layers (dependencies point downwards only; enforced by the audit script)
-
-```
-ui/              Streamlit pages and components (reads results, writes only analyst decisions)
-orchestration/   LangGraph state graph: order, branching, parallelism, failure containment, checkpoints
-agents/          Recon · SBOM · Graph · Vulnerability · Verification · Threat · Risk · Memory · Analyst  (+ Supervisor in orchestration/supervisor.py)
-domain libs      sbom/  graph/  vulnerability/  suspicious_changes/  risk_analysis/  explainability/  reporting/
-core/ storage/   URL validation, safe Git, HTTP, subprocess env, settings, SQLite (scans, memory, graph, cache)
-```
-
-`core/scan_orchestrator.py` is the public entry point (`run_scan`, `scan_local_directory`): validate URL → reuse check → safe clone → hand over to `orchestration`.
-
-## 2. Pipeline (LangGraph, `orchestration/pipeline.py`)
+## 1. Layers (dependencies point downwards only; enforced by `scripts/audit_check.py`)
 
 ```
-discover → classify → plan → lockfiles → sbom_generate → sbom_validate → sbom_quality ─(incomplete & 2nd scanner?)→ sbom_second_pass ─┐
-                                                                                      └──────────────────────────────────────────────┴→ graph
-graph ─┬→ vulnerability → verification ─┐
-       └→ typosquat → lockfile_history ─┴→ risk → explain → memory → assemble → summary → export → finalize
+ui/ · guardian.py   Streamlit pages and the CLI (gate / scan / monitor / report)
+orchestration/      LangGraph state graph: order, branching, parallelism, failure containment, checkpoints
+agents/             Recon · Pipeline · SBOM · Graph · Vulnerability · Verification · Investigator · Threat · Risk · Remediation · Validator · Memory · Analyst (+ Supervisor)
+domain libraries    sbom/ graph/ vulnerability/ suspicious_changes/ pipeline_analysis/ reachability/ remediation/ policy/ monitor/ sandbox/ risk_analysis/ explainability/ reporting/ intel/
+foundations         evidence/ tools/ llm/ ecosystems/ core/ storage/ config/
 ```
 
-* Agents are **deterministic and rule-based**. The graph decides order/branching/parallelism; an LLM is used only to phrase explanations (optional, validated against evidence).
-* **Thin state**: LangGraph state = scan id + trail. Heavy objects (components, NetworkX graph, results) live in an in-process `ScanState`, keeping checkpoints small.
-* **Failure containment**: each node is wrapped. An exception becomes a recorded step error; a node whose required step failed is skipped with a limitation; `assemble` always emits a full-schema result so no page or report breaks.
-* **Parallel branches**: Threat and Vulnerability run concurrently (`Runtime` is lock-protected). The graph runs in a worker thread and events are queued to the *calling* thread, so Streamlit callbacks stay on the script thread.
-* **Checkpoints** (`data/checkpoints.db`, `SqliteSaver`) record the executed trail for audit. They are *not* used to resume a half-finished scan (restoring heavy state is not implemented, deliberately).
-* `Runtime` (agents/runtime.py) is the event model behind the live progress bar, per-agent checklist and the decision trace stored with every result.
+## 2. The agent pipeline (`orchestration/pipeline.py`)
 
-## 3. SBOM scanner policy — when to use which
+```
+discover → classify → plan → lockfiles → sbom_generate → sbom_validate → pipeline (Docker/CI) → sbom_quality ─(incomplete? 2nd scanner)→ sbom_metadata (fusion) → graph
+graph ─┬→ vulnerability → verification → investigator ─┐
+       └→ typosquat → lockfile_history → package_risk ─┴→ risk → explain → remediate → validate_fix → memory → assemble → summary → export → finalize
+```
 
-| Situation | Decision |
-|---|---|
-| Always | Lockfile parsers (`sbom/package_extractors`) run first: independent evidence, direct/transitive flags, edges. They are never replaced by an SBOM tool. |
-| `auto` (default) | Syft → Trivy → built-in rule engine; the first that succeeds is the primary. Raw output is stored byte-for-byte. |
-| Primary SBOM misses lockfile packages (`quality = incomplete`) and the *other* external scanner is installed | Supervisor runs it as a **second pass** and merges by identity (`sbom/merge.py`); the decision is logged; three files are viewable (primary raw, second raw, merged). |
-| Explicit choice (`syft` / `trivy` / `builtin`) | That scanner first, always falling back to the rule engine. No second pass (the user chose). |
-| No scanner installed | Built-in rule engine (rules R1–R6, `sbom/builtin_generator.py`); the lockfile-vs-SBOM comparison is then labelled *not independent*. |
-| Manifest-only repos / containers / binaries | Syft is preferred by the `auto` order (broader catalogers). Unpinned ranges cannot be vulnerability-matched and are reported as such. |
+* Agents are **deterministic and rule-based**; the graph decides order, branching and parallelism (Threat and Vulnerability branches run concurrently).
+* **Failure containment:** a node never raises into the graph; an exception becomes a recorded step error, dependents are skipped with a limitation, and `assemble` always emits a full-schema result.
+* **Thin state:** LangGraph state = scan id + trail; heavy objects live in an in-process `ScanState`. SQLite checkpoints record the trail for audit (they are not used to resume a half-finished scan).
+* The Supervisor plans from what Recon found and records every observation/decision (`agent_trace`), streamed to the live progress bar.
 
-Trivy runs with `--scanners license --offline-scan` (no vulnerability DB; vulnerabilities come from OSV). Syft runs with remote lookups disabled. Neither receives the scanner's secrets (`core/safe_env.py`).
+## 3. The evidence-gated agent loop (what makes the agents agents)
 
-## 4. Normalisation — one boundary, one schema
+* **Evidence store** (`evidence/`): every fact is an `Evidence` record with a readable id (`reachability:npm:minimist#d35595`, `epss:CVE-…`, `workflow:PIPE-004#…`, `what-if:REM-003#…`). Persisted in the scan result.
+* **Tool registry** (`tools/`): typed, **read-only** tools (`advisory_facts`, `dependency_path`, `find_imports`, `package_meta`, `epss`, `read_snippet`). Unknown tools/arguments are rejected; a tool never raises into an agent.
+* **Investigator Agent**: for every finding runs a bounded tool plan and issues a **verdict** (`exploitable_likely · reachable · possibly_reachable · test_only · no_import_evidence · needs_review` — never "safe"), a **confidence** with its basis, and the **evidence ids** it used.
+  *Deterministic planner* (default, always runs) + *optional LLM planner* (only with `LLM_API_KEY`): the model may call the same read-only tools and propose a verdict + rationale. A **grounding gate** accepts it only if it cites existing evidence ids, mentions only advisory ids present in the finding, and does not contradict hard evidence (e.g. "no import" while an import exists; "likely exploitable" without KEV/EPSS/CVSS support). Rejections are kept and shown; AI-assisted conclusions are labelled.
+* **What-if simulator** (Remediation/Validator): a proposed change is applied to the inventory in memory, the dependency tree is re-resolved (deps.dev) and advisories are re-matched with the production range validation → measured *fixed / remaining / newly introduced*, instead of guessed risk reduction.
 
-`sbom/adapters/{syft,trivy,builtin}.py` are the only code that knows a tool's dialect:
-`canonicalize(raw) → document`, `locations(component)`, `found_by(component)`. `normalize_components(doc, …, tool)` turns the canonical document into `Component` models carrying `sources`.
-Identity key = `(ecosystem, normalised name, version, service_dir)`. Everything downstream (graph, OSV, detectors, reports) consumes only canonical models. Raw files are for viewing/download only and are never rewritten.
+## 4. Discover — SBOM, normalisation, fusion, resolution
 
-## 4b. Metadata fusion (`sbom/fusion/`) — SBOM completeness at native-parser level
+* **Scanner policy:** lockfile parsers always run (independent evidence). `auto` = Syft → Trivy → built-in rule engine; if the primary SBOM misses lockfile packages and the other scanner is installed, the Supervisor runs it as a second pass and merges by identity. Explicit choices fall back to the rule engine.
+* **Normalisation boundary** (`sbom/adapters/`): one adapter per scanner → one canonical document/`Component` model (identity = ecosystem, normalised name, version, service). Raw files stay byte-for-byte viewable.
+* **Metadata fusion** (`sbom/fusion/`): lockfile (exact pin) > manifest > registry > scanner, with per-field provenance and conflicts; registries (deps.dev, npm, PyPI, crates.io, Maven Central, Packagist, RubyGems, Go checksum DB) fill gaps; **lockfile digests are verified against registry digests** (verified / mismatch / unverifiable / absent). Output: a fused CycloneDX file with licences (SPDX), hashes, scope, links and `sc-guardian:provenance:*` properties. NodeGoat: 99% completeness.
+* **Registry resolver:** manifest-only services (`pom.xml`, `build.gradle`, pinned `requirements.txt`) get their transitive packages from deps.dev, labelled `registry-resolved` (each direct dependency resolved on its own; real version mediation may differ).
+* **Pipeline Agent** (`pipeline_analysis/`): Dockerfile (multi-stage), docker-compose, GitHub Actions, and generic GitLab/Jenkins/CircleCI/Azure rules — unpinned/`latest`/EOL/community base images, root user, `ADD <url>`, `curl|sh`, baked secrets, privileged/docker.sock, mutable action refs, pwn-request (`pull_request_target` + PR checkout), script injection, over-broad token permissions, self-hosted runners on PRs, outdated action majors, committed credentials (value never stored). Images and actions become SBOM components (`pkg:docker`, `pkg:github`). Every finding has a rule id, file:line, evidence id and a fix.
+* **Ecosystem plugin registry** (`ecosystems/registry.py`): the capability matrix (lockfile/manifest parsing, registry metadata, resolution, OSV, reachability, patching, pipeline rules) per ecosystem is declared in one place and rendered in the app; Python/npm/Docker/CI are first-class, Maven/Go/Cargo/Composer/NuGet/RubyGems are covered through the same interfaces.
 
-An SBOM scanner knows a package's name and version; the lockfile also knows its digest, source URL, scope, install-script flag and (npm, Composer) licence; the registry knows licence, description, links, publish date, deprecation. No single source has everything, so a dedicated SBOM-Agent step **fuses** them with *per-field provenance*:
+## 5. Detect
 
-| Step | What happens |
-|---|---|
-| 1 Lockfile (native) | parsers keep everything the file records: digests/hashes (SRI, hex, Go h1, Pipfile/poetry/uv lists), resolved URL, scope (dev/optional/peer), install scripts, deprecation, licence, Composer homepage/authors/time |
-| 2 Scanner | what Syft/Trivy already put in the entry is remembered with its source (lower trust) |
-| 3 Registry | deps.dev (npm, PyPI, Maven, Go, Cargo, NuGet), npm registry, PyPI JSON, crates.io, Maven Central, Packagist, RubyGems, Go checksum DB — parallel, cached (30 d), time-budgeted, per-host circuit breaker; only for fields still empty and for verification |
-| 4 Integrity triangulation | the lockfile digest is compared with the digest the registry publishes today for that exact version: `verified`, `mismatch` (possible tampered lockfile / republished package, shown as an alert), `unverifiable`, or `absent` (registry digest added with *medium* confidence) |
-| 5 Report | per-field coverage scanner-only vs after fusion, conflicts, a *reason* for every field that stays unknown, weighted completeness per component |
+* **Vulnerabilities:** OSV (ground truth) via batch query + full advisories; affected ranges **re-validated locally** with ecosystem rules; NVD (CVSS) and CISA KEV enrichment; every finding **cross-verified** through a second OSV route (PURL). Known-answer test (12 cases) in the audit.
+* **Threat Agent:** typosquatting (similarity + registry corroboration), Git-history lockfile changes, and **package risk** (`PKG-INT` digest mismatch, `PKG-INST` install script without provenance, `PKG-NEW` very new release, `PKG-DEP` deprecated/yanked, `PKG-CONF` dependency-confusion candidate) plus provenance-attestation *presence* (not cryptographically verified).
 
-Trust order: lockfile (exact pin) > manifest > registry > scanner > inferred. A lower-trust value never overwrites a higher one; disagreements are recorded as conflicts. Nothing is ever invented. The result is written as a **fused CycloneDX document** (licences as SPDX id/expression/name, hashes in hex, supplier, scope, externalReferences, `sc-guardian:provenance:*`, `sc-guardian:integrity` properties); it is the primary SBOM, and the raw scanner files stay viewable next to it.
+## 6. Analyse and prioritise (risk model v2, `risk_analysis/`, rules version 2.0)
 
-**Registry resolver (`sbom/fusion/resolver.py`).** A `pom.xml`, `build.gradle` or pinned `requirements.txt` lists only direct dependencies; running Maven/Gradle/pip would execute repository-controlled code, so it is forbidden. For services with *no* lockfile for that ecosystem, each pinned direct dependency's resolved dependency graph is fetched from deps.dev and added as `registry-resolved` packages and edges (limits: each direct dependency is resolved alone, so real version mediation may differ; stated in the result). Measured on spring-petclinic: 20 -> 49 components, 0 -> 16 findings.
+Additive, documented, versioned rules: CVSS, KEV, **EPSS** (estimate, small nudge), **reachability** (+20 imported by the app, +8 via an imported parent, −5 tests only, −15 no import; honest label "package-level import evidence, not a call graph"), exposure, scope, fix availability. Each assessment carries a **label**, a **P0–P3 priority**, a **confidence** (with basis) and the full factor table. KEV + application import always escalates to P0. On NodeGoat the 311 raw findings become 6 P0 / 25 P1 with 17 reachable and 166 with no import evidence.
 
-Measured (default settings, live): NodeGoat 99% completeness in ~85 s (1,090 registry look-ups, 952 digests verified, 0 mismatches); flask 90%; ripgrep 66% (Rust crates have no author/description in crates.io's version API); gin 38% (Go modules: licences from deps.dev, h1 hashes verified against sum.golang.org).
+## 7. Recommend and validate (`remediation/`, `agents/remediation_agent.py`)
 
-## 5. Dependency graph
+* **Remediation Agent:** per source-package group chooses upgrade / pin / remove / mitigate / block / escalate. **Parent-upgrade search** walks newer versions of the direct dependency (same major first), resolves each tree and re-matches advisories; falls back to a verified pin of the vulnerable child; with no fix it recommends mitigate/block/escalate (never an invented version). Generates real **unified diffs** for npm (`package.json`/overrides/resolutions), pip (requirements/pyproject), Maven (version or `dependencyManagement`), Go, Cargo, Composer, NuGet — each verified with `git apply --check`. Compatibility signals (semver change), lockfile refresh command and rollback steps included.
+* **Validator Agent:** static what-if → fixed / remaining / newly introduced (advisories already present elsewhere are not counted as introduced), before/after SBOM diff of the affected sub-tree, patch applicability. Build/tests are reported as *not run* unless the sandbox ran.
+* **Human approval:** Approve / Reject / Needs review with a required reason, stored in `approvals` + `audit_log`; only approved remediations can export the patch and PR description. Nothing is applied, pushed or merged.
 
-* Library: **NetworkX `DiGraph`**, edge *parent → child* ("parent depends on child"), nodes keyed by canonical bom-ref, one synthetic root per service (monorepos).
-* Built **once**, after normalisation + quality, **before** any vulnerability work (`graph/graph_builder.py`).
-* Edge provenance, in precedence order: `sbom` > `lockfile:<file>` > `lockfile-direct` > `inferred-no-parent` (flagged, not proven).
-* Direct/transitive is always **per root** (`classify_all`, one BFS per root); paths come from bounded Yen enumeration on the target's ancestor sub-graph (`dependency_tracer`), so large graphs never explode.
-* Display (`graph/tree_view.py`, no UI imports): an offline collapsible **dependency tree** (top-down "what a service brings in", bottom-up "who pulls this package in"; each package expanded once, repeats shown as references, cycles terminate; badges for severity, dev/optional, install script, deprecated, digest mismatch, registry-resolved, licence), **statistics** (depth histogram, longest chain, most-shared packages, vulnerable packages per depth) and a **layered canvas** (columns = depth from the root).
-* Persisted to `graph_nodes` / `graph_edges` / `graph_meta` (content hash). `graph/graph_diff.py` compares graphs by *identity* (not bom-ref), powering "Changes since the previous scan".
+## 8. Report, policy, monitoring
 
-## 6. Vulnerability data
+* **Guardian report** (`reporting/`): Markdown/HTML/JSON plus **SARIF 2.1.0** and **CycloneDX VEX**. Sections: executive summary, prioritised findings with evidence ids, pipeline findings, package signals, recommended actions with validation, policy gate, responsible-AI disclosure, remaining/accepted risk, audit trail, coverage and limitations. VEX never states `not_affected` from absence of an import (stays `in_triage`); only an explicit analyst decision can.
+* **Policy-as-code** (`policy/`, `policies/*.yaml`): declarative rules over findings and components → pass/fail gate with the violating evidence; analyst decisions and time-boxed exceptions waive (never hide). Same engine in the UI and in `guardian.py` (exit code 1 blocks a pipeline); illustrative Rego export; sample `.github/workflows/guardian.yml`.
+* **Continuous monitoring** (`monitor/`): watch list + `monitor_events`; re-queries OSV (cache bypassed), KEV and EPSS for the *stored* inventories and alerts once per new advisory, newly exploited CVE, or EPSS rise.
 
-OSV.dev is the ground truth (`querybatch` by name/ecosystem/version, then full advisories). Affected ranges are **re-validated locally** with ecosystem rules (PEP 440, semver, Maven, …); undecidable ranges become *unknown*, never "confirmed". NVD adds CVSS, CISA KEV adds known-exploited. Every finding is **cross-verified** by an independent PURL query. A known-answer test (6 CVEs, 12 cases) runs in the audit script. A source outage is reported as `unavailable`, never as "0 vulnerabilities". NVD's rate limit is shared process-wide (`core/safe_env.LIMITER`).
+## 9. Memory, storage, configuration
 
-## 7. Agentic memory (SQLite, `storage/memory.py`, `agents/memory_agent.py`)
+* **Memory** (SQLite): finding history (new/persisting/fixed/reappeared), analyst decisions with reason+expiry, approvals, audit log, packages-seen, graph tables (queryable/diffable).
+* **Freshness:** a stored scan of the same commit is reused only if younger than the TTL, same scanner/rules/options and its SBOM still exists. Cache has per-namespace stats and bounded size/age.
+* **Configuration:** `SCANNER_<NAME>` env > `.env` > `scanner.toml` > defaults, type/range validated, secrets env-only, effective values and sources on the *Settings & Health* page. Optional LLM: `LLM_API_KEY` (+ `LLM_PROVIDER`, `LLM_MODEL`, `LLM_BASE_URL`).
 
-| Table | Purpose |
-|---|---|
-| `finding_state` | per repo + stable finding fingerprint (not `VULN-001`): first/last seen, status → *new / persisting / fixed / reappeared* diff on every scan |
-| `decisions` | analyst decisions (accepted risk, false positive, suppress) with required reason and optional expiry; the latest decision wins; findings stay visible and flagged; scores are not altered |
-| `package_seen` | how many scans/repositories a package appeared in (context for typosquat triage) |
+## 10. Security model
 
-No vector store: recall is exact and auditable.
+HTTPS GitHub allow-list (clone URL rebuilt from owner/name); argument-list subprocesses with `shell=False` and an **allow-listed environment** (no API keys); shallow, hook-less, submodule-less, symlink-less clone with size/time limits; read-only, size-capped, path-confined file access; secret-shaped strings redacted from findings, snippets and LLM prompts; persistence failures reported, never swallowed.
+**Sandbox (opt-in, `sandbox/runner.py`):** after approval and a separate explicit confirmation, a throw-away re-clone at the scanned commit gets the patch applied and the repository's own build/tests run in Docker — `--cap-drop ALL`, `no-new-privileges`, CPU/memory/PID limits, no host environment, tests with `--network none`, baseline run to attribute failures. Skipped with a reason when Docker is not running.
 
-## 8. Configuration, storage and freshness
+## 11. Invariants checked by `scripts/audit_check.py` (76 checks)
 
-**Configuration** (`config/loader.py`): `SCANNER_<NAME>` environment variable > `.env` > `scanner.toml` > defaults (see `scanner.example.toml`). Every value is type- and range-checked; an invalid value is ignored with a reported problem (never a crash); secrets are accepted from the environment only (a secret in the file is rejected); each value's source is recorded and shown on the **Settings & Health** page together with tool availability, database health (schema version, integrity check), cache statistics/maintenance and disk usage.
+layering · every `subprocess` call has explicit `env`/`shell=False` · API keys never reach subprocesses · every runtime step has a graph node · Syft/Trivy/rule-engine parity · failure injection leaves a full-schema result · memory/decisions/expiry · fusion precedence, digest verdicts, outage handling · pipeline rules (positive and negative fixtures, credential values never stored) · reachability per language · deterministic investigator verdicts, tool-registry rejection, **grounding gate** accept/reject cases, LLM tool loop with a scripted provider, **zero LLM calls without a key** · patches for 7 ecosystems pass `git apply --check` · what-if semantics · approval requires a reason and is audited · policy parsing/waivers/expiry/strict-vs-default · SARIF/VEX shape and conservative mapping · monitor alert + dedup · sandbox recipe detection and graceful skip · OSV known-answer test.
 
-**Cache** (`storage/cache.py`): TTL cache with per-namespace stats, purge of rows older than `cache_max_age_days` and of the oldest rows above `cache_max_rows` (run at every scan start); registry record keys include the client set so new clients never see stale thinner records.
+## 12. Known limits
 
-
-SQLite (`data/scanner.db`, `PRAGMA user_version` migrations; refuses a database newer than the code): `scans`, `findings`, `graph_*`, memory tables, TTL `cache`.
-A stored scan of the same commit is **reused only if** it is younger than `scan_cache_ttl_s` (24 h), was produced by the same `SCANNER_VERSION` and `RULES_VERSION` with the same options fingerprint, and its SBOM file still exists — otherwise the repo is rescanned (new advisories may exist).
-Retention keeps the newest `keep_scans_per_repo` scans (rows, graph rows and artifacts); orphaned clone workspaces older than an hour are swept at the start of the next scan; cleanup retries on Windows file locks and reports honestly if it could not delete.
-
-## 9. Security model
-
-HTTPS GitHub URL allow-list (clone URL rebuilt from owner/name; query/fragment never reach Git); argument-list subprocesses with `shell=False`; **allow-listed subprocess environment** (no API keys); shallow, hook-less, submodule-less, symlink-less clone with size/time limits; read-only, size-capped, path-checked file access; secrets only via environment variables; persistence failures are reported, never swallowed.
-
-## 10. Invariants checked by `scripts/audit_check.py`
-
-layering (imports point down) · every `subprocess` call has explicit `env` and `shell=False` · API keys never reach subprocess env · every runtime step has a graph node · graph has parallel branches + conditional edge · Syft/Trivy/rule-engine parity on a monorepo fixture · failure injection leaves a full-schema result · memory diff/decisions/expiry · graph diff identity · retention · freshness rules · URL attack cases · adapter purity · OSV known-answer test.
-
-## 11. Known limits
-
-Public GitHub only · shallow history (depth 50) limits lockfile baselines · rule-engine inventory covers only lockfile/manifest ecosystems that have parsers (npm/yarn/pnpm, pip/poetry/uv/Pipfile, Go, Cargo, Composer, NuGet, Maven, Gradle) · Maven/Packagist/NuGet/RubyGems ordering is approximate · CVSS v4 and OSV GIT ranges are not evaluated locally · reachability is not assessed · checkpoints are for audit, not resume · the Streamlit script thread still waits for the scan (a click during a scan reruns the page; the worker thread finishes, saves and cleans up on its own) · CycloneDX validation is a structural profile, not the full official schema.
+Public GitHub only · shallow history (depth 50) · reachability is package-level import evidence (no call graph; dynamic imports/config-driven use are invisible) · registry-resolved transitive packages may differ from the project's real resolution · Maven/Packagist/NuGet/RubyGems ordering approximate · CVSS v4 and OSV GIT ranges not evaluated locally · provenance is presence only (no Sigstore/cosign verification) · EOL tables are dated snapshots · the LLM path was validated with a scripted provider (no live key available during development) · sandbox not exercised without a running Docker daemon · checkpoints are for audit, not resume.
