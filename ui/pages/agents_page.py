@@ -53,3 +53,12 @@ def render() -> None:
         for p in r.get("plan", []):
             st.markdown(f"• {p}")
         st.caption("Safety rules: Static reads only · No repo code executed · No installs or builds")
+
+        orch = r.get("orchestration") or {}
+        if orch:
+            st.markdown("**Orchestration** (LangGraph state graph)")
+            st.caption(f"Engine: {orch.get('engine')} · executed nodes: {' → '.join(orch.get('trail', []))}")
+            with st.expander("Graph definition (Mermaid)"):
+                st.code(orch.get("graph", ""), language="text")
+            if orch.get("callback_errors"):
+                st.warning(f"{orch['callback_errors']} UI callback error(s) occurred while streaming progress (scan unaffected).")

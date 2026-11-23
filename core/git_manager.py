@@ -191,9 +191,16 @@ def diff_text(repo_dir: Path, base: str, head: str, path: str, max_chars: int = 
     return out[:max_chars]
 
 
-def cleanup(workspace: Path) -> None:
-    try:
-        if workspace.exists():
-            _rmtree_force(workspace)
-    except Exception:
-        pass
+def cleanup(workspace: Path, attempts: int = 4) -> bool:
+    """Delete a workspace, retrying (Windows indexers/antivirus can briefly lock fresh files). Returns True if it is gone."""
+    import time
+    for i in range(attempts):
+        try:
+            if workspace.exists():
+                _rmtree_force(workspace)
+        except Exception:
+            pass
+        if not workspace.exists():
+            return True
+        time.sleep(0.5 * (i + 1))
+    return not workspace.exists()

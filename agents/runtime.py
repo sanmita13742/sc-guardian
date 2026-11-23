@@ -5,6 +5,7 @@ decision (what was observed, what was decided and why). The trace is stored with
 """
 from __future__ import annotations
 
+import threading
 import time
 import traceback
 from contextlib import contextmanager
@@ -77,6 +78,8 @@ class Runtime:
         self.timings: dict[str, float] = {}
         self.errors: list[dict] = []
         self._started: dict[str, float] = {}
+        self._lock = threading.RLock()  # agents on parallel graph branches share this runtime
+        self.callback_errors = 0
 
     # ---------------------------------------------------------------- progress
     def overall(self) -> float:
@@ -86,42 +89,47 @@ class Runtime:
 
     def _emit(self, step: str, kind: str, message: str, detail: Optional[dict] = None, agent: Optional[str] = None) -> None:
         agent = agent or (STEPS[STEP_INDEX[step]][1] if step in STEP_INDEX else "Supervisor")
-        ev = Event(time.time() - self.t0, agent, step, kind, message, self.overall(), detail or {})
-        self.events.append(ev)
+        with self._lock:
+            ev = Event(time.time() - self.t0, agent, step, kind, message, self.overall(), detail or {})
+            self.events.append(ev)
+            payload = {**ev.to_dict(), "label": STEPS[STEP_INDEX[step]][2] if step in STEP_INDEX else step, "status": dict(self.status)}
         if self.on_event:
             try:
-                self.on_event({**ev.to_dict(), "label": STEPS[STEP_INDEX[step]][2] if step in STEP_INDEX else step,
-                               "status": dict(self.status)})
+                self.on_event(payload)
             except Exception:
-                pass  # UI callback problems must never break a scan
+                self.callback_errors += 1  # UI callback problems must never break a scan (counted, surfaced in the result)
 
     # ---------------------------------------------------------------- step lifecycle
     def begin(self, step: str, message: str = "") -> None:
-        if self.status[step] == "running":
-            self._emit(step, "progress", message)
-            return
-        self.status[step] = "running"
-        self._started[step] = time.time()
-        self._emit(step, "start", message or STEPS[STEP_INDEX[step]][2])
+        with self._lock:
+            if self.status[step] == "running":
+                self._emit(step, "progress", message)
+                return
+            self.status[step] = "running"
+            self._started[step] = time.time()
+            self._emit(step, "start", message or STEPS[STEP_INDEX[step]][2])
 
     def progress(self, step: str, message: str, **detail: Any) -> None:
         self._emit(step, "progress", message, detail)
 
     def done(self, step: str, message: str = "", **detail: Any) -> None:
-        if self.status[step] == "pending":
-            self._started[step] = time.time()
-        self.status[step] = "done"
-        self.timings[step] = round(time.time() - self._started.get(step, time.time()), 2)
-        self._emit(step, "done", message or "done", detail)
+        with self._lock:
+            if self.status[step] == "pending":
+                self._started[step] = time.time()
+            self.status[step] = "done"
+            self.timings[step] = round(time.time() - self._started.get(step, time.time()), 2)
+            self._emit(step, "done", message or "done", detail)
 
     def skip(self, step: str, reason: str) -> None:
-        self.status[step] = "skipped"
-        self._emit(step, "skip", reason)
+        with self._lock:
+            self.status[step] = "skipped"
+            self._emit(step, "skip", reason)
 
     def fail(self, step: str, err: str) -> None:
-        self.status[step] = "error"
-        self.errors.append({"stage": step, "error": err})
-        self._emit(step, "error", err)
+        with self._lock:
+            self.status[step] = "error"
+            self.errors.append({"stage": step, "error": err})
+            self._emit(step, "error", err)
 
     def finish_open(self, step: str, message: str = "done") -> None:
         if self.status[step] == "running":

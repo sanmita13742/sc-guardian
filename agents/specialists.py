@@ -188,14 +188,18 @@ class SBOMAgent:
                 st.result["enrichment"] = enrich_components(st.components, st.ctx.http, st.ctx.cache)
             b["message"] = "valid"
 
+    @staticmethod
+    def wants_second_pass(st: ScanState) -> bool:
+        """Routing predicate for the graph's conditional edge (auto mode, external primary scanner, SBOM misses lockfile packages)."""
+        return ((getattr(st.options, "sbom_scanner", "auto") or "auto") == "auto" and st.inventory_source in ("syft", "trivy")
+                and st.quality.get("inventory_status") == "incomplete")
+
     def second_pass(self, st: ScanState, rt: Runtime) -> bool:
         """Adaptive step: if the primary SBOM misses lockfile packages and another installed scanner has not run, run it and merge."""
         s = st.ctx.s
-        if (getattr(st.options, "sbom_scanner", "auto") or "auto") != "auto" or st.inventory_source not in ("syft", "trivy"):
+        if not self.wants_second_pass(st):
             return False
         q = st.quality
-        if q.get("inventory_status") != "incomplete":
-            return False
         other = "trivy" if st.inventory_source == "syft" else "syft"
         avail = available_scanners(s)
         if not avail.get(other):
