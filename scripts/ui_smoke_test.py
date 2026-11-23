@@ -96,7 +96,7 @@ def test_apptest_pages():
 
     # 2. Test each page module directly
     from ui.pages import (agents_page, graph_page, reports_page, risk_page,
-                          sbom_page, scan_page, suspicious_page, vulns_page, pipeline_page, remediation_page)
+                          sbom_page, scan_page, suspicious_page, vulns_page, pipeline_page, remediation_page, policy_page, monitor_page)
     from ui.state import list_recent_scans, load_scan_from_db
 
     # Ensure a scan is loaded for populated testing
@@ -112,6 +112,8 @@ def test_apptest_pages():
         ("Suspicious Changes", "suspicious_page"),
         ("Risk & Explainability", "risk_page"),
         ("Remediation", "remediation_page"),
+        ("Policy & Gate", "policy_page"),
+        ("Monitoring", "monitor_page"),
         ("Agent Activity", "agents_page"),
         ("Reports & Downloads", "reports_page"),
     ]
@@ -156,9 +158,9 @@ def test_navigation_and_state():
     assert "Security Analysis" in NAVIGATION_PAGES
     assert ("Operations" in NAVIGATION_PAGES or "Operations & Audit" in NAVIGATION_PAGES)
     ops_key = "Operations" if "Operations" in NAVIGATION_PAGES else "Operations & Audit"
-    assert len(NAVIGATION_PAGES["Security Analysis"]) == 8
-    assert len(NAVIGATION_PAGES[ops_key]) == 3  # agents, reports, settings & health
-    assert len(PAGES) == 10
+    assert len(NAVIGATION_PAGES["Security Analysis"]) == 9
+    assert len(NAVIGATION_PAGES[ops_key]) == 4  # agents, reports, settings & health
+    assert len(PAGES) == 12
     print("  -> Navigation structure and compatibility mappings verified.")
 
 

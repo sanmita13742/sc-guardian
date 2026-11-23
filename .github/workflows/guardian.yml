@@ -1,0 +1,28 @@
+# Example: gate a pull request / release on the Guardian policy, and re-check stored inventories every night.
+name: supply-chain-guardian
+on:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+permissions:
+  contents: read
+  security-events: write   # upload SARIF to code scanning
+jobs:
+  guardian:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4          # pin to a commit SHA in production
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Scan and gate (exit code 1 blocks the build)
+        run: python guardian.py scan https://github.com/${{ github.repository }} --policy default --format sarif --out guardian.sarif --quiet
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: guardian.sarif
+      - name: Nightly monitor (only on schedule)
+        if: github.event_name == 'schedule'
+        run: python guardian.py monitor

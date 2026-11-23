@@ -19,7 +19,7 @@ from core import git_manager as gm
 from core.models import Component, InspectionResult, LockDependency, RepoInfo
 from core.repository_inspector import headline_languages, inspect_repository, own_package_identities
 from explainability.explanation_engine import explain
-from llm.client import from_settings as llm_from_settings
+from llm.client import from_settings as llm_from_settings, CALL_LOG
 from evidence.store import EvidenceStore
 from graph.dependency_tracer import classify_all
 from graph.graph_builder import build_graph
@@ -545,6 +545,11 @@ class RiskAgent:
 
 
 # ====================================================================================================== Analyst
+def llm_log() -> list:
+    """Outgoing LLM calls recorded by the client (size + hash only), for the disclosure section."""
+    return [dict(c) for c in CALL_LOG]
+
+
 SEV = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, None: 0}
 
 
@@ -584,11 +589,33 @@ class AnalystAgent:
                 rt.decide("summary", p.replace("**", ""), reason="Highest-impact source package by worst risk and number of vulnerable packages.", agent="Analyst Agent")
             b["message"] = f"{len(prios)} prioritised actions"
 
+    @staticmethod
+    def _policy_gate(st: ScanState, rt: Runtime) -> None:
+        """Evaluate the default policy so the report and UI always show a gate result (analyst waivers from memory apply)."""
+        from policy.engine import PolicyError, evaluate, load_policy
+        from storage.memory import Memory
+        try:
+            waivers = Memory(st.ctx.db).decisions(st.info.url)
+            pr = evaluate(load_policy("default"), st.result, waivers)
+            st.result["policy_result"] = pr
+            rt.observe("export", f"Policy gate '{pr['policy']}': {'PASS' if pr['passed'] else 'FAIL'} - {pr['blocking']} blocking, {pr['warnings']} warning(s), {pr['waived']} waived")
+        except (PolicyError, Exception) as e:  # noqa: BLE001 - a policy problem must not lose the scan
+            rt.warn("export", f"Policy evaluation skipped: {type(e).__name__}: {str(e)[:120]}")
+
     def export(self, st: ScanState, rt: Runtime) -> None:
         s = st.ctx.s
         res = st.result
         with rt.step("export") as b:
+            self._policy_gate(st, rt)
+            res["llm_calls"] = list(llm_log())
             paths = json_exporter.write_all(res, s.artifacts_dir / "scans", st.prefix)
+            from reporting.sarif import to_sarif
+            from reporting.vex import to_vex
+            (s.artifacts_dir / "reports").mkdir(parents=True, exist_ok=True)
+            (s.artifacts_dir / "reports" / f"{st.prefix}.sarif").write_text(json_exporter.dumps(to_sarif(res)), encoding="utf-8")
+            (s.artifacts_dir / "reports" / f"{st.prefix}.vex.json").write_text(json_exporter.dumps(to_vex(res)), encoding="utf-8")
+            paths["sarif"] = str(s.artifacts_dir / "reports" / f"{st.prefix}.sarif")
+            paths["vex"] = str(s.artifacts_dir / "reports" / f"{st.prefix}.vex.json")
             (s.artifacts_dir / "graphs" / f"{st.prefix}.json").write_text(json_exporter.dumps(json_exporter.graph_export(res)), encoding="utf-8")
             md = report_generator.generate_markdown(res)
             (s.artifacts_dir / "reports" / f"{st.prefix}-report.md").write_text(md, encoding="utf-8")

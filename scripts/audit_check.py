@@ -541,6 +541,72 @@ def _remediation() -> None:
           needs_reason and ap["state"] == "approved" and ap["actor"] == "alice" and log and log[0]["action"] == "remediation_approved" and "Approved by **alice**" in md and "No change was applied automatically" in md)
 
 
+@guarded("policy")
+def _policy() -> None:
+    from policy.engine import PolicyError, evaluate, load_policy, parse_policy, to_rego
+    from reporting.sarif import to_sarif
+    from reporting.vex import to_vex
+
+    errs = 0
+    for bad in ("rules: []", "rules:\n  - {id: a, when: {bogus: 1}}", "rules:\n  - {id: a, when: {kind: x}}\n  - {id: a, when: {kind: y}}", "rules:\n  - {id: a, when: {kind: x}, action: explode}"):
+        try:
+            parse_policy(bad)
+        except PolicyError:
+            errs += 1
+    check("policy: invalid policies (empty, unknown condition, duplicate id, bad action) are rejected with a clear error", errs == 4)
+    vuln = {"finding_id": "VULN-001", "package_name": "lodash", "installed_version": "4.17.4", "ecosystem": "npm", "primary_id": "CVE-1", "vulnerability_ids": ["GHSA-1"], "cve_ids": ["CVE-1"], "severity": "CRITICAL",
+            "cvss_score": 9.8, "kev": True, "affected_status": "confirmed_affected", "fixed_versions": ["4.17.21"], "dependency_type": "direct", "source_packages": [], "component_ref": "c", "component_refs": ["c"], "epss": 0.9,
+            "verdict": "exploitable_likely", "reachability": {"status": "used_by_app"}, "advisory_urls": [], "summary": "s", "remediation": "r", "severity_source": "OSV", "cvss_vector": None, "lockfile": "package-lock.json"}
+    res = {"repo": {"url": "u", "name": "n", "commit_sha": "a" * 40, "scan_timestamp": "2026-11-24T00:00:00Z"}, "vulnerabilities": [vuln], "risk_assessments": [{"finding_id": "VULN-001", "kind": "vulnerability", "label": "CRITICAL", "priority": "P0", "score": 99, "confidence": {"label": "High"}}],
+           "pipeline": {"findings": [{"finding_id": "PIPE-001", "rule_id": "GHA001", "severity": "MEDIUM", "title": "t", "why": "w", "remediation": "f", "file": ".github/workflows/a.yml", "line": 3, "extra": {"third_party": True}, "category": "ci", "ecosystem": "GitHub Actions", "evidence_id": "workflow:PIPE-001#aaaaaa"}]},
+           "package_risk": {"findings": []}, "typosquatting": [], "lockfile_changes": [], "components": [{"bom_ref": "c", "name": "lodash", "version": "4.17.4", "licenses": ["GPL-3.0"], "scope": "required", "type": "library", "ecosystem": "npm", "purl": "pkg:npm/lodash@4.17.4"}],
+           "investigations": {"VULN-001": {"finding_id": "VULN-001", "verdict": "no_import_evidence", "confidence": {"label": "High", "score": 90}, "rationale": "r", "evidence_ids": ["osv:x#000000"]}},
+           "memory": {"fingerprints": {"VULN-001": "fp-1"}}}
+    pol = load_policy("default")
+    r1 = evaluate(pol, res)
+    check("policy: KEV + confirmed blocks (gate fails); GPL component and third-party unpinned action produce warnings", not r1["passed"] and r1["by_rule"].get("no-known-exploited") == 1 and r1["by_rule"].get("copyleft-license") == 1 and r1["by_rule"].get("unpinned-third-party-action") == 1, str(r1["by_rule"]))
+    r2 = evaluate(pol, res, {"fp-1": {"decision": "accepted_risk", "reason": "mitigated by WAF", "expires_at": "2027-01-01T00:00:00Z"}})
+    check("policy: an active analyst decision waives the finding (kept visible, not hidden); without it the gate fails",
+          r2["waived"] >= 1 and not [v for v in r2["violations"] if v["finding_id"] == "VULN-001" and v["action"] == "block"] and r2["waived_items"][0]["waiver"]["reason"] == "mitigated by WAF")
+    pol_exc = parse_policy("rules:\n  - {id: r, when: {kind: vulnerability, kev: true}, action: block}\nexceptions:\n  - {rule: r, subject: lodash, reason: ok, expires: '2020-01-01'}")
+    check("policy: an expired exception no longer waives", not evaluate(pol_exc, res)["passed"])
+    check("policy: strict policy is stricter than default on the same scan", evaluate(load_policy("strict"), res)["blocking"] >= r1["blocking"] and "deny contains msg" in to_rego(pol))
+    sa = to_sarif(res)
+    ids = {r_["id"] for r_ in sa["runs"][0]["tool"]["driver"]["rules"]}
+    check("sarif: SARIF 2.1.0 document with a rule for every result, security-severity and locations", sa["version"] == "2.1.0" and len(sa["runs"][0]["results"]) == 2
+          and all(x["ruleId"] in ids and x["locations"] for x in sa["runs"][0]["results"]) and all("security-severity" in r_["properties"] for r_ in sa["runs"][0]["tool"]["driver"]["rules"]))
+    vx = to_vex(res)
+    vx2 = to_vex(res, {"fp-1": {"decision": "false_positive", "reason": "test fixture"}})
+    check("vex: 'no import evidence' stays in_triage (never auto not_affected); only an explicit analyst decision sets false_positive",
+          vx["vulnerabilities"][0]["analysis"]["state"] == "in_triage" and vx2["vulnerabilities"][0]["analysis"]["state"] == "false_positive" and vx["specVersion"] == "1.6")
+    from reporting.report_generator import generate_markdown
+    res["policy_result"] = r1
+    res["analyst"] = {"headline": "h", "paragraphs": [], "priorities": []}
+    md = generate_markdown({**res, "summary": {}, "quality": {}, "limitations": [], "tool_versions": {}, "status": "completed", "repo": {**res["repo"], "branch": "main", "scan_id": "x"}, "explanations": {}, "lockfile_analysis": {}, "source_status": {}, "errors": []})
+    check("report: Guardian report contains prioritised evidence, policy gate, AI disclosure and remaining-risk sections", all(h in md for h in ("## Prioritised findings", "## Policy gate: FAIL", "## Responsible AI and automation disclosure", "## Remaining and accepted risk")))
+
+
+@guarded("monitor")
+def _monitor() -> None:
+    if OFFLINE:
+        check("monitor: newly disclosed advisory on a stored inventory raises a deduplicated alert", None, "offline")
+        return
+    from monitor.watch import events, run_monitor
+    from storage.database import Database
+    td = Path(tempfile.mkdtemp())
+    s = _settings(td)
+    db = Database(s.db_path)
+    result = {"status": "completed", "repo": {"scan_id": "s1", "url": "https://github.com/example/old", "name": "old", "commit_sha": "a" * 40, "scan_timestamp": "2020-01-01T00:00:00Z"},
+              "components": [{"bom_ref": "p", "name": "lodash", "version": "4.17.4", "type": "library", "ecosystem": "npm", "purl": "pkg:npm/lodash@4.17.4"}], "vulnerabilities": [], "summary": {}, "tool_versions": {}}
+    db.save_scan(result)  # stored scan that (artificially) recorded no findings -> every current advisory is "new"
+    o1 = run_monitor(s, db)
+    o2 = run_monitor(s, db)
+    check("monitor: newly disclosed advisories on a stored inventory raise alerts, recorded once (second run raises none)", o1["repos_checked"] == 1 and any(a["kind"] == "new_vulnerability" for a in o1["alerts"]) and not o2["alerts"] and events(db),
+          f"{len(o1['alerts'])} alerts, {len(o2['alerts'])} on rerun")
+    import guardian
+    check("cli: `guardian.py scans` runs and returns 0", guardian.main(["scans"]) == 0)
+
+
 @guarded("ground_truth")
 def _ground_truth() -> None:
     if OFFLINE:

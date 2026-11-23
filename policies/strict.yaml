@@ -1,0 +1,35 @@
+name: strict
+description: Strict gate for release pipelines - every confirmed HIGH/CRITICAL with a fix, any reachable vulnerability and any pipeline weakness above LOW blocks.
+rules:
+  - id: no-known-exploited
+    when: {kind: vulnerability, kev: true, confirmed: true}
+    action: block
+  - id: no-high-or-critical-with-fix
+    description: HIGH/CRITICAL vulnerabilities that can be fixed by upgrading must be fixed.
+    when: {kind: vulnerability, severity: [HIGH, CRITICAL], fix_available: true, confirmed: true}
+    action: block
+  - id: no-reachable-vulnerability
+    description: Any confirmed vulnerability in a package the application imports.
+    when: {kind: vulnerability, reachability: [used_by_app], confirmed: true}
+    action: block
+  - id: lockfile-digest-mismatch
+    when: {kind: package_risk, rule_id: [PKG-INT]}
+    action: block
+  - id: pipeline-medium-and-above
+    description: Container/CI findings of MEDIUM severity or higher.
+    when: {kind: pipeline, severity: [CRITICAL, HIGH, MEDIUM]}
+    action: block
+  - id: any-lockfile-anomaly
+    when: {kind: lockfile_change, classification: [potentially_suspicious, unexplained_change]}
+    action: block
+  - id: typosquat
+    when: {kind: typosquatting}
+    action: block
+  - id: copyleft-license
+    when: {kind: component, license_any: [GPL-2.0, GPL-3.0, AGPL-3.0, AGPL-1.0, LGPL-3.0]}
+    action: block
+  - id: install-script-unattested
+    description: Packages that run code at install time.
+    when: {kind: component, install_script: true}
+    unless: {scope: dev}
+    action: warn

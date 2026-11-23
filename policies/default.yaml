@@ -1,0 +1,56 @@
+name: default
+description: Balanced gate - block what is exploited, reachable and severe, or tampered; warn on hygiene.
+rules:
+  - id: no-known-exploited
+    description: A vulnerability listed in the CISA KEV catalog is being exploited in the wild.
+    when: {kind: vulnerability, kev: true, confirmed: true}
+    action: block
+  - id: no-reachable-critical
+    description: A CRITICAL vulnerability in a package the application imports (directly or through its parent).
+    when: {kind: vulnerability, severity: [CRITICAL], reachability: [used_by_app, reachable_via_dependency], confirmed: true}
+    action: block
+  - id: likely-exploitable
+    description: The Investigator judged the finding likely exploitable (imported + KEV/EPSS/CVSS support).
+    when: {kind: vulnerability, verdict: [exploitable_likely]}
+    action: block
+  - id: high-exploit-probability
+    description: EPSS estimates at least a 50% chance of exploitation within 30 days.
+    when: {kind: vulnerability, epss_gte: 0.5, confirmed: true}
+    action: warn
+  - id: high-severity-with-fix
+    description: A HIGH/CRITICAL vulnerability that already has a fixed version.
+    when: {kind: vulnerability, severity: [HIGH, CRITICAL], fix_available: true, confirmed: true}
+    action: warn
+  - id: lockfile-digest-mismatch
+    description: A lockfile digest differs from the registry digest for the same version (possible tampering).
+    when: {kind: package_risk, rule_id: [PKG-INT]}
+    action: block
+  - id: critical-pipeline-finding
+    description: A critical CI/CD or container configuration flaw (e.g. privileged workflow running PR code, committed credential).
+    when: {kind: pipeline, severity: [CRITICAL]}
+    action: block
+  - id: high-pipeline-finding
+    description: A high-severity CI/CD or container configuration flaw.
+    when: {kind: pipeline, severity: [HIGH]}
+    action: warn
+  - id: unpinned-third-party-action
+    description: A third-party GitHub Action is not pinned to a commit SHA.
+    when: {kind: pipeline, rule_id: [GHA001], third_party: true}
+    action: warn
+  - id: suspicious-lockfile-change
+    description: A lockfile change classified as potentially suspicious.
+    when: {kind: lockfile_change, classification: [potentially_suspicious]}
+    action: block
+  - id: typosquat-high
+    description: A package name that strongly resembles a popular package and is corroborated by the registry.
+    when: {kind: typosquatting, strength: [high]}
+    action: warn
+  - id: copyleft-license
+    description: A strong-copyleft licence in a dependency (review compatibility with your distribution model).
+    when: {kind: component, license_any: [GPL-2.0, GPL-3.0, AGPL-3.0, AGPL-1.0]}
+    unless: {scope: dev}
+    action: warn
+  - id: very-new-direct-release
+    description: A package version published less than 7 days before the scan.
+    when: {kind: component, published_age_days_lt: 7}
+    action: info
