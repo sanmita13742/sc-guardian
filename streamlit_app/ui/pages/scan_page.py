@@ -4,10 +4,11 @@ from __future__ import annotations
 import streamlit as st
 
 from config.settings import get_settings
-from core.scan_orchestrator import STAGES, ScanOptions, run_scan
+from core.scan_orchestrator import ScanOptions, run_scan
 from core.url_validator import InvalidRepositoryURL
 from storage.database import Database
 from ui.components.common import df, get_result, repo_caption
+from ui.components.live_progress import LiveProgress
 
 
 def render() -> None:
@@ -28,13 +29,14 @@ def render() -> None:
             registry = o2.checkbox("Registry checks for typosquatting", True)
             enrich = o2.checkbox("Enrich missing SBOM metadata from registries", False)
             reuse = o3.checkbox("Reuse cached scan for identical commit", True)
+            keep = o3.checkbox("Keep the cloned repository on disk", False, help="Normally the temporary clone is deleted when the scan ends.")
             llm = o3.checkbox("LLM-written explanations", False, disabled=not s.llm_api_key,
                               help="Requires ANTHROPIC_API_KEY. Output is validated against evidence; templates are used otherwise.")
             baseline = st.text_input("Explicit comparison baseline (commit/ref, optional)", help="Overrides the parent commit for the newest commit.")
         go = st.form_submit_button("Start scan", type="primary")
     if go:
         _run(url, ref, ScanOptions(url=url, ref=ref or None, use_nvd=use_nvd, use_kev=use_kev, registry_checks=registry, enrich_metadata=enrich,
-                                   lockfile_commits=int(commits), baseline=baseline or None, reuse_cached=reuse, use_llm=llm))
+                                   lockfile_commits=int(commits), baseline=baseline or None, reuse_cached=reuse, use_llm=llm, keep_workspace=keep))
     _history()
     r = get_result()
     if r and r.get("status") != "failed":
@@ -43,25 +45,19 @@ def render() -> None:
 
 def _run(url: str, ref: str, opts: ScanOptions) -> None:
     st.session_state["last_url"] = url
-    bar = st.progress(0.0, text="Starting")
-    log = st.empty()
-
-    def progress(stage: str, pct: float, msg: str) -> None:
-        bar.progress(min(pct, 1.0), text=f"{stage}: {msg}")
-        log.caption(f"Stage {STAGES.index(stage) + 1}/{len(STAGES)} — {msg}")
-
+    st.subheader("Agent pipeline")
+    live = LiveProgress()
     try:
-        result = run_scan(opts, progress=progress)
+        result = run_scan(opts, on_event=live)
     except InvalidRepositoryURL as e:
-        bar.empty()
+        live.finish(False)
         st.error(f"Invalid repository URL: {e}")
         return
     except Exception as e:  # last-resort guard: never show a raw crash to the user
-        bar.empty()
+        live.finish(False)
         st.error(f"The scan failed unexpectedly: {type(e).__name__}: {e}")
         return
-    bar.empty()
-    log.empty()
+    live.finish(result.get("status") != "failed")
     if result.get("status") == "failed":
         st.error(result.get("error", "Scan failed"))
         return
@@ -69,9 +65,9 @@ def _run(url: str, ref: str, opts: ScanOptions) -> None:
     if result.get("from_cache"):
         st.info("An identical commit was scanned before; showing the stored result. Untick 'Reuse cached scan' to rescan.")
     elif result["status"] == "completed_with_errors":
-        st.warning("Scan finished with stage errors — see 'Coverage and limitations' below. Results may be incomplete.")
+        st.warning("Scan finished with stage errors - see 'Coverage and limitations' below. Results may be incomplete.")
     else:
-        st.success("Scan completed.")
+        st.success("Scan completed. Explore the other pages from the sidebar.")
 
 
 def _history() -> None:
@@ -116,6 +112,22 @@ def _overview(r: dict) -> None:
         st.write("**Dockerfiles:**", ", ".join(insp["dockerfiles"]) or "none", " | **Compose/container files:**", ", ".join(insp["container_files"]) or "none")
         st.write("**CI/CD files:**", ", ".join(insp["ci_files"]) or "none")
         st.caption("Container and CI/CD files are recorded as security context only; images are never built or scanned in this MVP.")
+    ws = r.get("workspace") or {}
+    with st.expander("Where was the repository stored while it was analysed?"):
+        st.markdown(f"* Clone location: `{ws.get('clone_path')}`")
+        st.markdown(f"* Temporary workspace: `{ws.get('location')}`")
+        st.markdown(f"* Kept after the scan: **{ws.get('kept')}** · removed: **{ws.get('removed')}**")
+        st.markdown(f"* {ws.get('note', '')}")
+        st.caption("The workspace lives under streamlit_app/.workspaces/<scan-id>/ (git-ignored). Only static reads are performed on it.")
+    if r.get("analyst"):
+        st.subheader("Analyst summary")
+        st.markdown(f"**{r['analyst']['headline']}**")
+        for p_ in r["analyst"]["paragraphs"]:
+            st.markdown(f"- {p_}")
+        if r["analyst"]["priorities"]:
+            st.markdown("**Prioritised actions**")
+            for p_ in r["analyst"]["priorities"]:
+                st.markdown(f"1. {p_}")
     st.subheader("Coverage and limitations")
     st.caption("A scan with few or no findings does not prove the repository is safe.")
     for lim in r.get("limitations", []):

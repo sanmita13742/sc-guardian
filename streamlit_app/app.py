@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from ui.pages import graph_page, reports_page, risk_page, sbom_page, scan_page, suspicious_page, vulns_page
+from ui.pages import agents_page, graph_page, reports_page, risk_page, sbom_page, scan_page, suspicious_page, vulns_page
 
 st.set_page_config(page_title="SC Guardian", page_icon="🛡️", layout="wide")
 
@@ -17,6 +17,7 @@ PAGES = {
     "Vulnerability Findings": vulns_page,
     "Suspicious Changes": suspicious_page,
     "Risk & Explainability": risk_page,
+    "Agent Activity": agents_page,
     "Reports": reports_page,
 }
 

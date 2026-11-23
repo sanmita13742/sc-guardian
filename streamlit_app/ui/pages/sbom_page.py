@@ -12,7 +12,7 @@ def render() -> None:
     if not r:
         return
     repo_caption(r)
-    q, comps = r.get("quality", {}), [c for c in r["components"] if c["type"] != "file"]
+    q, comps = r.get("quality", {}), [c for c in r["components"] if c["type"] != "file" and not c.get("is_self")]
     src = r.get("inventory_source")
     if src != "syft":
         st.warning(f"Inventory source: **{src}**. No Syft CycloneDX SBOM is available for this scan; components below come from lockfile parsing only.")
@@ -24,7 +24,7 @@ def render() -> None:
     c[4].metric("Unresolved", q.get("unresolved_components", 0))
     st.caption("Status 'consistent with lockfiles' never means complete: only parsed ecosystems are compared.")
 
-    t1, t2, t3, t4 = st.tabs(["Components", "Quality assessment", "Validation & Syft", "Download"])
+    t1, t2, t3, t_raw, t4 = st.tabs(["Components", "Quality assessment", "Validation & Syft", "View SBOM file", "Download"])
     with t1:
         a, b, d = st.columns(3)
         ecos = sorted({x["ecosystem"] or x["purl_type"] or "unknown" for x in comps})
@@ -79,6 +79,29 @@ def render() -> None:
         if r.get("syft"):
             st.markdown("**Syft run**")
             kv_table({k: r["syft"].get(k) for k in ("version", "exit_code", "duration_s", "options", "error")} | {"command": " ".join(r["syft"].get("command", []))})
+    with t_raw:
+        raw = read_file(r.get("sbom_path"))
+        if not raw:
+            st.info("No Syft SBOM file is available for this scan.")
+        else:
+            import json as _json
+            doc = _json.loads(raw)
+            st.caption(f"{len(raw) / 1024:.0f} KB · CycloneDX {doc.get('specVersion')} · {len(doc.get('components', []))} components · {len(doc.get('dependencies', []))} dependency records")
+            view = st.radio("View", ["Header (metadata, tools)", "Components", "Dependencies", "Full file"], horizontal=True)
+            if view.startswith("Header"):
+                st.json({k: v for k, v in doc.items() if k not in ("components", "dependencies")}, expanded=2)
+            elif view == "Components":
+                size, total = 25, len(doc.get("components", []))
+                page = st.number_input("Page", 1, max(1, (total + size - 1) // size), 1)
+                st.json(doc["components"][(page - 1) * size: page * size], expanded=1)
+            elif view == "Dependencies":
+                size, total = 40, len(doc.get("dependencies", []))
+                page = st.number_input("Page", 1, max(1, (total + size - 1) // size), 1, key="dep_page")
+                st.json(doc.get("dependencies", [])[(page - 1) * size: page * size], expanded=1)
+            else:
+                lines = raw.decode("utf-8", "replace").splitlines()
+                st.caption(f"Showing the first {min(len(lines), 4000)} of {len(lines)} lines - use Download for the complete file.")
+                st.code("\n".join(lines[:4000]), language="json", line_numbers=True)
     with t4:
         data = read_file(r.get("sbom_path"))
         if data:

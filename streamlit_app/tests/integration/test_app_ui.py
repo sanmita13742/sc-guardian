@@ -7,7 +7,7 @@ from storage.database import Database
 streamlit_testing = pytest.importorskip("streamlit.testing.v1")
 from pathlib import Path
 APP = str(Path(__file__).resolve().parents[2] / "app.py")
-PAGES = ["Repository Scan", "SBOM Explorer", "Dependency Graph", "Vulnerability Findings", "Suspicious Changes", "Risk & Explainability", "Reports"]
+PAGES = ["Repository Scan", "SBOM Explorer", "Dependency Graph", "Vulnerability Findings", "Suspicious Changes", "Risk & Explainability", "Agent Activity", "Reports"]
 
 
 def latest_result():
