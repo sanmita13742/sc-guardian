@@ -313,9 +313,8 @@ def generate():
       <label>Filter:</label>
       <button id="btn-direct" class="active" onclick="setPreset('direct')">1. Direct Only (36)</button>
       <button id="btn-prod" onclick="setPreset('prod')">2. Production Only</button>
-      <button id="btn-shared" onclick="setPreset('shared')">3. Verified Shared Hubs</button>
+      <button id="btn-vuln" onclick="setPreset('vuln')" style="border-color: #EF4444; color: #FCA5A5;">3. Vulnerabilities (98)</button>
       <button id="btn-all" onclick="setPreset('all')">4. All Nodes</button>
-      <button id="btn-vuln" onclick="setPreset('vuln')" style="border-color: #EF4444; color: #FCA5A5;">5. Vulnerabilities (98)</button>
     </div>
 
     <!-- Node Limit Slider & Direct Type Input -->
@@ -514,24 +513,6 @@ def generate():
             else eligible.add(n.id);
           }}
         }});
-      }} else if (filterType === 'shared') {{
-        // VERIFIED SHARED HUBS: Select packages with multiple incoming parents (in_degree >= 2)
-        // AND include their multiple parents so multiple incoming arrows are clearly visible!
-        const sharedCandidates = RAW_NODES
-          .filter(n => n.id !== 'root' && (parentMap[n.id] || []).length >= 2)
-          .sort((a, b) => (parentMap[b.id] || []).length - (parentMap[a.id] || []).length);
-
-        // Pick top shared hubs up to limit
-        for (const hub of sharedCandidates) {{
-          if (eligible.size >= limit) break;
-          eligible.add(hub.id);
-          // Always include its multiple parents so it has real incoming edges!
-          (parentMap[hub.id] || []).forEach(p => {{
-            eligible.add(p);
-            // Connect parent back to root if direct
-            if ((parentMap[p] || []).includes('root')) eligible.add('root');
-          }});
-        }}
       }} else if (filterType === 'vuln') {{
         // Filter for packages with known vulnerabilities and their lineages to root
         const vulnNodes = RAW_NODES.filter(n => n.has_vulnerability);
@@ -754,7 +735,7 @@ def generate():
 
     function setPreset(preset) {{
       currentPreset = preset;
-      ['direct', 'prod', 'shared', 'all', 'vuln'].forEach(p => {{
+      ['direct', 'prod', 'vuln', 'all'].forEach(p => {{
         const btn = document.getElementById('btn-' + p);
         if (btn) btn.classList.remove('active');
       }});

@@ -161,20 +161,6 @@ function GraphCanvas({ graphData }) {
           else eligibleNodeIds.add(node.id);
         }
       });
-    } else if (viewFilter === 'shared') {
-      // Verified Shared Hubs (in_degree >= 2) with their real parents!
-      const sharedCandidates = graphData.nodes
-        .filter(n => n.id !== 'root' && (parentMap[n.id] || []).length >= 2)
-        .sort((a, b) => (parentMap[b.id] || []).length - (parentMap[a.id] || []).length);
-
-      for (const hub of sharedCandidates) {
-        if (eligibleNodeIds.size >= nodeLimit) break;
-        eligibleNodeIds.add(hub.id);
-        (parentMap[hub.id] || []).forEach(p => {
-          eligibleNodeIds.add(p);
-          if ((parentMap[p] || []).includes('root')) eligibleNodeIds.add('root');
-        });
-      }
     } else if (viewFilter === 'vuln') {
       // Filter for vulnerable packages and their paths back to root!
       const vulnCandidates = graphData.nodes
@@ -434,22 +420,16 @@ function GraphCanvas({ graphData }) {
               2. Production Only
             </button>
             <button
-              onClick={() => { setViewFilter('shared'); setSearchTerm(''); }}
-              className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'shared' && !searchTerm ? 'bg-purple-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
+              onClick={() => { setViewFilter('vuln'); setSearchTerm(''); }}
+              className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'vuln' && !searchTerm ? 'bg-red-600 text-white font-semibold' : 'text-red-400 hover:bg-red-950/40 border border-red-900/40'}`}
             >
-              3. Verified Shared Hubs
+              3. Vulnerabilities (98)
             </button>
             <button
               onClick={() => { setViewFilter('all'); setSearchTerm(''); }}
               className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'all' && !searchTerm ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
             >
               4. All Nodes
-            </button>
-            <button
-              onClick={() => { setViewFilter('vuln'); setSearchTerm(''); }}
-              className={`px-3 py-1.5 rounded-lg transition font-medium ${viewFilter === 'vuln' && !searchTerm ? 'bg-red-600 text-white font-semibold' : 'text-red-400 hover:bg-red-950/40 border border-red-900/40'}`}
-            >
-              5. Vulnerable (98)
             </button>
           </div>
 
