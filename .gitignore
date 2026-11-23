@@ -1,41 +1,28 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-.env
-.venv
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
 venv/
+env/
 ENV/
+
+# Local config / secrets
+.env
+.env.*
+!.env.example
 
 # Node
 node_modules/
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-dist/
-dist-ssr/
-*.local
 
-# Scan Artifacts (preserve structure, ignore generated outputs)
+# Scanner runtime data
+.workspaces/
+data/*.db
+data/*.sqlite*
 artifacts/sbom/*
 !artifacts/sbom/.gitkeep
 artifacts/scans/*
@@ -49,6 +36,5 @@ artifacts/graphs/*
 .idea/
 .vscode/
 *.swp
-*.swo
 .DS_Store
 Thumbs.db
