@@ -6,6 +6,7 @@ and only when an API key is configured; its output is validated against the coll
 """
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,6 +34,8 @@ from sbom.metadata_enricher import enrich_components
 from sbom.package_extractors.common import parse_purl
 from sbom.quality_analyzer import analyze_quality
 from sbom.scanner_engine import SCANNER_LABELS, available_scanners, generate_sbom
+from sbom.syft_runner import run_syft
+from sbom.trivy_runner import run_trivy
 from suspicious_changes.lockfile_change_detector import detect_lockfile_changes
 from suspicious_changes.typosquatting_detector import detect_typosquatting
 from vulnerability.kev_client import KevClient
@@ -59,6 +62,7 @@ class ScanState:
     lock_errors: list[dict] = field(default_factory=list)
     syft: Any = None  # result of the external scanner that produced the SBOM (Syft or Trivy), if any
     sbom_tool: dict = field(default_factory=dict)
+    sbom_files: list = field(default_factory=list)  # [{label, path}] files shown in the SBOM viewer
     sbom_doc: dict = field(default_factory=dict)
     sbom_path: Optional[str] = None
     inventory_source: str = "none"
@@ -163,7 +167,7 @@ class SBOMAgent:
             return
         with rt.step("sbom_validate") as b:
             v = validate_cyclonedx(st.sbom_doc)
-            st.components = normalize_components(st.sbom_doc, st.repo_dir, st.service_dirs)
+            st.components = normalize_components(st.sbom_doc, st.repo_dir, st.service_dirs, tool=st.inventory_source)
             own = own_package_identities(st.repo_dir, st.insp)
             for c in st.components:
                 ids = own.get(c.service_dir or ".", set())
@@ -183,6 +187,43 @@ class SBOMAgent:
                 rt.progress("sbom_validate", "Enriching missing license/supplier metadata from npm/PyPI (provenance recorded)")
                 st.result["enrichment"] = enrich_components(st.components, st.ctx.http, st.ctx.cache)
             b["message"] = "valid"
+
+    def second_pass(self, st: ScanState, rt: Runtime) -> bool:
+        """Adaptive step: if the primary SBOM misses lockfile packages and another installed scanner has not run, run it and merge."""
+        s = st.ctx.s
+        if (getattr(st.options, "sbom_scanner", "auto") or "auto") != "auto" or st.inventory_source not in ("syft", "trivy"):
+            return False
+        q = st.quality
+        if q.get("inventory_status") != "incomplete":
+            return False
+        other = "trivy" if st.inventory_source == "syft" else "syft"
+        avail = available_scanners(s)
+        if not avail.get(other):
+            rt.observe("quality", f"{q['lockfile_missing_from_sbom_count']} lockfile package(s) are missing from the {st.inventory_source} SBOM; {other} is not installed, so no second opinion is possible", agent="Supervisor")
+            return False
+        rt.decide("quality", f"Run {other} as a second inventory and merge", reason=f"{q['lockfile_missing_from_sbom_count']} lockfile package(s) are missing from the {st.inventory_source} SBOM.", agent="Supervisor")
+        out_dir = s.artifacts_dir / "sbom"
+        res = (run_syft if other == "syft" else run_trivy)(st.repo_dir, out_dir / f"{st.prefix}.{other}.cdx.json", s)
+        st.sbom_tool.setdefault("attempts", []).append({"scanner": other, "ok": res.ok, "version": res.version, "duration_s": res.duration_s, "error": res.error,
+                                                        "command": " ".join(res.command) if res.command else None, "role": "second-pass"})
+        if not res.ok:
+            rt.warn("quality", f"Second-pass {other} failed: {res.error}")
+            return False
+        from sbom.adapters import get_adapter
+        from sbom.merge import merge_inventories
+        sec_doc = get_adapter(other).canonicalize(load_sbom(res.sbom_path))
+        sec = normalize_components(sec_doc, st.repo_dir, st.service_dirs, tool=other)
+        st.sbom_doc, st.components, stats = merge_inventories(st.sbom_doc, st.components, sec_doc, sec)
+        merged_path = out_dir / f"{st.prefix}.merged.cdx.json"
+        merged_path.write_text(json.dumps(st.sbom_doc, indent=2), encoding="utf-8")
+        st.sbom_files = [{"label": f"{st.inventory_source} (primary, raw)", "path": st.sbom_path}, {"label": f"{other} (second pass, raw)", "path": res.sbom_path},
+                         {"label": "merged canonical (used for analysis)", "path": str(merged_path)}]
+        st.inventory_source = f"{st.inventory_source}+{other}"
+        st.sbom_tool.update(merged=stats, used=st.inventory_source)
+        rt.observe("quality", f"Merged inventories: {stats['matched']} components confirmed by both, {stats['added_from_secondary']} added by {other}; analysis now uses {stats['total']} components")
+        st.quality = analyze_quality(st.components, st.sbom_doc, st.lock_deps, st.insp, syft_ok=True, lock_errors=st.lock_errors)
+        rt.observe("quality", f"Re-assessed inventory: {st.quality['inventory_status']}")
+        return True
 
     def quality(self, st: ScanState, rt: Runtime) -> None:
         with rt.step("quality") as b:

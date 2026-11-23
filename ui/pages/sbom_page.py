@@ -86,7 +86,12 @@ def render() -> None:
             st.caption("Installed: " + ", ".join(f"{k}={'yes' if x else 'no'}" for k, x in av.items() if k != "builtin") + ". Install Syft/Trivy for broader coverage; see README.")
 
     with t_raw:
-        raw = read_file(r.get("sbom_path"))
+        files = r.get("sbom_files") or ([{"label": "SBOM", "path": r.get("sbom_path")}] if r.get("sbom_path") else [])
+        sel_path = r.get("sbom_path")
+        if len(files) > 1:
+            pick = st.selectbox("SBOM file", range(len(files)), format_func=lambda i: files[i]["label"])
+            sel_path = files[pick]["path"]
+        raw = read_file(sel_path)
         if not raw:
             st.warning("The SBOM file is no longer on disk (artifacts were cleaned). Re-run the scan with *Reuse cached scan* unticked to regenerate it.")
         else:
@@ -96,7 +101,7 @@ def render() -> None:
                 doc = _json.loads(text)
             except ValueError:
                 doc = None
-            st.caption(f"`{r.get('sbom_path')}` · {len(raw):,} bytes · exactly as written by the scanner")
+            st.caption(f"`{sel_path}` · {len(raw):,} bytes · exactly as written by the scanner")
             views = ["Full file", "Header", "Components", "Dependencies"] if doc else ["Full file"]
             view = st.radio("View", views, horizontal=True)
             if view == "Full file":

@@ -124,20 +124,17 @@ def _licenses(c: dict) -> list[str]:
     return out
 
 
-def normalize_components(doc: dict, repo_root: Path, service_dirs: list[str]) -> list[Component]:
-    """Convert CycloneDX components to Component models, mapping each to its owning service directory."""
+def normalize_components(doc: dict, repo_root: Path, service_dirs: list[str], tool: str = "syft") -> list[Component]:
+    """Convert a canonical CycloneDX document (see ``sbom.adapters``) to Component models, mapping each to its owning service directory."""
+    from sbom.adapters import get_adapter
+    ad = get_adapter(tool)
     result: list[Component] = []
     for c in doc.get("components", []) or []:
         if not isinstance(c, dict) or not c.get("name"):
             continue
         purl = c.get("purl")
         pp = parse_purl(purl) if purl else None
-        locs = []
-        for i in range(0, 20):
-            vals = _prop(c, f"syft:location:{i}:path") or _prop(c, f"sc-guardian:location:{i}:path")
-            if not vals:
-                break
-            locs.append(_rel_location(vals[0], repo_root))
+        locs = [_rel_location(x, repo_root) for x in ad.locations(c)]
         svc = None
         if locs:
             # a lockfile/manifest location decides the service; use the nearest ancestor service dir
@@ -152,8 +149,7 @@ def normalize_components(doc: dict, repo_root: Path, service_dirs: list[str]) ->
             ecosystem=pp["ecosystem"] if pp else None, purl_type=pp["type"] if pp else None,
             licenses=_licenses(c), supplier=supplier, cpe=c.get("cpe"),
             hashes=[h for h in c.get("hashes", []) or [] if isinstance(h, dict)],
-            locations=locs, service_dir=svc, found_by=(_prop(c, "syft:package:foundBy") or _prop(c, "sc-guardian:package:foundBy")
-                                       or [f"trivy:{t[0]}" if (t := _prop(c, "aquasecurity:trivy:PkgType")) else None])[0], is_self=own,
+            locations=locs, service_dir=svc, found_by=ad.found_by(c), sources=[ad.NAME], is_self=own,
         ))
     return result
 

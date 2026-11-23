@@ -233,6 +233,7 @@ def analyze(repo_dir: Path, info: RepoInfo, options: ScanOptions, ctx: _Ctx, rt:
     sbom.generate(st, rt)
     sbom.validate(st, rt)
     sbom.quality(st, rt)
+    sbom.second_pass(st, rt)
     graph.build(st, rt)
     vuln.run(st, rt)
     ver.run(st, rt)
@@ -301,6 +302,7 @@ def _assemble(st: ScanState, rt: Runtime, workspace: Optional[Path]) -> None:
     res["lockfile_dependencies"] = [d.model_dump() for d in st.lock_deps]
     res["lockfile_errors"] = st.lock_errors
     res["sbom_tool"] = st.sbom_tool
+    res["sbom_files"] = st.sbom_files or ([{"label": f"{st.inventory_source} (raw scanner output)", "path": st.sbom_path}] if st.sbom_path else [])
     res["syft"] = st.syft.to_dict() if (st.syft is not None and st.inventory_source == "syft") else None  # kept for stored scans / API compatibility
     res["inventory_source"], res["sbom_path"] = st.inventory_source, st.sbom_path
     res.setdefault("sbom", {"path": st.sbom_path, "validation": {"valid": False, "errors": ["SBOM not generated"], "warnings": [], "stats": {}}})

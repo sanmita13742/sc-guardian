@@ -12,7 +12,6 @@ The raw scanner output is stored untouched; Trivy documents are normalised in me
 """
 from __future__ import annotations
 
-import copy
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +19,7 @@ from typing import Optional
 
 from config.settings import Settings
 from core.models import LockDependency
+from sbom.adapters import get_adapter
 from sbom.builtin_generator import TOOL_NAME, generate_cyclonedx
 from sbom.cyclonedx_validator import load_sbom
 from sbom.syft_runner import SyftResult, resolve_syft, run_syft
@@ -51,32 +51,6 @@ def plan(choice: str, settings: Settings) -> list[str]:
     return order
 
 
-def normalize_trivy(doc: dict) -> dict:
-    """Trivy emits one ``application`` component per lockfile plus a root. Fold them into per-package locations."""
-    d = copy.deepcopy(doc)
-    comps = d.get("components") or []
-    deps = d.get("dependencies") or []
-    apps = {c.get("bom-ref"): c for c in comps if c.get("type") == "application" and not c.get("purl")}
-    loc_of: dict[str, str] = {}
-    for rec in deps:
-        app = apps.get(rec.get("ref"))
-        if app:
-            for t in rec.get("dependsOn") or []:
-                loc_of.setdefault(t, app.get("name", ""))
-    meta_root = ((d.get("metadata") or {}).get("component") or {}).get("bom-ref")
-    out = []
-    for c in comps:
-        if c.get("bom-ref") in apps:
-            continue
-        loc = loc_of.get(c.get("bom-ref"))
-        if loc:
-            c.setdefault("properties", []).append({"name": "sc-guardian:location:0:path", "value": loc})
-        out.append(c)
-    d["components"] = out
-    d["dependencies"] = [r for r in deps if r.get("ref") not in apps and r.get("ref") != meta_root]
-    return d
-
-
 def generate_sbom(repo_dir: Path, lock_deps: list[LockDependency], out_dir: Path, prefix: str, choice: str,
                   settings: Settings, repo_name: str, commit_sha: str = "") -> SbomOutcome:
     out = SbomOutcome(requested=choice)
@@ -96,7 +70,7 @@ def generate_sbom(repo_dir: Path, lock_deps: list[LockDependency], out_dir: Path
                 att.update(ok=False, error=f"unreadable output: {e}")
                 continue
             out.scanner, out.raw_path, out.run = name, res.sbom_path, res
-            out.doc = normalize_trivy(raw) if name == "trivy" else raw
+            out.doc = get_adapter(name).canonicalize(raw)
             return out
         # built-in rule engine
         doc, stats = generate_cyclonedx(lock_deps, repo_name, commit_sha)
