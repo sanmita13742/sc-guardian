@@ -40,8 +40,8 @@ Final run on Windows 11, Python 3.11.9, Syft 1.57.2, live network (OSV, NVD, CIS
 
 | Suite | Tests | Result |
 |---|---|---|
-| Unit (`tests/unit`, offline, mocked APIs, real temporary Git repos) | 0 | all passed |
-| Integration + UI (`tests/integration`: real Syft, live OSV/KEV/GitHub, AppTest pages, UI form submission) | 0 | all passed |
+| Unit (`tests/unit`, offline, mocked APIs, real temporary Git repos) | 116 | all passed |
+| Integration + UI (`tests/integration`: real Syft, live OSV/KEV/GitHub, AppTest pages, UI form submission) | 23 | all passed |
 | **Total** | **139** | **139 passed, 0 failed, 0 skipped** (7 min 33 s on a cold cache) |
 
 Line coverage over the application packages: **91 %** (3 763 statements). Lowest: `reporting/sbom_exporter.py` 44 % (only the enrichment-overlay helper is partly exercised),
