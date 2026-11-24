@@ -16,6 +16,44 @@ import streamlit as st
 from ui.components.common import badge, df, get_result, page_header, require_result, risk_by_id
 
 
+def _get_non_cve_scope(f: Dict[str, Any]) -> str:
+    """Return specific Non-CVE classification for the finding."""
+    cat = f.get("category", "")
+    target = f.get("affected_file", "")
+    if cat == "Dependency Change":
+        return "Floating Version Constraint"
+    elif cat == "Dependency Source":
+        return "Mutable Git Branch Source"
+    elif cat == "Typosquatting":
+        return "Name Similarity / Typosquatting"
+    elif cat == "Lifecycle Script":
+        return "Install-Time Script Hook"
+    elif cat == "Docker & CI/CD":
+        if ".github" in target:
+            return "CI/CD Pipeline Security Posture"
+        return "Container Image Configuration / EOL"
+    return "Supply Chain Integrity Anomaly"
+
+
+def _get_non_cve_rationale(f: Dict[str, Any]) -> str:
+    """Explain why traditional CVE/NVD scanners miss this finding."""
+    cat = f.get("category", "")
+    target = f.get("affected_file", "")
+    if cat == "Dependency Change":
+        return "Floating dependencies (e.g. 'latest') are not recorded in NVD/CVE databases because they are repository configuration choices, yet they expose builds to unreviewed upstream updates."
+    elif cat == "Dependency Source":
+        return "Direct Git branch heads bypass npm registry integrity metadata (checksums, immutable tarballs). No CVE tracks mutable branch head dependencies."
+    elif cat == "Typosquatting":
+        return "Typosquatting and companion packages exploit human confusion and brand similarity. They have no assigned CVE unless an intentional malicious backdoor is published and cataloged."
+    elif cat == "Lifecycle Script":
+        return "Install-time scripts (pre/postinstall) run arbitrary shell commands during package installation. This is a supported npm feature with high supply chain risk, not a CVE software bug."
+    elif cat == "Docker & CI/CD":
+        if ".github" in target:
+            return "Undeclared GITHUB_TOKEN permissions and mutable version tags (@v2) represent CI pipeline hygiene weaknesses that are completely outside the scope of CVE/NVD catalogs."
+        return "Using unpinned or EOL base images represents container hygiene and drift risk. Traditional vulnerability scanners only scan package manifests, missing Dockerfile configuration drift."
+    return "This is a structural supply chain risk outside conventional CVE vulnerability databases."
+
+
 def render() -> None:
     page_header(
         "Suspicious Changes & Forensic Investigation",
@@ -44,8 +82,25 @@ def render() -> None:
         require_result()
         return
 
-    # Build fast lookup map for AI investigations
-    ai_map: Dict[str, Dict[str, Any]] = {inv["finding_id"]: inv for inv in ai_invs if "finding_id" in inv}
+    # Build fast lookup map for AI investigations (compound key + fallback)
+    ai_map: Dict[Any, Dict[str, Any]] = {}
+    for inv in ai_invs:
+        fid = inv.get("finding_id", "")
+        aff = inv.get("affected_file", "")
+        if fid and aff:
+            ai_map[(fid, aff)] = inv
+        if fid and fid not in ai_map:
+            ai_map[fid] = inv
+
+    def _get_ai_data(finding_id: str, target_file: str) -> Optional[Dict[str, Any]]:
+        if (finding_id, target_file) in ai_map:
+            return ai_map[(finding_id, target_file)]
+        if finding_id in ai_map:
+            inv_candidate = ai_map[finding_id]
+            inv_aff = inv_candidate.get("affected_file", "")
+            if not inv_aff or not target_file or inv_aff == target_file:
+                return inv_candidate
+        return None
 
     # Extract legacy signals if available
     risks = risk_by_id(r) if r else {}
@@ -74,11 +129,40 @@ def render() -> None:
 
     st.markdown("---")
 
+    # Prominent Non-CVE Supply Chain Intelligence Banner
+    st.info(
+        "🛡️ **Non-CVE Supply Chain Risk Detection:** "
+        f"All **{total_count} findings** on this page represent **structural, architectural, and provenance supply chain risks** "
+        "(e.g., mutable Git branch dependencies, floating version constraints, unpinned CI/CD actions, EOL base images, lifecycle install hooks, and typosquatting). "
+        "Traditional vulnerability databases (NVD / CVE / OSV) and tools like `npm audit` report **0 alerts** on these because they are supply chain posture weaknesses "
+        "rather than cataloged software bugs in published package versions."
+    )
+
+    # Informational Callout explaining Non-CVE Supply Chain Detection
+    with st.expander("ℹ️ **Understanding Non-CVE Supply Chain Intelligence (Why Conventional Scanners Miss These)**", expanded=False):
+        st.markdown(
+            """
+            **Traditional vulnerability scanners (like CVE, NVD, OSV, or `npm audit`) only scan for published software bugs in catalogued libraries.**
+            They report **0 alerts** on supply chain integrity, provenance, and configuration anomalies introduced in manifests, scripts, and CI/CD pipelines:
+            
+            * 🔗 **Direct Git Branch Sourcing:** (e.g. `grunt-if` pulling from mutable `tarball/master` rather than an immutable commit SHA).
+            * 📌 **Floating Version Tags:** (e.g. `grunt-env: "latest"` breaking build determinism and opening exposure to silent upstream updates).
+            * 🐳 **End-of-Life Base Images:** (e.g. `mongo:4.4` which officially reached end-of-life on February 29, 2024).
+            * ⚙️ **Undeclared CI/CD Permissions:** (GitHub Actions workflows omitting explicit `permissions:`, creating indeterminate token authorization).
+            * ⚡ **Install-Time Execution Hooks:** (lockfile `hasInstallScript: true` executing automated code on developer and CI machines during installation).
+            
+            Guardian analyzes these structural and behavioral supply chain risks across three layers:
+            1. **Layer 1 (Deterministic Facts):** Static AST, Git diff, and configuration linters.
+            2. **Layer 2 (Correlated Scenarios):** Multi-vector MITRE ATT&CK chain synthesis.
+            3. **Layer 3 (Autonomous AI):** LangGraph tool-using agent with strict Grounding Gate verification.
+            """
+        )
+
     # --------------------------------------------------------------------------------------------------
     # Multi-Layer Tabs Definition
     # --------------------------------------------------------------------------------------------------
     tab_titles = [
-        f"🌟 Unified View ({total_count})",
+        f"🌟 Unified View ({total_count} Non-CVE Findings)",
         f"🤖 Autonomous AI Investigations ({ai_count})",
         f"⛓️ Correlated Attack Chains ({scenarios_count})",
         f"🔬 Deterministic Forensic Evidence ({total_count})",
@@ -122,7 +206,7 @@ def render() -> None:
             f_file = f.get("affected_file", "")
             f_ev = str(f.get("evidence", ""))
             f_exp = str(f.get("explanation") or f.get("technical_explanation") or "")
-            ai_data = ai_map.get(fid)
+            ai_data = _get_ai_data(fid, f_file)
             ai_v = ai_data.get("verdict") if ai_data else "NOT_INVESTIGATED"
 
             if search_query:
@@ -147,15 +231,22 @@ def render() -> None:
             table_rows = []
             for f in filtered:
                 fid = f.get("id", "")
-                ai_data = ai_map.get(fid)
+                f_file = f.get("affected_file", "")
+                ai_data = _get_ai_data(fid, f_file)
+                remaining = ai_data.get("remaining_security_risks", []) if ai_data else []
                 table_rows.append({
                     "Finding ID": fid,
+                    "Detection Scope": f.get("detection_scope", "Non-CVE Risk"),
+                    "Non-CVE Risk Type": _get_non_cve_scope(f),
                     "Category": f.get("category", ""),
                     "Initial Static Severity": f.get("severity", ""),
                     "Target File": f"{f.get('affected_file', '')}:{f.get('line_number', 1)}",
                     "Origin": f.get("change_origin", "PRE_EXISTING"),
                     "Autonomous AI Verdict": ai_data.get("verdict", "—") if ai_data else "— (Uninvestigated)",
                     "AI Confidence": ai_data.get("confidence", "—") if ai_data else "—",
+                    "Specific Suspicion Resolved": ai_data.get("specific_suspicion_resolved", "—") if ai_data else "—",
+                    "Remaining Security Risks": "; ".join(remaining) if remaining else "None",
+                    "Maintenance Status": ai_data.get("maintenance_status", "ACTIVE") if ai_data else "—",
                 })
             df(table_rows, height=280)
 
@@ -166,14 +257,15 @@ def render() -> None:
                 f_title = f.get("title", fid)
                 f_sev = f.get("severity", "MEDIUM")
                 f_cat = f.get("category", "")
+                f_file = f.get("affected_file", "")
                 f_orig = f.get("change_origin", "PRE_EXISTING")
-                ai_data = ai_map.get(fid)
+                ai_data = _get_ai_data(fid, f_file)
 
                 # Clear status badge explaining Static Scan vs AI Disambiguation
                 if ai_data:
                     v = ai_data.get("verdict")
                     if v == "BENIGN_EXPLANATION":
-                        status_tag = f"🟢 [DISAMBIGUATED SAFE] (Static: {f_sev})"
+                        status_tag = f"🟢 [SPECIFIC SUSPICION RESOLVED] (Static: {f_sev})"
                     elif v == "SUSPECTED_SUPPLY_CHAIN_ATTACK":
                         status_tag = f"🔴 [SUSPECTED ATTACK] (Static: {f_sev})"
                     else:
@@ -188,6 +280,10 @@ def render() -> None:
                     c1.markdown(f"**Category:** `{f_cat}`")
                     c2.markdown(f"**Target:** `{f.get('affected_file')}:{f.get('line_number')}`")
                     c3.markdown(f"**Origin:** `{'INTRODUCED IN COMMIT RANGE' if f_orig == 'INTRODUCED_IN_RANGE' else 'PRE-EXISTING IN REPOSITORY'}`")
+
+                    # Explicit Non-CVE Supply Chain Scope Callout
+                    st.markdown(f"🛡️ **Security Scope:** `Non-CVE Supply Chain Risk` · **Mechanism:** `{_get_non_cve_scope(f)}`")
+                    st.caption(f"💡 **Why Non-CVE:** {_get_non_cve_rationale(f)}")
 
                     # Evidence snippet
                     ev = f.get("evidence")
@@ -211,14 +307,31 @@ def render() -> None:
                         v = ai_data.get("verdict", "UNCONFIRMED")
                         conf = ai_data.get("confidence", "UNKNOWN")
                         planner = ai_data.get("planner", "deterministic")
+                        m_status = ai_data.get("maintenance_status")
+                        rem_risks = ai_data.get("remaining_security_risks", [])
 
                         if v == "BENIGN_EXPLANATION":
-                            st.success(f"**AI Verdict: SAFE / LEGITIMATE ({v})** ({conf} Confidence) · Verified by Grounding Gate")
-                            st.info(f"💡 **False Alarm Resolved by AI:** The deterministic static scanner flagged this pattern as **{f_sev}** severity based on generic heuristic rules. The autonomous AI investigated the actual codebase, imports, and package history, proving this is a legitimate safe dependency and eliminating the false alarm.")
+                            st.success(f"**AI Verdict: {v}** ({conf} Confidence) · Verified by Grounding Gate")
+                            st.info(
+                                f"💡 **Static Heuristic vs AI Resolution:** The deterministic scanner flagged this pattern as **{f_sev}** severity "
+                                f"based on initial static heuristics. The autonomous AI investigated the codebase and ecosystem history, "
+                                f"resolving the specific attack suspicion as benign while keeping independent maintenance risks separated."
+                            )
                         elif v == "SUSPECTED_SUPPLY_CHAIN_ATTACK":
                             st.error(f"**AI Verdict: SUSPECTED SUPPLY CHAIN ATTACK ({v})** ({conf} Confidence) · Elevated from Static `{f_sev}`")
                         else:
-                            st.warning(f"**AI Verdict: CONFIRMED ANOMALY ({v})** ({conf} Confidence) · Non-Standard Configuration")
+                            st.warning(f"**AI Verdict: CONFIRMED ANOMALY ({v})** ({conf} Confidence) · Verified Non-Standard Configuration")
+
+                        if ai_data.get("specific_suspicion_resolved"):
+                            st.success(f"✅ **Specific Suspicion Resolved:** {ai_data.get('specific_suspicion_resolved')}")
+
+                        if rem_risks:
+                            st.warning("**⚠️ Remaining Independent Security & Maintenance Risks:**")
+                            for rr in rem_risks:
+                                st.markdown(f"• {rr}")
+
+                        if m_status:
+                            st.markdown(f"**Ecosystem Maintenance Status:** `{m_status}`")
 
                         st.markdown(f"**Investigator Rationale:** {ai_data.get('rationale')}")
 
@@ -263,12 +376,17 @@ def render() -> None:
         if ai_invs:
             ai_table = []
             for inv in ai_invs:
+                rem = inv.get("remaining_security_risks", [])
                 ai_table.append({
                     "Finding ID": inv.get("finding_id"),
+                    "Detection Scope": "Non-CVE Risk",
+                    "Non-CVE Risk Type": _get_non_cve_scope(inv),
                     "Target": f"{inv.get('affected_file')}:{inv.get('line_number')}",
                     "Verdict": inv.get("verdict"),
                     "Confidence": inv.get("confidence"),
-                    "Planner Model": inv.get("planner", "Gemini 2.5 Flash Lite"),
+                    "Specific Suspicion Resolved": inv.get("specific_suspicion_resolved", "—"),
+                    "Remaining Risks": "; ".join(rem) if rem else "None",
+                    "Maintenance Status": inv.get("maintenance_status", "ACTIVE") or "ACTIVE",
                     "Supporting Factors": len(inv.get("supporting_evidence", [])),
                     "Contradicting Factors": len(inv.get("contradicting_evidence", [])),
                 })
@@ -282,9 +400,19 @@ def render() -> None:
                 icon = "🟢" if v == "BENIGN_EXPLANATION" else "🔴" if v == "SUSPECTED_SUPPLY_CHAIN_ATTACK" else "🟡"
 
                 with st.expander(f"{icon} `{fid}` · {v} ({conf} Confidence)", expanded=False):
-                    c1, c2 = st.columns(2)
+                    c1, c2, c3 = st.columns(3)
                     c1.markdown(f"**Target File:** `{inv.get('affected_file')}:{inv.get('line_number')}`")
                     c2.markdown(f"**Planner Model:** `{inv.get('planner', 'Gemini 2.5 Flash Lite')}`")
+                    c3.markdown(f"**Maintenance Status:** `{inv.get('maintenance_status', 'ACTIVE') or 'ACTIVE'}`")
+
+                    if inv.get("specific_suspicion_resolved"):
+                        st.success(f"✅ **Specific Suspicion Resolved:** {inv.get('specific_suspicion_resolved')}")
+
+                    rem_risks = inv.get("remaining_security_risks", [])
+                    if rem_risks:
+                        st.warning("**⚠️ Remaining Independent Security & Maintenance Risks:**")
+                        for rr in rem_risks:
+                            st.markdown(f"• {rr}")
 
                     st.markdown(f"**Autonomous Rationale:** {inv.get('rationale')}")
 
@@ -359,6 +487,8 @@ def render() -> None:
                     for cf in cat_findings:
                         cat_rows.append({
                             "ID": cf.get("id"),
+                            "Detection Scope": "Non-CVE Risk",
+                            "Non-CVE Risk Type": _get_non_cve_scope(cf),
                             "Severity": cf.get("severity"),
                             "Target": f"{cf.get('affected_file')}:{cf.get('line_number')}",
                             "Origin": cf.get("change_origin"),

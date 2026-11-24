@@ -33,6 +33,8 @@ def candidate_matches(eco: str, name: str, refs: list[str]) -> list[dict]:
     """Return similarity candidates for ``name`` against reference names of the same ecosystem."""
     n = normalize_name(eco, name)
     out = []
+    popular_set = {normalize_name(eco, r) for r in refs}
+
     for ref in refs:
         r = normalize_name(eco, ref)
         if n == r:
@@ -44,36 +46,96 @@ def candidate_matches(eco: str, name: str, refs: list[str]) -> list[dict]:
         sim = round((1 - dist / longest) * 100, 1)
         techniques: list[str] = []
         base = 0
-        if dist == 1 and len(r) >= 5:
-            techniques.append("single-edit (insertion/deletion/substitution/transposition)")
-            if DamerauLevenshtein.distance(n, r) == 1 and sorted(n) == sorted(r):
-                techniques.append("character transposition")
-            elif len(n) == len(r) + 1 and any(n[:i] + n[i + 1:] == r for i in range(len(n))):
-                techniques.append("extra character")
-                if any(n[i] == n[i - 1] and n[:i] + n[i + 1:] == r for i in range(1, len(n))):
-                    techniques.append("repeated character")
-            elif len(n) == len(r) - 1:
-                techniques.append("missing character")
-            base += 3
-        elif dist == 2 and len(r) >= 9 and sim >= 85:
-            techniques.append("two edits on a long name")
-            base += 2
-        if _strip_seps(n) == _strip_seps(r):
+        is_convention = False
+        convention_type = None
+        is_deceptive = False
+
+        # 1. Version fork convention (e.g. through vs through2, async vs async2)
+        if re.match(r"^" + re.escape(r) + r"\d+$", n) or re.match(r"^" + re.escape(n) + r"\d+$", r):
+            techniques.append("version suffix convention (numeric fork)")
+            is_convention = True
+            convention_type = "version_fork"
+            base += 0
+
+        # 2. Separator normalization (e.g. object-assign vs object.assign)
+        elif _strip_seps(n) == _strip_seps(r):
             techniques.append("separator variant")
-            base += 2
-        for a, b in HOMOGLYPHS:
-            if len(n) >= 4 and n.replace(a, b) == r and a in n:
-                techniques.append(f"look-alike characters ({a}->{b})")
-                base += 2
-                break
-        for af in AFFIXES:
-            clean_af = af.strip("-.")
-            if n == r + af or n == af.strip("-.") + "-" + r or n == f"{r}-{clean_af}" or n == f"{clean_af}-{r}":
-                techniques.append(f"common affix ({clean_af})")
+            is_convention = True
+            convention_type = "separator_variant"
+            base += 1
+
+        # 3. Implementation / runtime affix convention (e.g. bcrypt-nodejs vs bcrypt, sha1-js vs sha1)
+        elif any(
+            n == r + af or n == af.strip("-.") + "-" + r or n == f"{r}-{clean_af}" or n == f"{clean_af}-{r}"
+            for af in AFFIXES for clean_af in [af.strip("-.")]
+        ):
+            matched_af = next(
+                clean_af for af in AFFIXES for clean_af in [af.strip("-.")]
+                if n == r + af or n == af.strip("-.") + "-" + r or n == f"{r}-{clean_af}" or n == f"{clean_af}-{r}"
+            )
+            techniques.append(f"implementation affix ({matched_af})")
+            is_convention = True
+            convention_type = "implementation_affix"
+            base += 1
+
+        # 4. Comparative companion suffix (e.g. safe-buffer vs safer-buffer)
+        elif (n.startswith("safe") and r.startswith("safer")) or (n.startswith("safer") and r.startswith("safe")):
+            if n[5:] == r[4:] or n[4:] == r[5:]:
+                techniques.append("companion morphological variant")
+                is_convention = True
+                convention_type = "companion_variant"
                 base += 1
-                break
+
+        # 5. Deceptive techniques (homoglyphs, transpositions, omissions)
+        else:
+            for a, b in HOMOGLYPHS:
+                if len(n) >= 4 and n.replace(a, b) == r and a in n:
+                    techniques.append(f"look-alike characters ({a}->{b})")
+                    base += 3
+                    is_deceptive = True
+                    break
+
+            if dist == 1 and len(r) >= 5:
+                if DamerauLevenshtein.distance(n, r) == 1 and sorted(n) == sorted(r):
+                    techniques.append("character transposition")
+                    base += 3
+                    is_deceptive = True
+                elif len(n) == len(r) + 1 and any(n[:i] + n[i + 1:] == r for i in range(len(n))):
+                    techniques.append("extra character")
+                    if any(n[i] == n[i - 1] and n[:i] + n[i + 1:] == r for i in range(1, len(n))):
+                        techniques.append("repeated character")
+                    base += 3
+                    is_deceptive = True
+                elif len(n) == len(r) - 1:
+                    techniques.append("missing character")
+                    base += 3
+                    is_deceptive = True
+                else:
+                    techniques.append("single-edit substitution")
+                    base += 2
+                    is_deceptive = True
+            elif dist == 2 and len(r) >= 9 and sim >= 85:
+                techniques.append("two edits on a long name")
+                base += 2
+                is_deceptive = True
+
+        # Check if both candidate and reference are established in popular reference list
+        both_in_reference = (n in popular_set) and (r in popular_set)
+        if both_in_reference and is_convention:
+            techniques.append("established companion package in reference catalog")
+
         if techniques:
-            out.append({"ref": ref, "distance": dist, "similarity": sim, "techniques": techniques, "points": base})
+            out.append({
+                "ref": ref,
+                "distance": dist,
+                "similarity": sim,
+                "techniques": techniques,
+                "points": base,
+                "is_ecosystem_convention": is_convention,
+                "convention_type": convention_type,
+                "is_deceptive": is_deceptive,
+                "both_in_reference": both_in_reference,
+            })
     out.sort(key=lambda c: (-c["points"], -c["similarity"]))
     return out[:1]  # best match only
 

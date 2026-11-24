@@ -181,23 +181,25 @@ def inspect_manifest_dependency_sources(manifest_data: dict, file_path: str) -> 
 
             # Check 1: Direct Git repository dependencies
             if _is_git_dependency(spec):
-                is_sha_pinned = bool(re.search(r"#[0-9a-fA-F]{40}$", spec.strip().strip("'\"")))
+                is_sha_pinned = bool(re.search(r"(?:#|/tarball/|/archive/|/commit/|@)[0-9a-fA-F]{40}$", spec.strip().strip("'\""))) or bool(re.search(r"[0-9a-fA-F]{40}$", spec.strip().strip("'\"")))
+                is_branch_ref = bool(re.search(r"(?:/tarball/|#)(?:master|main|develop|trunk|latest)$", spec.strip().strip("'\""), re.IGNORECASE))
                 sev = "LOW" if is_sha_pinned else "MEDIUM"
                 title = (
                     f"Git Dependency '{pkg}' Pinned to Commit SHA"
                     if is_sha_pinned
-                    else f"Direct Git-Sourced Dependency '{pkg}'"
+                    else f"Direct Git-Sourced Dependency '{pkg}' ({'Mutable Branch' if is_branch_ref else 'Unpinned Tag'})"
                 )
                 if is_sha_pinned:
                     tech_exp = (
                         f"Package '{pkg}' is sourced from Git ('{spec}') and pinned to an immutable 40-character commit SHA. "
-                        "Cryptographic commit pinning prevents upstream branch/tag modifications."
+                        "Cryptographic commit pinning provides immutable code anchoring."
                     )
                 else:
                     tech_exp = (
-                        f"Package '{pkg}' is sourced directly from a Git repository ('{spec}') rather than a "
-                        "registered package registry. Direct Git dependencies bypass registry integrity checks, "
-                        "vulnerability tracking, and immutable release audits unless pinned to a full commit SHA."
+                        f"Package '{pkg}' is sourced directly from a Git repository ('{spec}') rather than a registered package registry. "
+                        f"The specification references a {'mutable branch' if is_branch_ref else 'moving reference'}, "
+                        "which poses reproducibility and upstream drift risks. However, if package-lock.json resolves "
+                        "this reference to an immutable commit hash or integrity checksum, the local installation is frozen."
                     )
 
                 findings.append({
@@ -205,7 +207,7 @@ def inspect_manifest_dependency_sources(manifest_data: dict, file_path: str) -> 
                     "category": "Dependency Source",
                     "title": title,
                     "severity": sev,
-                    "confidence": "HIGH",
+                    "confidence": "HIGH" if is_sha_pinned else "MEDIUM",
                     "status": "OBSERVED",
                     "affected_file": file_path,
                     "line_number": 1,
@@ -213,9 +215,9 @@ def inspect_manifest_dependency_sources(manifest_data: dict, file_path: str) -> 
                     "evidence": f'"{pkg}": "{spec}"',
                     "technical_explanation": tech_exp,
                     "potential_impact": (
-                        "Minimal risk when pinned to full commit SHA; mutable branches or tags can modify package code without audit trails."
+                        "Minimal risk when pinned to full commit SHA; mutable branches or tags can introduce upstream changes between builds if lockfile is regenerated."
                     ),
-                    "recommended_action": "Ensure all Git dependencies remain pinned to full 40-character commit SHAs.",
+                    "recommended_action": "Pin Git dependencies to full 40-character commit SHAs or vendor with subresource integrity digests.",
                     "references": []
                 })
 

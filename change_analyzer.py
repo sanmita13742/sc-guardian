@@ -281,12 +281,13 @@ class ChangeAnalyzer:
             rel_path = str(w_file.relative_to(self.repo_dir)).replace("\\", "/")
             origin = self._determine_origin(rel_path)
             commit_ref = self.head_info if origin == "INTRODUCED_IN_RANGE" else {}
+            wf_slug = w_file.stem.upper().replace('.', '_').replace('-', '_')
 
             ci_findings, _ = CIWorkflowAdapter.inspect(w_file, self.repo_dir)
             for cif in ci_findings:
                 # Convert PipelineFinding structure to standard finding schema
                 raw_findings.append({
-                    "id": f"SUSP-CICD-{cif.get('rule_id', 'GHA')}-{cif.get('line', 1)}",
+                    "id": f"SUSP-CICD-{cif.get('rule_id', 'GHA')}-{wf_slug}-L{cif.get('line', 1)}",
                     "category": "Docker & CI/CD",
                     "title": cif.get("title", "CI/CD Security Finding"),
                     "severity": cif.get("severity", "MEDIUM"),
@@ -402,6 +403,7 @@ class ChangeAnalyzer:
 
         npm_refs = POPULAR.get("npm", [])
         lines = content.splitlines()
+        seen_pairs = set()
 
         for sec in ("dependencies", "devDependencies"):
             deps = data.get(sec, {})
@@ -410,19 +412,42 @@ class ChangeAnalyzer:
             for pkg_name in deps.keys():
                 matches = candidate_matches("npm", pkg_name, npm_refs)
                 for m in matches:
+                    ref = m.get("ref", "")
+                    pair_key = tuple(sorted([pkg_name.lower(), ref.lower()]))
+                    if pair_key in seen_pairs:
+                        continue
+                    seen_pairs.add(pair_key)
+
+                    is_conv = m.get("is_ecosystem_convention", False)
+                    both_ref = m.get("both_in_reference", False)
+                    is_deceptive = m.get("is_deceptive", False)
+
+                    # Distinguish legitimate companion packages from potential impersonation:
+                    # If both are in the reference catalog and match by ecosystem convention without deceptive indicators:
+                    if both_ref and is_conv and not is_deceptive:
+                        continue
+
                     line_no = next((i for i, l in enumerate(lines, 1) if f'"{pkg_name}"' in l), 1)
                     sim = m.get("similarity", m.get("sim", 0))
                     dist = m.get("distance", m.get("dist", 99))
-                    ref = m.get("ref", "")
                     tech = ", ".join(m.get("techniques", []))
 
-                    sev = "HIGH" if dist == 1 or "affix" in tech.lower() else ("MEDIUM" if sim >= 85 else "LOW")
-                    conf = "HIGH" if dist == 1 else "MEDIUM"
+                    # Calibrate severity: deceptive indicators are HIGH/MEDIUM;
+                    # ecosystem conventions (e.g. implementation affix like -nodejs) are LOW signals.
+                    if is_deceptive:
+                        sev = "HIGH" if dist <= 1 else "MEDIUM"
+                        conf = "MEDIUM"
+                    elif is_conv:
+                        sev = "LOW"
+                        conf = "LOW"
+                    else:
+                        sev = "MEDIUM" if sim >= 85 else "LOW"
+                        conf = "LOW"
 
                     findings.append({
                         "id": f"SUSP-TYPO-{pkg_name.upper().replace('@', '').replace('/', '_')}",
                         "category": "Typosquatting",
-                        "title": f"Package '{pkg_name}' Shares High Name Similarity with '{ref}'",
+                        "title": f"Package '{pkg_name}' Shares Name Similarity with '{ref}'",
                         "severity": sev,
                         "confidence": conf,
                         "status": "SUSPECTED",
@@ -433,11 +458,11 @@ class ChangeAnalyzer:
                         "evidence_type": "HEURISTIC_FLAG",
                         "evidence": f'Package "{pkg_name}" similar to popular "{ref}" (similarity: {sim}%, edit distance: {dist})',
                         "technical_explanation": (
-                            f"Package '{pkg_name}' has an edit distance of {dist} ({sim}% similarity) from widely used package '{ref}'. "
-                            f"Techniques identified: {tech}. Attackers frequently leverage lexical similarity to hijack accidental typos or wrapper searches."
+                            f"Package '{pkg_name}' has an edit distance of {dist} ({sim}% similarity) relative to '{ref}'. "
+                            f"Techniques identified: {tech}. Similarity is an indicator requiring contextual disambiguation."
                         ),
-                        "potential_impact": "Developers or automated build tools may install unvetted typosquatting package.",
-                        "recommended_action": f"Verify whether '{pkg_name}' is legitimate or should be replaced with canonical '{ref}'.",
+                        "potential_impact": "Developers or automated build tools may install unvetted package variants.",
+                        "recommended_action": f"Verify whether '{pkg_name}' is an intended implementation variant or should be replaced with canonical '{ref}'.",
                         "references": ["https://blog.reversinglabs.com/blog/typosquatting-in-open-source"]
                     })
         return findings
@@ -449,7 +474,7 @@ class ChangeAnalyzer:
         origin: str,
         commit_ref: Dict[str, str]
     ) -> List[Dict[str, Any]]:
-        """Static similarity check on lockfile dependencies (sample checks on notable similar pairs)."""
+        """Static similarity check on lockfile dependencies (distinguishing companion packages and preventing reciprocal duplicates)."""
         findings = []
         try:
             data = json.loads(content)
@@ -463,6 +488,7 @@ class ChangeAnalyzer:
 
         # Check select lockfile packages to avoid exponential combinations
         seen_names = set()
+        seen_pairs = set()
         for pkg_path in packages.keys():
             if not pkg_path:
                 continue
@@ -473,13 +499,30 @@ class ChangeAnalyzer:
 
             matches = candidate_matches("npm", pkg_name, npm_refs)
             for m in matches:
+                ref = m.get("ref", "")
+                pair_key = tuple(sorted([pkg_name.lower(), ref.lower()]))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                is_conv = m.get("is_ecosystem_convention", False)
+                both_ref = m.get("both_in_reference", False)
+                is_deceptive = m.get("is_deceptive", False)
+
+                # Established companion packages in reference catalog (e.g. safe-buffer / safer-buffer, through / through2)
+                if both_ref and is_conv and not is_deceptive:
+                    continue
+
+                # In lockfiles, suppress transitive conventions (version forks, companion packages)
+                if is_conv and not is_deceptive:
+                    continue
+
                 dist = m.get("distance", m.get("dist", 99))
                 sim = m.get("similarity", m.get("sim", 0))
-                ref = m.get("ref", "")
                 tech = ", ".join(m.get("techniques", []))
 
                 if dist <= 2 or sim >= 85:
-                    sev = "MEDIUM" if dist <= 1 else "LOW"
+                    sev = "MEDIUM" if is_deceptive else "LOW"
                     findings.append({
                         "id": f"SUSP-TYPO-LOCK-{pkg_name.upper().replace('@', '').replace('/', '_')}",
                         "category": "Typosquatting",
@@ -548,6 +591,7 @@ class ChangeAnalyzer:
 
             entry = {
                 "id": f.get("id", f"SUSP-{len(normalized)+1:03d}"),
+                "detection_scope": "Non-CVE Risk",
                 "category": cat,
                 "title": title,
                 "severity": f.get("severity", "MEDIUM").upper(),

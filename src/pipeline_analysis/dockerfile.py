@@ -155,8 +155,9 @@ def analyze_dockerfile(text: str, path: str) -> tuple[list[PipelineFinding], lis
             if re.search(r"chmod\s+(-R\s+)?0?777", i.args):
                 findings.append(_f("DF010", "World-writable permissions (chmod 777)", "MEDIUM", path, i.line, f"RUN {i.args}", "chmod 777", "Any process in the container can modify these files.", "Grant the minimum required permissions."))
             if re.search(r"\bnpm\s+install\b(?!\s+-g)", i.args) and "npm ci" not in i.args:
-                findings.append(_f("DF008", "`npm install` ignores the lockfile pin", "LOW", path, i.line, f"RUN {i.args}", "npm install",
-                                   "`npm install` may update dependencies; builds are not reproducible.", "Use `npm ci` (exact lockfile install).", strength="medium"))
+                findings.append(_f("DF008", "`npm install` used in container build instead of `npm ci`", "LOW", path, i.line, f"RUN {i.args}", "npm install",
+                                   "`npm install` in container builds may write to or re-evaluate package-lock.json if manifests differ; `npm ci` enforces strict, reproducible, read-only installation from the lockfile.",
+                                   "Use `npm ci` (exact lockfile install) for deterministic container builds.", strength="medium"))
             if re.search(r"\bpip3?\s+install\b", i.args) and "--require-hashes" not in i.args and re.search(r"pip3?\s+install\s+(?!-r|--upgrade pip|-U pip)[A-Za-z]", i.args):
                 findings.append(_f("DF009", "Python packages installed without pinned versions or hashes", "LOW", path, i.line, f"RUN {i.args}", "pip install",
                                    "Unpinned installs resolve to whatever is newest at build time.", "Pin versions (and `--require-hashes`) via a requirements/constraints file.", strength="medium"))
