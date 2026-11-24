@@ -14,8 +14,8 @@ def render() -> None:
 
     # Load Phase 2/3 multi-layer investigation artifact if available
     susp_file = Path("suspicious_changes.json")
-    susp_data = {}
-    if susp_file.exists():
+    susp_data = (r.get("suspicious_changes") if r and r.get("suspicious_changes") else {})
+    if not susp_data and susp_file.exists():
         try:
             susp_data = json.loads(susp_file.read_text(encoding="utf-8"))
         except Exception:

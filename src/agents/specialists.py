@@ -482,6 +482,24 @@ class ThreatAgent:
                           reason="Integrity/source anomalies were found in Git history.", agent="Supervisor")
             b["message"] = f"{sm.get('total_changes', 0)} changes: {sm.get('potentially_suspicious', 0)} suspicious, {sm.get('unexplained_change', 0)} unexplained"
 
+            # Person 2: Execute unified suspicious change investigation and LangGraph AI investigator
+            try:
+                from change_analyzer import ChangeAnalyzer
+                analyzer = ChangeAnalyzer(
+                    repo_dir=st.repo_dir,
+                    base_commit=o.baseline or f"HEAD~{o.lockfile_commits}",
+                    head_commit="HEAD",
+                    enable_ai=bool(getattr(o, "use_llm", False)),
+                )
+                ca_res = analyzer.run_investigation()
+                st.result["suspicious_changes"] = ca_res
+                try:
+                    Path("suspicious_changes.json").write_text(json.dumps(ca_res, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
 
 def _overall(r: dict) -> str:
     vals = set(r.values())
