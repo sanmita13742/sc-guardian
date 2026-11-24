@@ -1,10 +1,10 @@
 {
   "analysis_type": "Suspicious Supply Chain Change Detection",
-  "timestamp": "2026-11-24T10:08:14.010265+00:00",
+  "timestamp": "2026-11-24T11:11:42.027631+00:00",
   "target": "nodegoat",
   "repository": "E:\\Bosch\\nodegoat",
-  "base_commit": "edd889c333845b68b114934bff19e591d44a4db9",
-  "head_commit": "55948e996e61790d2da267093b14f6b1f3293bb4",
+  "base_commit": "ea6d3f7182d25b8c7a6402b4927409bd2621ba22",
+  "head_commit": "c472eec7ff83a6197d6eb552f059e62132090269",
   "metrics": {
     "total_findings": 19,
     "category_counts": {
@@ -34,6 +34,7 @@
   "findings": [
     {
       "id": "SUSP-DEP-FLOATING-GRUNT-ENV",
+      "detection_scope": "Non-CVE Risk",
       "category": "Dependency Change",
       "title": "Floating Dependency Version Constraint for 'grunt-env'",
       "severity": "HIGH",
@@ -51,11 +52,11 @@
       "recommended_action": "Pin 'grunt-env' to a specific immutable semantic version.",
       "references": [
         "https://docs.npmjs.com/about-semantic-versioning"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-DOCKER-DF012-L14",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "Service 'mongo' uses an end-of-life image",
       "severity": "MEDIUM",
@@ -71,11 +72,11 @@
       "technical_explanation": "MongoDB 5.0 and older are end-of-life (lifecycle table reviewed 2026-11).",
       "potential_impact": "MongoDB 5.0 and older are end-of-life (lifecycle table reviewed 2026-11).",
       "recommended_action": "Move to a supported release line.",
-      "references": [],
-      "detection_scope": "Non-CVE Risk"
+      "references": []
     },
     {
       "id": "SRC-GIT-DEP-GRUNT-IF",
+      "detection_scope": "Non-CVE Risk",
       "category": "Dependency Source",
       "title": "Direct Git-Sourced Dependency 'grunt-if' (Mutable Branch)",
       "severity": "MEDIUM",
@@ -91,11 +92,11 @@
       "technical_explanation": "Package 'grunt-if' is sourced directly from a Git repository ('https://github.com/binarymist/grunt-if/tarball/master') rather than a registered package registry. The specification references a mutable branch, which poses reproducibility and upstream drift risks. However, if package-lock.json resolves this reference to an immutable commit hash or integrity checksum, the local installation is frozen.",
       "potential_impact": "Minimal risk when pinned to full commit SHA; mutable branches or tags can introduce upstream changes between builds if lockfile is regenerated.",
       "recommended_action": "Pin Git dependencies to full 40-character commit SHAs or vendor with subresource integrity digests.",
-      "references": [],
-      "detection_scope": "Non-CVE Risk"
+      "references": []
     },
     {
       "id": "SCRIPT-DOCKER_LATEST-DOCKER-MONGO-L36",
+      "detection_scope": "Non-CVE Risk",
       "category": "Lifecycle Script",
       "title": "Suspicious 'docker-mongo' Script: Unpinned Docker Execution in npm Script",
       "severity": "MEDIUM",
@@ -114,11 +115,11 @@
       "references": [
         "https://docs.npmjs.com/cli/v9/using-npm/scripts#life-cycle-scripts",
         "https://github.blog/2021-02-04-preventing-supply-chain-attacks-like-dependency-confusion/"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA004-E2E_TEST-L1",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "No explicit token permissions declared",
       "severity": "LOW",
@@ -136,11 +137,11 @@
       "recommended_action": "Declare explicit least-privilege permissions (`permissions: contents: read`) to ensure deterministic access controls across all runner environments.",
       "references": [
         "https://docs.github.com/actions/security-guides/automatic-token-authentication"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA001-E2E_TEST-L16",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "First-party (official) Action 'actions/checkout' is not pinned to a commit SHA",
       "severity": "LOW",
@@ -158,11 +159,11 @@
       "recommended_action": "Pin to the full 40-character commit SHA: `uses: actions/checkout@<sha> # v2`.",
       "references": [
         "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA001-E2E_TEST-L21",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "First-party (official) Action 'actions/setup-node' is not pinned to a commit SHA",
       "severity": "LOW",
@@ -180,11 +181,11 @@
       "recommended_action": "Pin to the full 40-character commit SHA: `uses: actions/setup-node@<sha> # v1`.",
       "references": [
         "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA001-E2E_TEST-L26",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "First-party (official) Action 'actions/cache' is not pinned to a commit SHA",
       "severity": "LOW",
@@ -202,11 +203,11 @@
       "recommended_action": "Pin to the full 40-character commit SHA: `uses: actions/cache@<sha> # v2`.",
       "references": [
         "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA001-E2E_TEST-L58",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "First-party (official) Action 'actions/upload-artifact' is not pinned to a commit SHA",
       "severity": "LOW",
@@ -224,11 +225,11 @@
       "recommended_action": "Pin to the full 40-character commit SHA: `uses: actions/upload-artifact@<sha> # v2`.",
       "references": [
         "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA004-LINT-L1",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "No explicit token permissions declared",
       "severity": "LOW",
@@ -246,11 +247,11 @@
       "recommended_action": "Declare explicit least-privilege permissions (`permissions: contents: read`) to ensure deterministic access controls across all runner environments.",
       "references": [
         "https://docs.github.com/actions/security-guides/automatic-token-authentication"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA001-LINT-L16",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "First-party (official) Action 'actions/checkout' is not pinned to a commit SHA",
       "severity": "LOW",
@@ -268,11 +269,11 @@
       "recommended_action": "Pin to the full 40-character commit SHA: `uses: actions/checkout@<sha> # v2`.",
       "references": [
         "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-CICD-GHA001-LINT-L21",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "First-party (official) Action 'actions/setup-node' is not pinned to a commit SHA",
       "severity": "LOW",
@@ -290,11 +291,11 @@
       "recommended_action": "Pin to the full 40-character commit SHA: `uses: actions/setup-node@<sha> # v1`.",
       "references": [
         "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-DOCKER-DF002-L1",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "Base image tag is not pinned by digest",
       "severity": "LOW",
@@ -310,11 +311,11 @@
       "technical_explanation": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
       "potential_impact": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
       "recommended_action": "Pin by digest: FROM node:12-alpine@sha256:<digest>.",
-      "references": [],
-      "detection_scope": "Non-CVE Risk"
+      "references": []
     },
     {
       "id": "SUSP-DOCKER-DF008-L5",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "`npm install` used in container build instead of `npm ci`",
       "severity": "LOW",
@@ -330,11 +331,11 @@
       "technical_explanation": "`npm install` in container builds may write to or re-evaluate package-lock.json if manifests differ; `npm ci` enforces strict, reproducible, read-only installation from the lockfile.",
       "potential_impact": "`npm install` in container builds may write to or re-evaluate package-lock.json if manifests differ; `npm ci` enforces strict, reproducible, read-only installation from the lockfile.",
       "recommended_action": "Use `npm ci` (exact lockfile install) for deterministic container builds.",
-      "references": [],
-      "detection_scope": "Non-CVE Risk"
+      "references": []
     },
     {
       "id": "SUSP-DOCKER-DF002-L7",
+      "detection_scope": "Non-CVE Risk",
       "category": "Docker & CI/CD",
       "title": "Base image tag is not pinned by digest",
       "severity": "LOW",
@@ -350,11 +351,11 @@
       "technical_explanation": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
       "potential_impact": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
       "recommended_action": "Pin by digest: FROM node:12-alpine@sha256:<digest>.",
-      "references": [],
-      "detection_scope": "Non-CVE Risk"
+      "references": []
     },
     {
       "id": "LOCK-INSTALL-SCRIPT-CYPRESS",
+      "detection_scope": "Non-CVE Risk",
       "category": "Lifecycle Script",
       "title": "Dependency 'cypress@3.3.1' Declares Install Script in Lockfile",
       "severity": "LOW",
@@ -372,11 +373,11 @@
       "recommended_action": "Verify package authenticity and run builds with '--ignore-scripts' where feasible.",
       "references": [
         "https://docs.npmjs.com/cli/v9/configuring-npm/package-lock-json"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "LOCK-INSTALL-SCRIPT-FSEVENTS",
+      "detection_scope": "Non-CVE Risk",
       "category": "Lifecycle Script",
       "title": "Dependency 'fsevents@1.2.9' Declares Install Script in Lockfile",
       "severity": "LOW",
@@ -394,11 +395,11 @@
       "recommended_action": "Verify package authenticity and run builds with '--ignore-scripts' where feasible.",
       "references": [
         "https://docs.npmjs.com/cli/v9/configuring-npm/package-lock-json"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "LOCK-INSTALL-SCRIPT-NODEMON",
+      "detection_scope": "Non-CVE Risk",
       "category": "Lifecycle Script",
       "title": "Dependency 'nodemon@1.19.1' Declares Install Script in Lockfile",
       "severity": "LOW",
@@ -416,11 +417,11 @@
       "recommended_action": "Verify package authenticity and run builds with '--ignore-scripts' where feasible.",
       "references": [
         "https://docs.npmjs.com/cli/v9/configuring-npm/package-lock-json"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     },
     {
       "id": "SUSP-TYPO-BCRYPT-NODEJS",
+      "detection_scope": "Non-CVE Risk",
       "category": "Typosquatting",
       "title": "Package 'bcrypt-nodejs' Shares Name Similarity with 'bcrypt'",
       "severity": "LOW",
@@ -438,8 +439,7 @@
       "recommended_action": "Verify whether 'bcrypt-nodejs' is an intended implementation variant or should be replaced with canonical 'bcrypt'.",
       "references": [
         "https://blog.reversinglabs.com/blog/typosquatting-in-open-source"
-      ],
-      "detection_scope": "Non-CVE Risk"
+      ]
     }
   ],
   "correlated_scenarios": [
@@ -537,22 +537,18 @@
       "observed_facts": [
         "Initial finding SUSP-DEP-FLOATING-GRUNT-ENV (Dependency Change) flagged in 'package.json' at line 50: Floating Dependency Version Constraint for 'grunt-env'.",
         "Recorded evidence snippet: \"grunt-env\": \"latest\",.",
-        "Git diff verified in commit 55948e99: +0 / -0 line(s)."
+        "Git diff verified in commit c472eec7: +0 / -0 line(s)."
       ],
-      "attack_scenario": "An attacker could compromise the upstream 'grunt-env' package registry entry and publish a malicious version under the 'latest' tag. Because the project's dependency configuration automatically resolves 'latest', any subsequent build or installation process would pull and execute the malicious package version.",
-      "rationale": "The package.json file explicitly pins the dependency 'grunt-env' to the floating version constraint 'latest'. Utilizing 'latest' or overly loose version constraints introduces significant software supply chain risks, including potential supply chain substitution attacks or breaking changes introduced automatically without code review.",
+      "attack_scenario": "An attacker compromising the 'grunt-env' package registry entry or performing dependency confusion/typosquatting could push malicious payloads under the 'latest' tag, causing automatic execution of malicious code in subsequent CI/CD pipelines or developer environments.",
+      "rationale": "The dependency 'grunt-env' is pinned to the 'latest' tag in package.json, representing a floating dependency version constraint. Floating tags introduce supply chain risks as they allow arbitrary code updates to be pulled automatically during builds without integrity verification.",
       "supporting_evidence": [
         {
-          "factor": "Floating Dependency Constraint",
-          "detail": "The 'grunt-env' package is specified with the version 'latest' in package.json."
-        },
-        {
-          "factor": "Supply Chain Vulnerability",
-          "detail": "Using floating tags opens the build pipeline to arbitrary malicious code injection if the upstream package is compromised or unmaintained."
+          "factor": "Floating version constraint",
+          "detail": "\"grunt-env\": \"latest\" allows mutable versions to be installed."
         }
       ],
       "contradicting_evidence": [],
-      "recommended_action": "Pin the 'grunt-env' dependency to a specific, immutable version number and enforce lockfile usage.",
+      "recommended_action": "Pin 'grunt-env' to a specific, immutable version number instead of 'latest' and utilize a lockfile.",
       "ai_assisted": true,
       "planner": "llm:gemini:gemini-3.5-flash-lite",
       "model": "gemini-3.5-flash-lite",
@@ -562,16 +558,16 @@
           "tool": "inspect_git_diff",
           "args": {
             "file_path": "package.json",
-            "base_commit": "edd889c333845b68b114934bff19e591d44a4db9",
-            "head_commit": "55948e996e61790d2da267093b14f6b1f3293bb4"
+            "base_commit": "ea6d3f7182d25b8c7a6402b4927409bd2621ba22",
+            "head_commit": "c472eec7ff83a6197d6eb552f059e62132090269"
           },
           "summary": "Executed successfully",
           "result": {
             "file": "package.json",
-            "base_commit": "edd889c333845b68b114934bff19e591d44a4db9",
-            "head_commit": "55948e996e61790d2da267093b14f6b1f3293bb4",
+            "base_commit": "ea6d3f7182d25b8c7a6402b4927409bd2621ba22",
+            "head_commit": "c472eec7ff83a6197d6eb552f059e62132090269",
             "commit_author": "saiyesh1nth",
-            "commit_message": "fix(ui): clearly label initial static scan severity vs AI disambiguated verdict",
+            "commit_message": "feat(person-2): clean isolate Suspicious Change Investigator agent and work changes from main",
             "total_added_lines": 0,
             "total_deleted_lines": 0,
             "evidence_type": "OBSERVED_CHANGE"
@@ -583,11 +579,11 @@
         "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
       ],
       "grounding_problems": [],
-      "specific_suspicion_resolved": "Verified that 'grunt-env' is configured with a floating version constraint ('latest').",
+      "specific_suspicion_resolved": "Confirmed that 'grunt-env' uses a floating version constraint ('latest').",
       "remaining_security_risks": [
-        "Unpinned dependency versions subject to supply chain poisoning or breaking changes."
+        "Unpinned dependencies can lead to supply chain poisoning via upstream compromise."
       ],
-      "maintenance_status": null
+      "maintenance_status": "ACTIVE"
     },
     {
       "finding_id": "SUSP-DOCKER-DF012-L14",
@@ -600,19 +596,19 @@
         "Recorded evidence snippet: image: mongo:4.4.",
         "Source snippet confirmed in 'docker-compose.yml' lines 9-17."
       ],
-      "attack_scenario": "An attacker could exploit known unpatched vulnerabilities in MongoDB 4.4 to gain unauthorized access to the database container, potentially leading to data exfiltration or lateral movement within the application infrastructure.",
-      "rationale": "Inspection of docker-compose.yml confirms that the 'mongo' service relies on image 'mongo:4.4', which is past its end-of-life and no longer supported with security patches. Utilizing outdated software versions increases the exposure to unpatched vulnerabilities and potential supply chain compromise.",
+      "attack_scenario": null,
+      "rationale": "Container configuration inspection in 'docker-compose.yml' confirmed an end-of-life base image declaration. Upstream maintainers no longer provide security patches or vulnerability remediations for this release stream.",
       "supporting_evidence": [
         {
-          "factor": "Outdated Docker Image Version",
-          "detail": "docker-compose.yml explicitly configures the mongo service with image: mongo:4.4, an end-of-life release."
+          "factor": "End-of-Life Base Image Declaration",
+          "detail": "Container base image has reached official vendor end-of-life: image: mongo:4.4"
         }
       ],
       "contradicting_evidence": [],
-      "recommended_action": "Upgrade the MongoDB service image to a currently supported version (e.g., mongo:6.0 or mongo:7.0) and verify application compatibility.",
-      "ai_assisted": true,
-      "planner": "llm:gemini:gemini-3.5-flash-lite",
-      "model": "gemini-3.5-flash-lite",
+      "recommended_action": "Upgrade the base image to an actively maintained, supported long-term support (LTS) release line.",
+      "ai_assisted": false,
+      "planner": "deterministic",
+      "model": null,
       "investigation_steps": [
         {
           "iteration": 1,
@@ -637,10 +633,10 @@
         "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
       ],
       "grounding_problems": [],
-      "specific_suspicion_resolved": "Service 'mongo' uses an end-of-life image",
+      "specific_suspicion_resolved": null,
       "remaining_security_risks": [
-        "Presence of unpatched vulnerabilities in MongoDB 4.4",
-        "Lack of security updates from upstream maintainers"
+        "Unpatched known CVEs in base operating system packages and runtime",
+        "Lack of vendor security support and patch backports"
       ],
       "maintenance_status": "END_OF_LIFE"
     },
@@ -655,19 +651,23 @@
         "Recorded evidence snippet: \"grunt-if\": \"https://github.com/binarymist/grunt-if/tarball/master\".",
         "Source snippet confirmed in 'package.json' lines 1-6."
       ],
-      "attack_scenario": "Upstream branch head mutation could alter package contents without manifest version changes.",
-      "rationale": "Manifest inspection in 'package.json' confirmed dependency is sourced from a mutable Git branch head without an immutable SHA pin. Upstream branch updates will alter build contents without changing manifest version declarations.",
+      "attack_scenario": "An attacker with write access to the upstream repository (binarymist/grunt-if) or the ability to perform a man-in-the-middle / DNS poisoning attack against the tarball download URL could inject malicious code into the master branch. When the victim runs npm install, the mutable tarball URL retrieves the compromised code, leading to arbitrary code execution in the build or deployment pipeline.",
+      "rationale": "The package.json file specifies a direct dependency on 'grunt-if' using a mutable remote Git branch URL (tarball/master). Relying on mutable branches or remote tarballs introduces supply chain vulnerabilities, as the underlying code can change without notice, bypassing package registry integrity checks and versioning guarantees.",
       "supporting_evidence": [
         {
-          "factor": "Mutable Git Branch Reference",
-          "detail": "Dependency references a mutable branch head (e.g. 'master') without an immutable SHA pin: \"grunt-if\": \"https://github.com/binarymist/grunt-if/tarball/master\""
+          "factor": "Mutable Git/Tarball Dependency",
+          "detail": "package.json references 'grunt-if' via 'https://github.com/binarymist/grunt-if/tarball/master', which points to a mutable branch rather than an immutable pinned commit hash or version tag."
+        },
+        {
+          "factor": "Lack of Registry Integrity Verification",
+          "detail": "Using direct URL dependencies bypasses npm registry cryptographic integrity checks (SHAs/lockfiles), making the build susceptible to upstream repository tampering."
         }
       ],
       "contradicting_evidence": [],
-      "recommended_action": "Pin the Git dependency to an explicit 40-character commit SHA or consume from a verified registry.",
-      "ai_assisted": false,
-      "planner": "deterministic",
-      "model": null,
+      "recommended_action": "Replace the direct URL dependency on the mutable master branch with a stable, versioned release from a trusted package registry (or pin the dependency to an immutable commit hash if the Git source must be used).",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
       "investigation_steps": [
         {
           "iteration": 1,
@@ -692,12 +692,12 @@
         "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
       ],
       "grounding_problems": [],
-      "specific_suspicion_resolved": null,
+      "specific_suspicion_resolved": "Confirmed that 'grunt-if' is sourced directly from a mutable remote Git branch URL in package.json.",
       "remaining_security_risks": [
-        "Mutable source reference subject to silent upstream tampering",
-        "Bypasses registry vulnerability advisory databases"
+        "Upstream repository compromise leading to arbitrary code injection",
+        "Denial of service or breaking changes due to unstable master branch updates"
       ],
-      "maintenance_status": null
+      "maintenance_status": "ACTIVE"
     },
     {
       "finding_id": "SCRIPT-DOCKER_LATEST-DOCKER-MONGO-L36",
@@ -711,20 +711,20 @@
         "Lifecycle scripts analyzed in 'package.json': 11 script(s) found."
       ],
       "attack_scenario": null,
-      "rationale": "The npm script uses 'mongo:latest' to run a local development instance of MongoDB via Docker, which is a common and standard pattern for local developer convenience and testing. While using the mutable 'latest' tag is a minor supply chain anti-pattern that can lead to reproducibility issues, it does not represent a supply chain attack or malicious payload in this context.",
+      "rationale": "The npm script executes a standard local container instance of MongoDB using 'mongo:latest' for development or testing purposes. While using the 'latest' tag is an anti-pattern for reproducibility and poses minor supply chain stability risks, it is a common convention in local developer convenience scripts rather than a malicious injection or supply chain attack.",
       "supporting_evidence": [
         {
           "factor": "Common Development Pattern",
-          "detail": "Running containerized databases via 'docker run' in npm scripts is standard practice for local development environments."
+          "detail": "The script uses 'docker run -p 27017:27017 --name mongo mongo:latest', which is a standard local helper command to spin up a MongoDB container for local testing."
         }
       ],
       "contradicting_evidence": [
         {
           "factor": "Absence of Malicious Indicators",
-          "detail": "The command targets the official MongoDB image ('mongo:latest') without any obfuscation, exfiltration vectors, or untrusted remote script downloads."
+          "detail": "There are no obfuscated commands, external payload downloads, or unauthorized exfiltration steps in the npm script."
         }
       ],
-      "recommended_action": "Pin the Docker image tag to a specific version (e.g., 'mongo:7.0') to ensure reproducibility and consistency across development environments.",
+      "recommended_action": "Pin the Docker image version to a specific digest or minor release (e.g., 'mongo:7.0.4') to ensure build reproducibility and security consistency.",
       "ai_assisted": true,
       "planner": "llm:gemini:gemini-3.5-flash-lite",
       "model": "gemini-3.5-flash-lite",
@@ -821,10 +821,10 @@
         "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
       ],
       "grounding_problems": [],
-      "specific_suspicion_resolved": "The unpinned Docker execution ('mongo:latest') in the npm script is confirmed to be a standard development utility script rather than a supply chain attack vector.",
+      "specific_suspicion_resolved": "The unpinned Docker image usage ('mongo:latest') is a standard local development convenience script and does not constitute a targeted supply chain attack.",
       "remaining_security_risks": [
-        "Use of mutable 'latest' Docker tag can lead to non-reproducible builds or unexpected breaking changes if the base image updates.",
-        "Unpinned local ports could conflict with other running services."
+        "Use of mutable floating tags ('latest') can lead to non-reproducible builds or unexpected breaking changes if the base image updates.",
+        "Lack of resource limits or detachment flags might impact local environment stability."
       ],
       "maintenance_status": "ACTIVE"
     },
@@ -840,20 +840,20 @@
         "Dependency metadata: manifest constraint '0.0.3', lockfile resolved: https://registry.npmjs.org/bcrypt-nodejs/-/bcrypt-nodejs-0.0.3.tgz."
       ],
       "attack_scenario": null,
-      "rationale": "The package 'bcrypt-nodejs' is a well-known, albeit older, legacy wrapper package published on npm to provide pure-JavaScript fallback implementations for environments where native compilation of 'bcrypt' fails. While its name resembles 'bcrypt', its existence predates modern typosquatting waves and it serves a documented compatibility purpose rather than a malicious deception attempt.",
+      "rationale": "The package 'bcrypt-nodejs' is a historically well-known, pure-JavaScript implementation of bcrypt created as an alternative to the native-binding 'bcrypt' package to ease installation on Windows and serverless platforms without C++ build tools. While sharing naming similarity, it is a legitimate legacy package rather than a malicious typosquatting attempt.",
       "supporting_evidence": [
         {
           "factor": "Historical Context",
-          "detail": "bcrypt-nodejs is an established legacy package on npm intended to provide pure-JS bcrypt support without requiring native build tools like node-gyp."
+          "detail": "bcrypt-nodejs is an established historical package designed to provide pure JS fallback capabilities where native compilation fails."
         }
       ],
       "contradicting_evidence": [
         {
-          "factor": "Name Similarity",
-          "detail": "The edit distance and naming similarity alone do not indicate malicious squatting given the package's long history and known functionality."
+          "factor": "Edit Distance vs Purpose",
+          "detail": "Although edit distance flags similarity, the naming convention explicitly designates it as a port/alternative for Node.js rather than a deceptive typo."
         }
       ],
-      "recommended_action": "Migrate dependency from 'bcrypt-nodejs' to the modern, actively maintained 'bcrypt' package.",
+      "recommended_action": "Migrate dependency from 'bcrypt-nodejs' to the officially maintained 'bcrypt' package or modern alternatives.",
       "ai_assisted": true,
       "planner": "llm:gemini:gemini-3.5-flash-lite",
       "model": "gemini-3.5-flash-lite",
@@ -894,9 +894,9 @@
         "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
       ],
       "grounding_problems": [],
-      "specific_suspicion_resolved": "Typosquatting masquerading as 'bcrypt'",
+      "specific_suspicion_resolved": "The package name similarity is explained by legitimate alternative implementation naming conventions rather than malicious typosquatting.",
       "remaining_security_risks": [
-        "The 'bcrypt-nodejs' package is deprecated, unmaintained, and uses weaker or older cryptographic implementation patterns compared to native 'bcrypt'."
+        "The 'bcrypt-nodejs' package is deprecated, unmaintained, and contains known cryptographic performance/maintenance concerns compared to the modern 'bcrypt' or 'argon2' packages."
       ],
       "maintenance_status": "DEPRECATED"
     },
@@ -911,12 +911,12 @@
         "Recorded evidence snippet: (no `permissions:` key).",
         "Workflow security: permissions block=False, third-party actions=0."
       ],
-      "attack_scenario": "If a malicious or vulnerable dependency or untrusted code is executed within the e2e-test workflow, an attacker could abuse the overly broad default GITHUB_TOKEN permissions to modify repository contents, push unauthorized changes, or interact with GitHub API endpoints beyond what is strictly necessary for running end-to-end tests.",
-      "rationale": "The GitHub Actions workflow file '.github/workflows/e2e-test.yml' lacks an explicit 'permissions:' block at either the workflow or job level. Consequently, the workflow defaults to the repository's default GITHUB_TOKEN permissions, which are often overly permissive (typically read/write access across contents and other scopes) and violate the principle of least privilege.",
+      "attack_scenario": "An attacker who introduces malicious code or exploits a vulnerability in the e2e test workflow steps can leverage the overly permissive default GITHUB_TOKEN to modify repository contents, tamper with releases, or abuse API endpoints beyond the principle of least privilege.",
+      "rationale": "The GitHub Actions workflow file '.github/workflows/e2e-test.yml' lacks an explicit 'permissions' block at either the workflow or job level. By default, GitHub Actions assigns broad read/write permissions to the GITHUB_TOKEN depending on repository settings, increasing the blast radius if the workflow or any included step is compromised.",
       "supporting_evidence": [
         {
           "factor": "Missing permissions block",
-          "detail": "The workflow file .github/workflows/e2e-test.yml contains no explicit 'permissions:' declaration, relying on default repository settings."
+          "detail": "The workflow configuration file lacks a 'permissions:' declaration, defaulting to broad repository permissions."
         }
       ],
       "contradicting_evidence": [],
@@ -1150,10 +1150,9 @@
         "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
       ],
       "grounding_problems": [],
-      "specific_suspicion_resolved": "Confirmed that the workflow lacks explicit token permissions, leaving it exposed to over-permissioned default GITHUB_TOKEN scopes.",
+      "specific_suspicion_resolved": "Confirmed that no explicit token permissions are declared in the workflow file.",
       "remaining_security_risks": [
-        "Potential abuse of excessive GITHUB_TOKEN permissions by compromised actions or test scripts.",
-        "Lack of least-privilege enforcement in CI/CD pipeline execution."
+        "Overly permissive GITHUB_TOKEN exposure to potential supply chain injection or compromise."
       ],
       "maintenance_status": "ACTIVE"
     },
@@ -1161,290 +1160,33 @@
       "finding_id": "SUSP-CICD-GHA001-E2E_TEST-L16",
       "affected_file": ".github/workflows/e2e-test.yml",
       "line_number": 16,
-      "verdict": "CONFIRMED_ANOMALY",
+      "verdict": "BENIGN_EXPLANATION",
       "confidence": "HIGH",
       "observed_facts": [
         "Initial finding SUSP-CICD-GHA001-E2E_TEST-L16 (Docker & CI/CD) flagged in '.github/workflows/e2e-test.yml' at line 16: First-party (official) Action 'actions/checkout' is not pinned to a commit SHA.",
         "Recorded evidence snippet: uses: actions/checkout@v2.",
-        "Workflow security: permissions block=False, third-party actions=0."
-      ],
-      "attack_scenario": "An attacker with compromised access to the upstream repository or the ability to manipulate tags could force-push a malicious payload to the 'v2' tag of actions/checkout. Subsequent runs of the e2e-test workflow would automatically download and execute the compromised version in the runner environment.",
-      "rationale": "The workflow configuration at '.github/workflows/e2e-test.yml' uses a mutable tag reference ('@v2') for the official GitHub Action 'actions/checkout' rather than an immutable full-length commit SHA. While first-party actions from 'actions' are generally trustworthy, mutable tags can be updated or overwritten upstream, leading to potential supply chain risks if the tag points to a compromised or altered revision.",
-      "supporting_evidence": [
-        {
-          "factor": "Mutable Action Reference",
-          "detail": "The action is referenced as 'uses: actions/checkout@v2', which resolves to a mutable tag instead of an immutable commit SHA."
-        }
-      ],
-      "contradicting_evidence": [
-        {
-          "factor": "First-party Action",
-          "detail": "The action is maintained by GitHub ('actions/checkout'), lowering the risk of malicious intent compared to arbitrary third-party actions."
-        }
-      ],
-      "recommended_action": "Pin the 'actions/checkout' action to an immutable full-length commit SHA (e.g., uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3) to ensure deterministic and secure builds.",
-      "ai_assisted": true,
-      "planner": "llm:gemini:gemini-3.5-flash-lite",
-      "model": "gemini-3.5-flash-lite",
-      "investigation_steps": [
-        {
-          "iteration": 1,
-          "tool": "inspect_workflow_security",
-          "args": {
-            "workflow_path": ".github/workflows/e2e-test.yml"
-          },
-          "summary": "Executed successfully",
-          "result": {
-            "workflow": ".github/workflows/e2e-test.yml",
-            "has_permissions_block": false,
-            "third_party_actions": [],
-            "first_party_actions": [
-              "actions/checkout@v2",
-              "actions/setup-node@v1",
-              "actions/cache@v2",
-              "actions/upload-artifact@v2"
-            ],
-            "findings": [
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA004",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "No explicit token permissions declared",
-                "severity": "LOW",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 1,
-                "snippet": "(no `permissions:` key)",
-                "subject": "permissions",
-                "why": "Workflow omits an explicit `permissions:` declaration. Effective GITHUB_TOKEN permissions default to the repository/org configuration (which may be read-only or read-write).",
-                "remediation": "Declare explicit least-privilege permissions (`permissions: contents: read`) to ensure deterministic access controls across all runner environments.",
-                "evidence_strength": "medium",
-                "references": [
-                  "https://docs.github.com/actions/security-guides/automatic-token-authentication"
-                ],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {}
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA001",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "First-party (official) Action 'actions/checkout' is not pinned to a commit SHA",
-                "severity": "LOW",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 16,
-                "snippet": "uses: actions/checkout@v2",
-                "subject": "actions/checkout@v2",
-                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
-                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/checkout@<sha> # v2`.",
-                "evidence_strength": "high",
-                "references": [
-                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-                ],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {
-                  "third_party": false
-                }
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA012",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "Action 'actions/checkout@v2' is an outdated major version",
-                "severity": "MEDIUM",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 16,
-                "snippet": "uses: actions/checkout@v2",
-                "subject": "actions/checkout@v2#outdated",
-                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
-                "remediation": "Upgrade to actions/checkout@v4 or newer (pinned to a commit SHA).",
-                "evidence_strength": "medium",
-                "references": [],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {}
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA001",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "First-party (official) Action 'actions/setup-node' is not pinned to a commit SHA",
-                "severity": "LOW",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 21,
-                "snippet": "uses: actions/setup-node@v1",
-                "subject": "actions/setup-node@v1",
-                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
-                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/setup-node@<sha> # v1`.",
-                "evidence_strength": "high",
-                "references": [
-                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-                ],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {
-                  "third_party": false
-                }
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA012",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "Action 'actions/setup-node@v1' is an outdated major version",
-                "severity": "MEDIUM",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 21,
-                "snippet": "uses: actions/setup-node@v1",
-                "subject": "actions/setup-node@v1#outdated",
-                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
-                "remediation": "Upgrade to actions/setup-node@v4 or newer (pinned to a commit SHA).",
-                "evidence_strength": "medium",
-                "references": [],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {}
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA001",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "First-party (official) Action 'actions/cache' is not pinned to a commit SHA",
-                "severity": "LOW",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 26,
-                "snippet": "uses: actions/cache@v2",
-                "subject": "actions/cache@v2",
-                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
-                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/cache@<sha> # v2`.",
-                "evidence_strength": "high",
-                "references": [
-                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-                ],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {
-                  "third_party": false
-                }
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA012",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "Action 'actions/cache@v2' is an outdated major version",
-                "severity": "MEDIUM",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 26,
-                "snippet": "uses: actions/cache@v2",
-                "subject": "actions/cache@v2#outdated",
-                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
-                "remediation": "Upgrade to actions/cache@v4 or newer (pinned to a commit SHA).",
-                "evidence_strength": "medium",
-                "references": [],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {}
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA001",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "First-party (official) Action 'actions/upload-artifact' is not pinned to a commit SHA",
-                "severity": "LOW",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 58,
-                "snippet": "uses: actions/upload-artifact@v2",
-                "subject": "actions/upload-artifact@v2",
-                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
-                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/upload-artifact@<sha> # v2`.",
-                "evidence_strength": "high",
-                "references": [
-                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
-                ],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {
-                  "third_party": false
-                }
-              },
-              {
-                "finding_id": "",
-                "kind": "pipeline",
-                "rule_id": "GHA012",
-                "category": "ci",
-                "ecosystem": "GitHub Actions",
-                "title": "Action 'actions/upload-artifact@v2' is an outdated major version",
-                "severity": "MEDIUM",
-                "file": ".github/workflows/e2e-test.yml",
-                "line": 58,
-                "snippet": "uses: actions/upload-artifact@v2",
-                "subject": "actions/upload-artifact@v2#outdated",
-                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
-                "remediation": "Upgrade to actions/upload-artifact@v4 or newer (pinned to a commit SHA).",
-                "evidence_strength": "medium",
-                "references": [],
-                "evidence_id": null,
-                "scan_timestamp": "",
-                "extra": {}
-              }
-            ]
-          }
-        }
-      ],
-      "citations": [
-        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
-        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
-      ],
-      "grounding_problems": [],
-      "specific_suspicion_resolved": "Confirmed that actions/checkout is unpinned and uses a mutable version tag.",
-      "remaining_security_risks": [
-        "Vulnerability to tag reassignment or upstream compromise of the 'v2' reference."
-      ],
-      "maintenance_status": "ACTIVE"
-    },
-    {
-      "finding_id": "SUSP-CICD-GHA001-E2E_TEST-L21",
-      "affected_file": ".github/workflows/e2e-test.yml",
-      "line_number": 21,
-      "verdict": "CONFIRMED_ANOMALY",
-      "confidence": "HIGH",
-      "observed_facts": [
-        "Initial finding SUSP-CICD-GHA001-E2E_TEST-L21 (Docker & CI/CD) flagged in '.github/workflows/e2e-test.yml' at line 21: First-party (official) Action 'actions/setup-node' is not pinned to a commit SHA.",
-        "Recorded evidence snippet: uses: actions/setup-node@v1.",
         "Workflow security: permissions block=False, third-party actions=0.",
-        "Source snippet confirmed in '.github/workflows/e2e-test.yml' lines 16-26."
+        "Source snippet confirmed in '.github/workflows/e2e-test.yml' lines 11-21."
       ],
-      "attack_scenario": "An attacker with compromised access to the upstream official repository or ability to manipulate tags could retarget the 'v1' tag to point to a malicious commit, causing arbitrary code execution within the repository's CI/CD pipeline upon subsequent workflow runs.",
-      "rationale": "The workflow configuration at '.github/workflows/e2e-test.yml' utilizes the official GitHub Action 'actions/setup-node@v1' pinned only to a mutable major version tag ('@v1') rather than an immutable full-length commit SHA. While the action is first-party and trusted, relying on mutable tags exposes the pipeline to supply chain risks if the tag is ever overwritten or compromised upstream.",
+      "attack_scenario": null,
+      "rationale": "The GitHub Actions workflow uses the official 'actions/checkout' action tagged at '@v2'. While not pinned to an immutable full-length commit SHA, it is a first-party, trusted GitHub action, presenting standard supply chain hygiene considerations rather than a malicious anomaly or supply chain attack.",
       "supporting_evidence": [
         {
-          "factor": "Mutable Tag Usage",
-          "detail": "Action 'actions/setup-node@v1' is referenced via a mutable version tag instead of a commit SHA."
+          "factor": "Official Action Usage",
+          "detail": "The action referenced is 'actions/checkout', which is maintained and signed by GitHub (first-party)."
+        },
+        {
+          "factor": "Tag Reference",
+          "detail": "The reference uses standard version tagging ('@v2'), which is a widespread and documented convention in GitHub Actions workflows."
         }
       ],
       "contradicting_evidence": [
         {
-          "factor": "First-party Action",
-          "detail": "The action is maintained by GitHub ('actions/'), which significantly lowers the likelihood of malicious intent compared to third-party actions."
+          "factor": "No Third-Party Risk",
+          "detail": "No unverified third-party actions are included in the workflow file."
         }
       ],
-      "recommended_action": "Pin the GitHub Action 'actions/setup-node' to its immutable full-length commit SHA (e.g., actions/setup-node@<commit-sha>) to ensure reproducible and secure builds.",
+      "recommended_action": "Pin GitHub Actions to immutable full-length commit SHAs (with a comment noting the version) to ensure deterministic and tamper-proof builds.",
       "ai_assisted": true,
       "planner": "llm:gemini:gemini-3.5-flash-lite",
       "model": "gemini-3.5-flash-lite",
@@ -1673,16 +1415,16 @@
           "tool": "inspect_source_snippet",
           "args": {
             "file_path": ".github/workflows/e2e-test.yml",
-            "line_number": 21,
+            "line_number": 16,
             "radius": 5
           },
           "summary": "Executed successfully",
           "result": {
             "file": ".github/workflows/e2e-test.yml",
-            "line_number": 21,
+            "line_number": 16,
             "total_lines": 61,
-            "start_line": 16,
-            "end_line": 26
+            "start_line": 11,
+            "end_line": 21
           }
         }
       ],
@@ -1691,10 +1433,274 @@
         "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
       ],
       "grounding_problems": [],
-      "specific_suspicion_resolved": "First-party action 'actions/setup-node' is not pinned to a commit SHA.",
+      "specific_suspicion_resolved": "The usage of unpinned commit SHAs for first-party actions is confirmed as a standard tag reference rather than a malicious substitution attack.",
       "remaining_security_risks": [
-        "Mutable tag pointing to 'v1' can be retargeted upstream.",
-        "Lack of immutability guarantees for CI execution environments."
+        "Using mutable tags (like @v2) instead of immutable commit SHAs leaves workflows theoretically susceptible if the tag is forcefully moved on the upstream repository."
+      ],
+      "maintenance_status": "ACTIVE"
+    },
+    {
+      "finding_id": "SUSP-CICD-GHA001-E2E_TEST-L21",
+      "affected_file": ".github/workflows/e2e-test.yml",
+      "line_number": 21,
+      "verdict": "BENIGN_EXPLANATION",
+      "confidence": "HIGH",
+      "observed_facts": [
+        "Initial finding SUSP-CICD-GHA001-E2E_TEST-L21 (Docker & CI/CD) flagged in '.github/workflows/e2e-test.yml' at line 21: First-party (official) Action 'actions/setup-node' is not pinned to a commit SHA.",
+        "Recorded evidence snippet: uses: actions/setup-node@v1.",
+        "Workflow security: permissions block=False, third-party actions=0."
+      ],
+      "attack_scenario": null,
+      "rationale": "The workflow uses the official, first-party GitHub Action 'actions/setup-node' referenced via a version tag (v1) rather than a full commit SHA. While pinning to a full commit SHA is a best practice for supply chain hardening to protect against tag mutation, using a first-party verified action from the official 'actions' organization presents an exceptionally low risk of malicious tag hijacking compared to third-party community actions.",
+      "supporting_evidence": [
+        {
+          "factor": "Official Action Ownership",
+          "detail": "The action belongs to the verified first-party 'actions' namespace ('actions/setup-node')."
+        },
+        {
+          "factor": "No Third-Party Risk",
+          "detail": "Workflow security analysis indicates zero untrusted third-party actions are in use."
+        }
+      ],
+      "contradicting_evidence": [
+        {
+          "factor": "Lack of SHA Pinning",
+          "detail": "The action is pinned to a mutable tag (@v1) instead of an immutable commit hash, which is technically a deviation from hardening best practices."
+        }
+      ],
+      "recommended_action": "Pin the action to an immutable commit SHA (e.g., actions/setup-node@<sha>) if strict supply chain hardening policies require immutable references for all workflow actions.",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_workflow_security",
+          "args": {
+            "workflow_path": ".github/workflows/e2e-test.yml"
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "workflow": ".github/workflows/e2e-test.yml",
+            "has_permissions_block": false,
+            "third_party_actions": [],
+            "first_party_actions": [
+              "actions/checkout@v2",
+              "actions/setup-node@v1",
+              "actions/cache@v2",
+              "actions/upload-artifact@v2"
+            ],
+            "findings": [
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA004",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "No explicit token permissions declared",
+                "severity": "LOW",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 1,
+                "snippet": "(no `permissions:` key)",
+                "subject": "permissions",
+                "why": "Workflow omits an explicit `permissions:` declaration. Effective GITHUB_TOKEN permissions default to the repository/org configuration (which may be read-only or read-write).",
+                "remediation": "Declare explicit least-privilege permissions (`permissions: contents: read`) to ensure deterministic access controls across all runner environments.",
+                "evidence_strength": "medium",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/automatic-token-authentication"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {}
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA001",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "First-party (official) Action 'actions/checkout' is not pinned to a commit SHA",
+                "severity": "LOW",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 16,
+                "snippet": "uses: actions/checkout@v2",
+                "subject": "actions/checkout@v2",
+                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
+                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/checkout@<sha> # v2`.",
+                "evidence_strength": "high",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {
+                  "third_party": false
+                }
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA012",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "Action 'actions/checkout@v2' is an outdated major version",
+                "severity": "MEDIUM",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 16,
+                "snippet": "uses: actions/checkout@v2",
+                "subject": "actions/checkout@v2#outdated",
+                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
+                "remediation": "Upgrade to actions/checkout@v4 or newer (pinned to a commit SHA).",
+                "evidence_strength": "medium",
+                "references": [],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {}
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA001",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "First-party (official) Action 'actions/setup-node' is not pinned to a commit SHA",
+                "severity": "LOW",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 21,
+                "snippet": "uses: actions/setup-node@v1",
+                "subject": "actions/setup-node@v1",
+                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
+                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/setup-node@<sha> # v1`.",
+                "evidence_strength": "high",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {
+                  "third_party": false
+                }
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA012",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "Action 'actions/setup-node@v1' is an outdated major version",
+                "severity": "MEDIUM",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 21,
+                "snippet": "uses: actions/setup-node@v1",
+                "subject": "actions/setup-node@v1#outdated",
+                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
+                "remediation": "Upgrade to actions/setup-node@v4 or newer (pinned to a commit SHA).",
+                "evidence_strength": "medium",
+                "references": [],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {}
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA001",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "First-party (official) Action 'actions/cache' is not pinned to a commit SHA",
+                "severity": "LOW",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 26,
+                "snippet": "uses: actions/cache@v2",
+                "subject": "actions/cache@v2",
+                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
+                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/cache@<sha> # v2`.",
+                "evidence_strength": "high",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {
+                  "third_party": false
+                }
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA012",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "Action 'actions/cache@v2' is an outdated major version",
+                "severity": "MEDIUM",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 26,
+                "snippet": "uses: actions/cache@v2",
+                "subject": "actions/cache@v2#outdated",
+                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
+                "remediation": "Upgrade to actions/cache@v4 or newer (pinned to a commit SHA).",
+                "evidence_strength": "medium",
+                "references": [],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {}
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA001",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "First-party (official) Action 'actions/upload-artifact' is not pinned to a commit SHA",
+                "severity": "LOW",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 58,
+                "snippet": "uses: actions/upload-artifact@v2",
+                "subject": "actions/upload-artifact@v2",
+                "why": "Tags are mutable references: while official GitHub/first-party actions have audited release processes, Pinning to a full 40-character commit SHA ensures immutable execution.",
+                "remediation": "Pin to the full 40-character commit SHA: `uses: actions/upload-artifact@<sha> # v2`.",
+                "evidence_strength": "high",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {
+                  "third_party": false
+                }
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA012",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "Action 'actions/upload-artifact@v2' is an outdated major version",
+                "severity": "MEDIUM",
+                "file": ".github/workflows/e2e-test.yml",
+                "line": 58,
+                "snippet": "uses: actions/upload-artifact@v2",
+                "subject": "actions/upload-artifact@v2#outdated",
+                "why": "This major runs on an end-of-life Node.js runtime or was deprecated/shut down by GitHub; it no longer receives fixes and may stop working.",
+                "remediation": "Upgrade to actions/upload-artifact@v4 or newer (pinned to a commit SHA).",
+                "evidence_strength": "medium",
+                "references": [],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {}
+              }
+            ]
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": [],
+      "specific_suspicion_resolved": "First-party (official) Action 'actions/setup-node' is not pinned to a commit SHA",
+      "remaining_security_risks": [
+        "Mutable version tags could theoretically be overwritten if the upstream organization account were compromised, though extremely unlikely for official GitHub actions."
       ],
       "maintenance_status": "ACTIVE"
     }
