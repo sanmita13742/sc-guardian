@@ -4,7 +4,16 @@ __pycache__/
 .pytest_cache/
 .coverage
 .venv/
+backend/.venv/
 venv/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Target test application
+nodegoat/
 
 # Local config / secrets
 .env
@@ -18,6 +27,8 @@ data/*
 !data/.gitkeep
 artifacts/*/*
 !artifacts/*/.gitkeep
+!artifacts/reports/*.md
+!artifacts/reports/*.json
 
 # IDE & OS
 .idea/

@@ -21,7 +21,7 @@ import requests
 
 DEFAULT_MODELS = {"groq": "llama-3.3-70b-versatile", "gemini": "gemini-2.0-flash", "anthropic": "claude-sonnet-5-5", "openai": "gpt-4o-mini", "openai_compatible": "default"}
 BASE_URLS = {"groq": "https://api.groq.com/openai/v1", "openai": "https://api.openai.com/v1"}
-_SECRET = re.compile(r"(gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_\-]{30,}|sk-ant-[A-Za-z0-9_\-]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|"
+_SECRET = re.compile(r"(gsk_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_\-]{30,}|AQ\.[A-Za-z0-9_\-]{30,}|sk-ant-[A-Za-z0-9_\-]{20,}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|"
                      r"AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9\-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
 CALL_LOG: list[dict] = []
 _INFERENCE_CACHE: dict[str, str] = {}
@@ -39,7 +39,7 @@ def detect_provider(key: Optional[str], explicit: Optional[str] = None) -> Optio
         return None
     if key.startswith("gsk_"):
         return "groq"
-    if key.startswith("AIza"):
+    if key.startswith("AIza") or key.startswith("AQ."):
         return "gemini"
     if key.startswith("sk-ant-"):
         return "anthropic"
