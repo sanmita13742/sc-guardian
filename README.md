@@ -9,7 +9,8 @@ scores risk with transparent rules, and proposes **verified remediations** you a
 
 ## Run
 ```bash
-scriptsun.bat    # Windows
+scripts
+un.bat    # Windows
 scripts/run.sh     # Linux / macOS / Git Bash
 ```
 or manually: `python -m venv .venv`, install `requirements.txt`, `python scripts/verify_environment.py`, then `python -m streamlit run app.py` (http://localhost:8501).
@@ -26,7 +27,7 @@ Configuration precedence: environment `SCANNER_<NAME>` > `.env` > `scanner.toml`
 | Pipeline & Containers | Dockerfile, compose, GitHub Actions and generic CI findings (EOL images, unpinned actions, token permissions, ...) |
 | Suspicious Changes | typosquatting, lockfile history, package risk (install scripts, deprecation, digest mismatch) |
 | Remediation | proposal per source package with measured effect (fixed / remaining / new), SBOM diff, patch, rollback, approval + audit trail, optional Docker sandbox |
-| Policy & Gate | YAML policy-as-code (`policies/default.yaml`, `strict.yaml`) with waivers |
+| Fix Report | every applied fix with scoring before/after, changed files, validation record and a one-page PDF per fix (policy gating stays available through `guardian.py gate`) |
 | Monitoring | watch list; re-checks stored inventories for newly disclosed advisories |
 | Agent Activity · Reports · Architecture · Settings & Health | decision trace, MD/HTML/JSON/SARIF/VEX exports, agent-workflow graph + safety notes, effective config and tool status |
 

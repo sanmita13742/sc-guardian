@@ -93,6 +93,49 @@ def _safe(root: Path, rel: str) -> Path:
     return p
 
 
+# --------------------------------------------------------------------------------------------- npm override repair
+_DEP_SECTIONS = ("dependencies", "devDependencies", "optionalDependencies")
+
+
+def _ver_tuple(spec: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", spec)[:3]) or (0,)
+
+
+def normalize_npm_overrides(pkg_json: Path) -> list[dict]:
+    """npm refuses an ``overrides`` entry that differs from the same package's direct dependency spec (EOVERRIDE). Repair each such entry
+    the way npm documents it: keep the pinned security floor on the direct dependency and make the override a ``$name`` reference.
+    Returns the changes made (empty = nothing to repair)."""
+    from remediation.patchers import _json_dump
+    text = pkg_json.read_text(encoding="utf-8")
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return []
+    ov = data.get("overrides")
+    if not isinstance(data, dict) or not isinstance(ov, dict):
+        return []
+    changes: list[dict] = []
+    for name, val in list(ov.items()):
+        if not isinstance(val, str) or val.startswith("$"):
+            continue
+        for sec in _DEP_SECTIONS:
+            deps = data.get(sec) or {}
+            cur = deps.get(name)
+            if not isinstance(cur, str) or cur == val:
+                continue
+            after = cur
+            m = re.match(r"^[v=]?(\d+\.\d+\.\d+(?:[-+][\w.]+)?)$", val.strip())
+            if m and _ver_tuple(m.group(1)) > _ver_tuple(cur):  # keep the security floor the override expressed
+                after = ("~" if cur.startswith("~") else "^") + m.group(1)
+            deps[name] = after
+            ov[name] = f"${name}"
+            changes.append({"package": name, "direct_before": cur, "direct_after": after, "override_before": val, "override_after": f"${name}"})
+            break
+    if changes:
+        pkg_json.write_text(_json_dump(data, text), encoding="utf-8")
+    return changes
+
+
 # --------------------------------------------------------------------------------------------- lockfile refresh
 def _lock_command(eco: str, rem: dict, mdir: Path) -> Optional[tuple[list[str], str]]:
     """(argv, display) to refresh the lockfile next to the changed manifest, or None when the ecosystem needs none/has no safe command."""
@@ -136,13 +179,24 @@ def _refresh_lock(eco: str, rem: dict, mdir: Path, backups: dict[str, Path], roo
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(f, dest)
                 backups[rel] = dest
+    def _run() -> subprocess.CompletedProcess:
+        return subprocess.run([exe, *argv[1:]], cwd=str(mdir), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300, shell=False,
+                              env={**os.environ, "npm_config_ignore_scripts": "true", "CI": "1"})
+    normalized: list[dict] = []
     try:
-        p = subprocess.run([exe, *argv[1:]], cwd=str(mdir), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300, shell=False,
-                           env={**os.environ, "npm_config_ignore_scripts": "true", "CI": "1"})
+        p = _run()
+        if p.returncode != 0 and eco == "npm" and "EOVERRIDE" in (p.stderr or p.stdout) and (mdir / "package.json").exists():
+            normalized = normalize_npm_overrides(mdir / "package.json")
+            if normalized:
+                p = _run()
     except subprocess.TimeoutExpired:
         return {"status": "failed", "command": shown, "note": f"`{shown}` timed out; run it manually in `{mdir}`"}
     except OSError as e:
         return {"status": "failed", "command": shown, "note": str(e)}
+    if p.returncode == 0 and normalized:
+        return {"status": "refreshed", "command": shown, "normalized": normalized,
+                "note": "lockfile refreshed after repairing conflicting overrides: "
+                        + "; ".join(f"{c['package']} (override {c['override_before']} -> {c['override_after']}, direct {c['direct_before']} -> {c['direct_after']})" for c in normalized)}
     if p.returncode != 0:
         err = (p.stderr or p.stdout).strip()
         m = re.search(r"Override for (\S+?)@(\S+) conflicts with direct dependency", err)

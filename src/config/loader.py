@@ -39,7 +39,7 @@ TUNABLES: dict[str, tuple[type, float, float, str]] = {
     "keep_scans_per_repo": (int, 1, 1000, "scans kept per repository"),
     "investigator_llm_max": (int, 0, 100, "findings the optional LLM may investigate per scan"),
     "investigator_max_steps": (int, 1, 12, "tool calls per LLM investigation"),
-    "remediation_max_groups": (int, 0, 100, "source-package groups planned per scan"),
+    "remediation_max_groups": (int, 0, 500, "source-package groups planned per scan"),
     "remediation_budget_s": (int, 10, 1800, "time budget for remediation planning (seconds)"),
     "cache_max_rows": (int, 1000, 50_000_000, "upper bound for rows in the TTL cache"),
     "cache_max_age_days": (int, 1, 3650, "cache rows older than this are purged"),

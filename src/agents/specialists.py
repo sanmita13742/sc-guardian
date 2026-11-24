@@ -357,6 +357,8 @@ class VulnerabilityAgent:
             for step in self.ORDER:
                 rt.skip(step, "no components with a known ecosystem and version")
             st.result.update(vuln_coverage={}, source_status={"OSV": {"source": "OSV", "state": "not_queried"}})
+            if st.pipe and st.pipe.get("container_findings"):  # a Dockerfile-only project still has image findings
+                st.vulns = list(st.pipe["container_findings"])
             return
         st.osv = OsvClient(ctx.http, ctx.cache, s.osv_batch_size, s.osv_workers)
 
@@ -425,15 +427,14 @@ class VerificationAgent:
         with rt.step("verify", "Re-querying every PURL through OSV's PURL route and comparing with the name/version route") as b:
             res = cross_check(st.osv, st.vres["osv_name_route"], st.vres["findings"])
             st.vulns = [f.model_dump() for f in st.vres["findings"]]
-        if st.pipe and st.pipe.get("container_findings"):
-            st.vulns.extend(st.pipe["container_findings"])
+            if st.pipe and st.pipe.get("container_findings"):
+                st.vulns.extend(st.pipe["container_findings"])
             st.result["verification"] = res
             rt.observe("verify", f"{res['routes_agree']}/{res['components_checked']} components returned identical advisory sets by both routes; "
                        f"{res['findings_cross_verified']}/{res['findings_checked']} findings independently reproduced")
             if res["disagreement_count"]:
                 rt.warn("verify", f"{res['disagreement_count']} component(s) differ between the two routes (listed in the Ground Truth view)")
             b["message"] = f"{res['findings_cross_verified']}/{res['findings_checked']} findings cross-verified"
-
 
 # ====================================================================================================== Threat
 class ThreatAgent:

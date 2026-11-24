@@ -32,6 +32,30 @@ def list_versions(http: HttpClient, cache: Optional[Cache], eco: str, name: str)
     return vs
 
 
+def deprecated_message(http: HttpClient, cache: Optional[Cache], eco: str, name: str, ver: str) -> Optional[str]:
+    """The npm registry's deprecation notice for name@ver (e.g. a withdrawn 'bad release'), or None. Other ecosystems: None."""
+    if eco != "npm":
+        return None
+    key = f"{name}@{ver}"
+    hit = cache.get("npm_deprecated", key, ttl=TTL) if cache else None
+    if hit is not None:
+        return hit or None
+    try:
+        d = http.get_json(f"https://registry.npmjs.org/{quote(name, safe='')}/{quote(ver, safe='')}")
+    except (NotFound, SourceUnavailable):
+        return None
+    msg = str(d.get("deprecated") or "")
+    if cache:
+        cache.set("npm_deprecated", key, msg)
+    return msg or None
+
+
+def drop_deprecated(http: HttpClient, cache: Optional[Cache], eco: str, name: str, versions: list[str]) -> list[str]:
+    """Prefer versions that are not deprecated; if every candidate is deprecated keep them all (validation will then warn)."""
+    clean = [v for v in versions if not deprecated_message(http, cache, eco, name, v)]
+    return clean or versions
+
+
 def major_of(v: str) -> Optional[int]:
     m = re.match(r"^[vV]?(\d+)", v or "")
     return int(m.group(1)) if m else None

@@ -66,7 +66,10 @@ class RemediationAgent:
             ctx = PlanContext(repo_dir=st.repo_dir, http=st.ctx.http, cache=st.ctx.cache, osv=osv, vulns=st.vulns, manifests_index=st.insp.manifests, components=st.components)
             items, sims, skipped = [], {}, 0
             t0 = time.time()
+            container_ids = {f["finding_id"] for f in st.vulns if f.get("asset_type") == "container_image"}
             for g in groups:
+                if container_ids and set(g["finding_ids"]) <= container_ids:
+                    continue  # OS/image packages are planned below from the distro's own fix data, not through language registries
                 if len(items) >= s.remediation_max_groups or time.time() - t0 > s.remediation_budget_s:
                     skipped += 1
                     continue
@@ -91,6 +94,18 @@ class RemediationAgent:
                 rem["reachability_impact"] = impact.to_dict()
                 items.append(rem)
                 rt.progress("remediate", f"{rem['id']} {rem['action']}: {rem['title']}", id=rem["id"])
+            if container_ids:
+                from remediation.container_plan import plan_container_groups
+                from remediation.planner import best_risk
+                try:
+                    for rem in plan_container_groups(ctx, st.vulns, risks, len(items) + 1, best_risk):
+                        rem.pop("sim", None)
+                        rem["fingerprint"] = fingerprint(rem)
+                        rem["reachability_impact"] = {}
+                        items.append(rem)
+                        rt.progress("remediate", f"{rem['id']} {rem['action']}: {rem['title']}", id=rem["id"])
+                except Exception as e:  # noqa: BLE001
+                    rt.warn("remediate", f"Could not plan container findings: {type(e).__name__}: {str(e)[:100]}")
             # Evaluate automation tier and auto-deliver Low/Medium severity PRs without human intervention
             mem = None
             if hasattr(st.ctx, "db"):

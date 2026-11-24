@@ -20,7 +20,7 @@ from typing import Any, Optional
 from core.http import HttpClient
 from core.repository_inspector import safe_read_text
 from remediation import patchers
-from remediation.versions import candidates, change_kind, list_versions
+from remediation.versions import candidates, change_kind, list_versions, drop_deprecated
 from remediation.whatif import SEV_RANK, check_nodes
 from sbom.fusion.registries import DEPSDEV_SYSTEM
 from sbom.fusion.resolver import _fetch
@@ -149,7 +149,7 @@ def search_upgrade(ctx: PlanContext, eco: str, name: str, cur: str, group_findin
     target_ids = _ids(group_findings)
     min_version = _min_fix(eco, itself) if itself else None
     vs = list_versions(ctx.http, ctx.cache, eco, name)
-    cands = candidates(eco, cur, vs, min_version=min_version)[:ctx.max_candidates]
+    cands = drop_deprecated(ctx.http, ctx.cache, eco, name, candidates(eco, cur, vs, min_version=min_version)[:ctx.max_candidates])
     best = None
     tried = []
     for cand in cands:
@@ -184,7 +184,7 @@ def plan_pins(ctx: PlanContext, eco: str, children: list[dict]) -> Optional[dict
         if not mf:
             return None
         vs = list_versions(ctx.http, ctx.cache, eco, pkg)
-        cands = [mf] + [v for v in candidates(eco, cur, vs, min_version=mf, same_major=4, other_major=2) if v != mf]
+        cands = drop_deprecated(ctx.http, ctx.cache, eco, pkg, [mf] + [v for v in candidates(eco, cur, vs, min_version=mf, same_major=4, other_major=2) if v != mf])
         ok = None
         for cand in cands[:5]:
             try:

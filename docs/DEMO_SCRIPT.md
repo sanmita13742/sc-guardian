@@ -1,13 +1,14 @@
 # Day-2 demo script (≈ 8 minutes) — "from detection to verified remediation"
 
-Sample application: **OWASP/NodeGoat** (public, containerised: Dockerfile + docker-compose + GitHub workflows, ~1,200 npm packages). Start the app: `scriptsun.bat` → http://localhost:8501.
+Sample application: **OWASP/NodeGoat** (public, containerised: Dockerfile + docker-compose + GitHub workflows, ~1,200 npm packages). Start the app: `scripts
+un.bat` → http://localhost:8501.
 
 1. **Discover (1 min)** — *Repository Scan*: paste `https://github.com/OWASP/NodeGoat`, **Start Security Scan**. Narrate the live agent checklist (Recon → Pipeline → SBOM → Graph → Vulnerability → Verification → Investigator → Threat → Risk → Remediation → Validator → Memory → Analyst) and the decision log (scanner fallback, fusion, registry resolution).
 2. **SBOM & supply-chain view (1 min)** — *SBOM Explorer → Metadata*: 99% completeness, digests verified against the registry, install-script packages. *SBOM file* tab: the fused CycloneDX with `sc-guardian:provenance:*`. *Dependency Graph → Dependency Tree*: bottom-up "who pulls this in" for a vulnerable transitive package.
 3. **Detect non-CVE risks (1 min)** — *Pipeline & Containers*: `node:12-alpine` and `mongo:4.4` end-of-life, unpinned images, outdated GitHub Action majors, no explicit token permissions. *Suspicious Changes → Package risk*: deprecated direct dependencies, install scripts without provenance.
 4. **Prioritise with evidence (2 min)** — *Vulnerability Findings*: 311 raw findings → verdicts (17 reachable, 44 possibly reachable, 84 test-only, 166 no import evidence). Open a P0 finding → **Investigation**: verdict, confidence basis, EPSS, tool trace and evidence ids.
 5. **Remediate and validate (2 min)** — *Remediation*: top proposal (e.g. `marked 0.3.5 → 4.0.10`, `grunt-retire`). Show **measured effect** (fixed / remaining / newly introduced, SBOM diff, versions tried), the **diff**, rollback, `git apply --check` ✓. Record **Approve** with a reason → export `.patch` and PR description. *Audit trail* shows the decision. (Optional, if Docker is running: sandbox build/tests.)
-6. **Gate and report (1 min)** — *Policy & Gate*: default policy FAIL (reachable critical) with the violating evidence; switch to strict. Terminal: `python guardian.py gate latest --policy default` → exit code 1. *Reports*: Guardian report (MD/HTML), SARIF, VEX.
+6. **Gate and report (1 min)** — *Fix Report*: every applied fix with its scoring, changed files and one-page PDF. Terminal: `python guardian.py gate latest --policy default` → exit code 1 (policy gate). *Reports*: Guardian report (MD/HTML), SARIF, VEX.
 7. **Continuous monitoring (30 s)** — *Monitoring*: Watch → Run monitor now; alerts appear when an advisory is disclosed after the scan (`python guardian.py monitor` for cron / Actions).
 8. **Responsible AI (30 s)** — *Architecture → AI, approvals & safety*; *Settings & Health* shows LLM disabled/enabled. With `LLM_API_KEY` set: tick **Optional LLM reasoning**, rescan; a finding shows "AI-assisted, grounded", and a rejected proposal shows the gate's reason.
 

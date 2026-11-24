@@ -95,6 +95,12 @@ class PipelineAgent:
                                 "target": cf.target,
                             },
                         }
+                        # complete the record with the model's defaults so every later stage (risk, explain, remediate, export) can rely on the same fields
+                        from vulnerability.vulnerability_models import VulnerabilityFinding
+                        cv["service_dir"] = (cf.source_file.rsplit("/", 1)[0] if "/" in (cf.source_file or "") else ".") or "."
+                        cv["source_packages"] = [cf.image_tag or "image"]
+                        cv["root_component"] = cf.image_tag or "image"
+                        cv = VulnerabilityFinding(**cv).model_dump()
                         container_vulns.append(cv)
                         st.evidence.add("container", "trivy-scanner", cv["finding_id"], f"{cf.vuln_id}: {cf.package_name} ({cf.severity})", cv, source=f"{cf.source_file}:{cf.image_tag}")
 

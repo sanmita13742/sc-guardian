@@ -71,8 +71,8 @@ class Settings:
     investigator_max_steps: int = 5  # tool calls per LLM investigation
 
     # remediation
-    remediation_max_groups: int = 12  # source-package groups planned per scan (highest priority first)
-    remediation_budget_s: int = 150  # wall-clock budget for planning
+    remediation_max_groups: int = 300  # source-package groups planned per scan (highest priority first)
+    remediation_budget_s: int = 900  # wall-clock budget for planning
     remediation_auto_pr_low_med: bool = True  # automated PR delivery for Low and Medium severity findings
 
     # cache bounds
