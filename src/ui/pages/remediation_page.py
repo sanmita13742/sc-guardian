@@ -62,15 +62,6 @@ def _local_actions(i: dict, repo: dict, mem, ap, root: str, result: dict) -> Non
             st.warning(f"🔒 Lockfile not refreshed: {lock['note']}. Until it is, a rescan can still report this vulnerability.")
         elif lock.get("note"):
             st.caption(f"🔒 {lock['note']}.")
-        if st.button("↩️ Undo this change", key=f"undo_{i['id']}"):
-            res = undo_in_place(root, i)
-            if res["status"] == "success":
-                if mem:
-                    mem.audit(repo["url"], "analyst", "remediation_undone", i["title"], "restored " + ", ".join(res["restored"]))
-                    mem.set_approval(repo["url"], i["fingerprint"], "needs_review", "Change undone by analyst", i["title"], "analyst")
-                st.rerun()
-            else:
-                st.error(res["error"])
         return
     if not i.get("patch"):
         st.warning("No automatic file change could be produced for this proposal; follow the rationale for a manual fix.")
@@ -210,12 +201,36 @@ def render() -> None:
                + (f" Not covered: {len(uncovered)} ({no_fix} have no published fix; {len(uncovered) - no_fix} belong to {rem.get('groups_not_planned', 0)} lower-priority group(s) that hit the planning limit"
                   f" of {get_settings().remediation_max_groups} proposals / {get_settings().remediation_budget_s}s: raise it in Settings & Health and rescan)." if uncovered else ""))
 
+    by_id = {v["finding_id"]: v for v in vulns_all}
+    owner = {}
+    for x in items:
+        for fid in x.get("finding_ids", []):
+            owner.setdefault(fid, x["id"])
+    sev_rank = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    with st.expander(f"All {len(vulns_all)} vulnerabilities and the proposal that fixes each", expanded=False):
+        fixed_keys = set()
+        if prog:
+            fixed_keys = {(v.get("package_name"), v.get("installed_version"), v.get("primary_id")) for v in vulns_all} - {(v.get("package_name"), v.get("installed_version"), v.get("primary_id")) for v in prog["remaining"]}
+        df([{"Severity": v.get("severity") or "UNKNOWN", "Vulnerability": v.get("primary_id"), "Package": f"{v.get('package_name')} {v.get('installed_version')}",
+             "Fixed in": ", ".join((v.get("fixed_versions") or [])[:3]) or "no published fix",
+             "Proposal": owner.get(v["finding_id"], "none"),
+             "Status": "✅ fixed" if (v.get("package_name"), v.get("installed_version"), v.get("primary_id")) in fixed_keys else ("open" if v["finding_id"] in owner else "no automatic fix")}
+            for v in sorted(vulns_all, key=lambda v: (sev_rank.get(v.get("severity"), 9), v.get("package_name") or ""))], height="content")
+
     # Table filter by automation policy
     col_f1, _ = st.columns([1, 2])
     policy_filter = col_f1.selectbox("Filter by Automation Policy", ["All Proposals", "⚡ Automated (Low/Medium)", "👤 Manual Review Required (High/Critical)"])
 
+    applied_ids = {k for k, v in (prog["states"].items() if prog else []) if v == "Applied"}
+    if applied_ids:
+        st.caption(f"✅ {len(applied_ids)} fixed proposal(s) are hidden here; see **Fix Report** for the record (and to undo).")
+    open_items = [x for x in items if x["id"] not in applied_ids]
+    if not open_items:
+        st.success("All proposals are fixed. Rescan the folder to confirm; details are in **Fix Report**.")
+        return
+
     rows = []
-    for i in items:
+    for i in open_items:
         wi = i.get("what_if") or {}
         ap = approvals.get(i["fingerprint"])
         tier = i.get("automation_tier") or ("manual_review" if i.get("priority") in ("P0", "P1") else "automated")
@@ -244,10 +259,10 @@ def render() -> None:
     # Proposal inspector
     pick = st.selectbox(
         "Select Proposal to Inspect",
-        [i["id"] for i in items],
-        format_func=lambda x: next(f"{x} · {i['priority']} · {'[⚡ Auto]' if i.get('automation_tier') == 'automated' else '[👤 Manual]'} {i['title']}" for i in items if i["id"] == x),
+        [i["id"] for i in open_items],
+        format_func=lambda x: next(f"{x} · {i['priority']} · {'[⚡ Auto]' if i.get('automation_tier') == 'automated' else '[👤 Manual]'} {i['title']}" for i in open_items if i["id"] == x),
     )
-    i = next(x for x in items if x["id"] == pick)
+    i = next(x for x in open_items if x["id"] == pick)
     wi, val = i.get("what_if") or {}, i.get("validation") or {}
     ap = approvals.get(i["fingerprint"])
     tier = i.get("automation_tier") or ("manual_review" if i.get("priority") in ("P0", "P1") else "automated")
@@ -257,6 +272,12 @@ def render() -> None:
 
     st.markdown(f"### {ICON.get(i['action'], '')} {i['title']}")
     st.markdown(i.get("rationale", ""))
+    covered_here = [by_id[f] for f in i.get("finding_ids", []) if f in by_id]
+    if covered_here:
+        st.markdown(f"**Vulnerabilities this proposal fixes ({len(covered_here)})**")
+        df([{"Severity": v.get("severity") or "UNKNOWN", "Vulnerability": v.get("primary_id"), "Package": f"{v.get('package_name')} {v.get('installed_version')}",
+             "Fixed in": ", ".join((v.get("fixed_versions") or [])[:3]) or "-"}
+            for v in sorted(covered_here, key=lambda v: sev_rank.get(v.get("severity"), 9))], height="content")
 
     # --- SEVERITY & AUTOMATION POLICY BAR WITH ACCEPT / IGNORE ACTIONS ---
     if is_local:

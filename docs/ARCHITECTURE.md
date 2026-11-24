@@ -103,9 +103,9 @@ When a scan begins, SC Guardian processes the target through 12 deterministic st
 ```
 
 ### Stage 1: Safe Ingestion & Discovery (`ReconAgent`)
-- Accepts a public GitHub URL.
-- Validates the URL against strict security patterns (rejects command injections, private host redirects, credentials in URLs).
-- Executes a safe, shallow clone (`--depth 50`, `--no-single-branch`, no git hooks, no submodules) into an isolated temporary workspace.
+- Accepts a **public GitHub URL** or the **path of a local project folder** (drive paths, UNC, absolute/relative/`~`, `file://`).
+- GitHub URLs are validated against strict security patterns (rejects command injections, private host redirects, credentials in URLs) and cloned safely and shallowly (`--depth 50`, `--no-single-branch`, no git hooks, no submodules) into an isolated temporary workspace.
+- A local folder is analysed **in place and read-only**: nothing is cloned or copied, cached scans are not reused, and a git history comparison runs only when the folder is the top of a repository. Its scans are stored as `local:<path>`.
 - Detects project languages, manifests (`package.json`, `pom.xml`, `requirements.txt`), Dockerfiles, and CI workflows.
 
 ### Stage 2: Authoritative Lockfile Parsing
@@ -141,12 +141,12 @@ When a scan begins, SC Guardian processes the target through 12 deterministic st
 - Inspects the application's actual source code (`.py`, `.js`, `.ts`, `.java`, `.go`) using regex and AST import parsers.
 - Classifies each dependency's usage and codebase influence:
   - `used_by_app`: The application directly imports the package.
-    - *Heavy Usage*: Imported across $\ge 5$ files or $\ge 15\%$ of codebase (elevates Medium CVSS to High / P1).
+    - *Heavy Usage*: Imported across $\ge 5$ files or $\ge 15\%$ of codebase (raises the application-reachability and function-impact factors).
     - *Moderate Usage*: Imported across $2-4$ files.
     - *Single Import*: Imported in $1$ file.
   - `reachable_via_dependency`: An imported direct dependency brings this transitive package in.
-  - `used_in_tests_only`: The package is only referenced in test files or mock directories (capped at Medium).
-  - `not_imported`: No code in the repository references this package (deprioritized; capped at Medium unless CISA KEV).
+  - `used_in_tests_only`: The package is only referenced in test files or mock directories (zero production reachability; deprioritised).
+  - `not_imported`: No code in the repository references this package (deprioritised to P2/P3 unless it is in CISA KEV).
 
 ### Stage 8: Evidence-Gated Investigation (`InvestigatorAgent`)
 - Investigates each vulnerability using bounded read-only tools (`find_imports`, `dependency_path`, `advisory_facts`, `read_snippet`).
@@ -154,28 +154,39 @@ When a scan begins, SC Guardian processes the target through 12 deterministic st
 - Computes **Prioritization Shift**: Identifies when a vulnerability is *elevated* due to heavy codebase influence or *deprioritized* due to absence of runtime imports.
 - **Never outputs "safe"**: Absence of evidence is not evidence of absence; dormant code can still be invoked dynamically.
 
-### Stage 9: Contextual Risk Scoring (P0–P3 Priority Model)
-- Moves beyond generic CVSS scores by incorporating execution context and codebase influence:
-  - **P0 (Immediate Hazard)**: Known exploited in wild (CISA KEV) + imported by application code, or High risk with heavy production codebase blast radius.
-  - **P1 (High Priority)**: Critical/High severity reachable in production code, or Medium severity with heavy production codebase influence ($\ge 5$ app files).
-  - **P2 (Moderate Risk)**: Standard Medium severity, or deprioritized findings (Critical/High CVSS with no application imports or test-only scope).
-  - **P3 (Informational / Low)**: Low severity, unconfirmed ranges, or unimported low-impact tooling.
+### Stage 9: Contextual Risk Scoring (four-factor model, P0–P3 priority)
+- Separates the advisory's **CVSS severity** from the **contextual risk** of the finding in this project:
+  `R = 0.15·C + 0.20·A + 0.35·P + 0.30·I` where C = advisory severity, A = application reachability, P = production reachability, I = function-level impact (each 0–100).
+- **Missing evidence is not zero**: an unknown factor is excluded, the score is re-normalised over the known factors and marked *provisional*.
+- **Threat intelligence is separate**: CISA KEV and EPSS never change the score; they escalate the priority.
+  - **P0**: score ≥ 70, or active KEV with confirmed application reachability, or score ≥ 45 on a confirmed production path.
+  - **P1**: score ≥ 45, or score ≥ 25 on a confirmed production path, or any active KEV.
+  - **P2**: score ≥ 25, or deprioritised (verified test-only / unimported, no KEV).
+  - **P3**: everything else.
+- Full definition: [RISK_SCORING.md](RISK_SCORING.md). All page and report counts come from one module (`reporting/counts.py`) so every number means the same thing everywhere.
 
-### Stage 10: Remediation Planning, Reachability Impact & What-If Simulation (`RemediationAgent`)
-- Finds the safest fix: direct parent bumps, minimal version increments, or override/resolution pins, ranked by **reachability-weighted urgency**.
-- **Code Reachability Impact Analysis**: Evaluates how suggested version upgrades affect application imports, submodules, and call surfaces, outputting a reachability preservation score.
-- **5-Tier Verification Matrix**:
-  - *Tier 1*: Patch applicability check (`git apply --check`).
-  - *Tier 2*: Lockfile coherence & update hint generation.
-  - *Tier 3*: In-memory what-if dependency tree rescan (`OsvClient`).
-  - *Tier 4*: Opt-in hardened Docker sandbox build & test execution (`--network none`, `--cap-drop ALL`).
-  - *Tier 5*: Security regression gate (ensures zero new HIGH/CRITICAL CVEs introduced).
+### Stage 10: Remediation Planning & What-If Simulation (`RemediationAgent`, `ValidatorAgent`)
+- **Language packages** — finds the smallest safe change per source package: a direct parent bump verified against OSV on the registry-resolved dependency tree (deps.dev), otherwise a pin / override, otherwise a mitigation. Candidate versions are stable releases only (pre-releases and **npm-deprecated versions are skipped**). A pin is never written for a package that is also a direct dependency (the direct spec is raised instead), which avoids npm `EOVERRIDE` failures. Ranked by reachability-weighted urgency.
+- **OS packages in container images** — one proposal per Dockerfile: a `RUN` layer upgrading the packages that have distro fix versions (details in [CONTAINER_SCANNING.md](CONTAINER_SCANNING.md)).
+- **Coverage** — up to 300 proposals within a 900 s budget (`remediation_max_groups`, `remediation_budget_s`); the Remediation page states how many findings are covered and why the rest are not (no published fix vs. planning limit).
+- **Code Reachability Impact Analysis** — how the upgrade affects application imports, submodules and call surfaces, with a preservation score.
+- **Static verification matrix** — patch applies (`git apply --check`), lockfile coherence, in-memory what-if rescan (`OsvClient`), security-regression gate (no new HIGH/CRITICAL).
 
-### Stage 11: Governed PR Delivery & Policy Gate
-- **Interactive Remediation Agent Prompt**: Asks the user: *"Are you willing to commit these changes to the repository by creating a pull request?"*
-- **Repository PR Template Conformance**: Automatically discovers `.github/pull_request_template.md` and populates its sections and checkboxes; falls back to a standardized enterprise security format if absent.
-- **Governed Branch & Commit**: With user consent, safely creates an isolated branch (`remediation/fix-<pkg>-<version>`), stages the manifest patch, commits with a conventional commit message, and outputs GitHub CLI (`gh pr create`) dispatch commands.
-- Evaluates policy-as-code (`policies/default.yaml`, `strict.yaml`) and exports **SARIF 2.1.0** and **CycloneDX VEX** reports.
+### Stage 11: Validated Delivery, Audit & Policy Gate
+How a fix leaves the system depends on where the project came from.
+
+**Local folder — Resolve → Accept (`remediation/local_trial.py`, `apply_local.py`)**
+1. **Resolve**: copy the project to a scratch clone (without `node_modules`, `.git`, build output), apply the patch there and refresh the lockfile with the package manager (scripts disabled). Pre-existing npm override conflicts are repaired in the clone and reported.
+2. **Rescan** the clone and compare: findings fixed, findings newly introduced (a new High/Critical blocks the fix).
+3. **Compatibility** from registry metadata of the new version: deprecation, `engines.node` against the project's engines, peer dependencies, major jumps (npm) / yanked and `requires_python` (PyPI), plus application usage.
+4. **Tests**: the project's own build/tests run in the hardened Docker sandbox (default when Docker and a test command exist); a baseline run tells apart pre-existing failures. Container fixes are validated by building the image and rescanning it with Trivy.
+5. **Accept & Apply Changes** copies exactly the validated files into the real folder — only if they are unchanged since validation — after backing the originals up outside the project; warnings must be acknowledged. **Ignore** discards; **Undo** restores the backups.
+6. Live counters (open / applied / ignored / findings remaining) update after each Accept; the **Fix Report** lists every applied fix with its scoring, the real before/after diff, the validation record and a **one-page PDF** per fix.
+
+**GitHub repository — governed PR delivery**
+- Asks for consent, discovers `.github/pull_request_template.md` (falling back to a standard security format), creates an isolated branch `remediation/fix-<pkg>-<version>`, commits the manifest patch with a conventional message and prints the `gh pr create` command. Low/Medium proposals may be delivered automatically when `remediation_auto_pr_low_med` is on; High/Critical always need a human decision. Local folders are never auto-branched.
+
+**Policy gate and exports** — policy-as-code (`policies/default.yaml`, `strict.yaml`) is evaluated by the CLI (`guardian.py gate`) and in CI; **SARIF 2.1.0** and **CycloneDX VEX** reports are exported from the Reports page.
 
 ### Stage 12: Continuous Monitoring & Memory
 - Watches scanned inventories over time.
@@ -284,7 +295,8 @@ Because SC Guardian analyzes potentially untrusted third-party repositories, it 
 1. **Subprocess Isolation**: Every internal tool execution uses `subprocess.run(shell=False)` with explicit argument lists and scrubbed environments. API keys and host environment secrets are never passed to child processes.
 2. **Secret Redaction**: All outputs, logs, error messages, and LLM prompts are passed through regular expression filters (`redact()`) to strip out API keys, tokens, and private keys.
 3. **Confined File Access**: Scanners are confined to the temporary workspace directory. Symlinks pointing outside the workspace and directory traversals (`../`) are blocked.
-4. **Hardened Docker Sandbox (Opt-in)**:
+4. **Local folders are read-only until you Accept**: scanning never writes to the project; validation happens on a scratch clone; Accept writes only the validated files after an unchanged-since-validation check and a backup stored outside the project (`~/.sc-guardian/local-changes/`), so scanners never see the backups.
+5. **Hardened Docker Sandbox** (project tests; image builds use a plain `docker build` followed by a Trivy scan):
    - When validating a remediation patch, Docker runs with:
      - `--network none` (test phase runs with all external networking severed).
      - `--cap-drop ALL` (drops all Linux root capabilities).
@@ -301,5 +313,7 @@ Because SC Guardian analyzes potentially untrusted third-party repositories, it 
 | **SBOM Standard** | CycloneDX 1.5 JSON with full metadata fusion & digest verification |
 | **Vulnerability Sources** | OSV.dev, NVD (CVSS v3/v2), CISA KEV, EPSS (FIRST.org) |
 | **AI Architecture** | Multi-Agent LangGraph with Supervisor, Specialist Agents, and Grounding Gate |
-| **Execution Safety** | Static analysis only; opt-in Docker sandbox with `--network none` |
+| **Execution Safety** | Static analysis only; project tests run in a hardened Docker sandbox (`--network none` for the test phase); local folders written only after validated Accept, with backup and Undo |
+| **Input Sources** | Public GitHub URL or local project folder |
+| **Remediation** | Parent bumps / pins with OSV what-if, distro-aware OS-package fixes, registry compatibility checks, clone validation, Fix Report with one-page PDFs |
 | **Performance** | Multi-tier TTL caching, debounced vis-network physics, parallel OSV batching |

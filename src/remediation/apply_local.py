@@ -209,16 +209,34 @@ def _refresh_lock(eco: str, rem: dict, mdir: Path, backups: dict[str, Path], roo
 
 
 # --------------------------------------------------------------------------------------------- public API
-def _state_file(root: Path, rid: str) -> Path:
-    return _store(root) / "applied" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', rid)}.json"
+def _rem_key(rem: dict) -> str:
+    """Stable identity of a fix: proposal ids (REM-001...) are renumbered on every scan, the fingerprint is not."""
+    fp = rem.get("fingerprint") or rem.get("title") or rem["id"]
+    return hashlib.sha1(str(fp).encode("utf-8")).hexdigest()[:20]
+
+
+def _state_file(root: Path, rem: dict) -> Path:
+    return _store(root) / "applied" / f"{_rem_key(rem)}.json"
+
+
+def _legacy_file(root: Path, rem: dict) -> Path:
+    return _store(root) / "applied" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', rem['id'])}.json"
 
 
 def applied_record(root: Path | str, rem: dict) -> Optional[dict]:
-    f = _state_file(Path(root), rem["id"])
+    root = Path(root)
     try:
-        return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+        f = _state_file(root, rem)
+        if f.exists():
+            return json.loads(f.read_text(encoding="utf-8"))
+        old = _legacy_file(root, rem)  # records written before fingerprint keys: only if it is the same fix
+        if old.exists():
+            rec = json.loads(old.read_text(encoding="utf-8"))
+            if rec.get("title") == rem.get("title"):
+                return rec
     except (OSError, ValueError):
-        return None
+        pass
+    return None
 
 
 def apply_in_place(root: Path | str, rem: dict, repo: dict | None = None) -> dict[str, Any]:
@@ -267,7 +285,7 @@ def apply_in_place(root: Path | str, rem: dict, repo: dict | None = None) -> dic
     lock = _refresh_lock(eco, rem, (root / changed[0]).parent, backups, root, bdir)
     result = {"status": "success", "files": changed, "lock": lock, "backup_dir": str(bdir), "applied_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "backups": {k: str(v) for k, v in backups.items()}, "id": rem["id"], "title": rem.get("title", "")}
-    sf = _state_file(root, rem["id"])
+    sf = _state_file(root, rem)
     sf.parent.mkdir(parents=True, exist_ok=True)
     sf.write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
@@ -291,7 +309,8 @@ def undo_in_place(root: Path | str, rem: dict) -> dict[str, Any]:
             dest = _safe(root, rel)
             shutil.copy2(src, dest)
             restored.append(rel)
-        _state_file(root, rem["id"]).unlink(missing_ok=True)
+        _state_file(root, rem).unlink(missing_ok=True)
+        _legacy_file(root, rem).unlink(missing_ok=True)
     except (ApplyError, OSError) as e:
         return {"status": "error", "error": f"Undo failed: {e}", "restored": restored}
     return {"status": "success", "restored": restored}

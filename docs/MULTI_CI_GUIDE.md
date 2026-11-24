@@ -102,4 +102,4 @@ When CI pipelines define image build directives, the adapters extract them into 
 - **Azure Tasks**: `task: Docker@2` (`command: buildAndPush`, `dockerfile: '...'`, `repository: '...'`, `tags: '...'`)
 - **GitHub Actions**: `uses: docker/build-push-action@...`
 
-These directives feed directly into SC Guardian's `containers.discovery` engine, linking Dockerfiles in the repository with the exact image tags and CI jobs that produce them.
+These directives feed directly into SC Guardian's `containers.discovery` engine, linking Dockerfiles in the repository with the exact image tags and CI jobs that produce them. When container scanning is enabled, the OS packages found in those images can receive Dockerfile remediation proposals (see [CONTAINER_SCANNING.md](CONTAINER_SCANNING.md), section 6).

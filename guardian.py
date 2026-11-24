@@ -106,8 +106,8 @@ def _load(db: Database, which: str) -> dict:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="guardian", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("scan", help="scan a public GitHub repository")
-    p.add_argument("url")
+    p = sub.add_parser("scan", help="scan a public GitHub repository or a local project folder")
+    p.add_argument("url", help="https://github.com/<owner>/<repo> or the path of a local project folder")
     p.add_argument("--ref")
     p.add_argument("--policy", default="default", help="policy name or YAML path (default: default; use 'none' to skip the gate)")
     p.add_argument("--format", choices=["md", "html", "json", "sarif", "vex"], default=None, help="also print/write a report")
