@@ -6,6 +6,8 @@
 **Target:** Implementation of Contextual Vulnerability Risk Scoring v2.0  
 **Scope:** Risk engine, reachability analysis, production context detection, function-level impact evaluation, evidence management, and Streamlit presentation.
 
+> **Status — implemented.** This audit preceded the contextual risk model that now runs in `src/risk_analysis/`; the current definition is in [`docs/RISK_SCORING.md`](../RISK_SCORING.md). The standalone *Risk & Explainability* page described below was later removed: per-finding risk details now live on **Vulnerability Findings → Risk breakdown**. Kept as design history.
+
 ---
 
 ## Executive Summary

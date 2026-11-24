@@ -1,71 +1,66 @@
 # Risk scoring
 
-Risk labels are produced by a **deterministic, additive rule engine** (`risk_analysis/risk_rules.py`, `risk_scorer.py`).
-No LLM participates in scores, labels or factors. Rules version: **2.1** (adds codebase influence tiers, unreachable caps, EPSS, pipeline findings, confidence and P0-P3 priority). Every assessment stores the factor list, the
-unknowns and the thresholds that were in effect, so a label can always be reproduced.
+Risk is produced by a **deterministic, rule-based engine** (`src/risk_analysis/`). No LLM participates in scores, labels, priorities or factors.
+Rules version: **2.2-contextual** (`RULES_VERSION` in `risk_rules.py`). Every assessment stores its factor list, the unknowns and the thresholds in effect, so a label can always be reproduced.
 
-CVSS severity (a property of the advisory) and *risk* (a property of this finding in this repository) are shown separately.
+Two things are kept apart everywhere in the product:
 
-## Labels
+* **CVSS severity** — a property of the *advisory* (how bad the vulnerability is in general).
+* **Contextual risk** — a property of *this finding in this project*: the advisory's severity combined with whether and how the code uses the package.
 
-`score >= 70` CRITICAL · `>= 45` HIGH · `>= 25` MEDIUM · `>= 10` LOW · otherwise INFORMATIONAL.
+The findings table, the header and the Dependency Graph's alert banner show CVSS severity; the *Risk*, *Score* and *Priority* columns, and each finding's **Risk breakdown** tab, show contextual risk. They are expected to differ (a CVSS-Critical advisory in a package nothing imports is not an urgent risk).
 
-## Vulnerability findings
+## Vulnerability findings: the four-factor model
 
-| Factor | Points | Notes |
-|---|---|---|
-| CVSS severity | CRITICAL 55, HIGH 40, MEDIUM 22, LOW 8, **unavailable 12** | Missing severity is neutral — neither low nor critical. |
-| CISA KEV | +30 (+5 if known ransomware use) | Exploitation evidence, not CVSS. Absence says nothing. |
-| Exposure | direct +8, direct (inferred) +6, **transitive 0**, unknown 0 | Transitive is *not* discounted. Direct is *not* automatically critical. |
-| Multiple roots | +5 | Affects ≥ 2 application roots/services. |
-| No fixed version recorded | +5 | Does not by itself make a finding critical. |
-| Development-only dependency | −10 | Lockfile marks it dev-only; build/CI exposure remains. |
-| Correlated lockfile change | +5 | Same package also changed suspiciously in Git history. |
-| EPSS (exploit probability estimate) | ≥0.5 +20, ≥0.1 +10, ≥0.01 +3 | Only nudges the score; it is a statistical estimate, not proof. |
-| Reachability: Heavy App Usage (≥5 files or ≥15% of codebase) | **+35** | High codebase blast radius; elevates Medium CVSS to High/P1. |
-| Reachability: Moderate App Usage (2-4 files) | **+20** | Confirmed runtime presence across multiple application modules. |
-| Reachability: Single App Import (1 file) | **+12** | Localized runtime presence in application code. |
-| Reachability: Transitive via Heavy Root | **+18** | Indirect dependency pulled in by a heavily imported direct package. |
-| Reachability: Transitive Standard | **+8** | Indirect dependency pulled in by an application import. |
-| Reachability: Tests only | **−10** | Non-runtime exposure; **label capped at MEDIUM**. |
-| Reachability: No import found (unimported) | **−25** | Unreachable; **label capped at MEDIUM** (unless active CISA KEV). |
-| Applicability unconfirmed | label capped at **MEDIUM** | OSV returned the advisory but the range could not be validated locally. |
+```
+R = 0.15·C + 0.20·A + 0.35·P + 0.30·I        (each factor 0–100, result 0–100)
+```
 
-## Codebase Influence and Priority Mapping
+| Factor | Weight | What it measures | How it is derived |
+|---|---|---|---|
+| **C** Advisory severity | 15 % | How severe the vulnerability is | `10 × CVSS` when a numeric score exists; otherwise estimated from the severity label (Critical 90, High 75, Medium 50, Low 25, unknown 40, flagged as an estimate) |
+| **A** Application reachability | 20 % | Does application code import or call the package? | Static import / symbol evidence (`reachability/app_reachability.py`): confirmed reachable, potentially reachable, transitively reachable, test-only, unreachable, unknown |
+| **P** Production reachability | 35 % | Does it ship and run in production? | Entry points, routes, Dockerfile/deployment context (`risk_analysis/production_context.py`): confirmed production path, shipped but not traced, test-only, not shipped |
+| **I** Function impact | 30 % | How much damage the code that uses it could do | Sub-factors F (function criticality 25 %), S (data sensitivity 25 %), B (privilege boundary 20 %), D (downstream impact 20 %), X (production exposure 10 %) (`risk_analysis/function_impact.py`) |
 
-Every finding receives a priority rating ($P0-P3$) driven by actual codebase influence and runtime reachability:
-- **P0 (Immediate Action)**: CRITICAL risk label OR active CISA KEV exploitation in application OR (HIGH risk with heavy codebase influence in production).
-- **P1 (Sprint Priority)**: HIGH risk label OR (MEDIUM risk with heavy codebase influence in production).
-- **P2 (Scheduled Maintenance)**: Standard MEDIUM risk OR deprioritized CRITICAL/HIGH findings that have no application imports or are test-only.
-- **P3 (Monitor Only)**: LOW risk, INFORMATIONAL, or unimported low-severity findings.
+### Missing evidence is not zero
+If a factor cannot be assessed it is marked *unknown* and the score is **re-normalised over the factors that are known**; the result is flagged **provisional** and the missing evidence is listed. If nothing at all is known the baseline is 50. Unknown is never silently treated as safe.
 
-## Pipeline findings (Dockerfile, compose, CI)
+### Labels
+`score ≥ 70` CRITICAL · `≥ 45` HIGH · `≥ 25` MEDIUM · `≥ 10` LOW · otherwise INFORMATIONAL.
 
-Severity points CRITICAL 75, HIGH 50, MEDIUM 28, LOW 12, INFO 4; −8 when the evidence is heuristic rather than directly visible; +5 for an unpinned third-party action.
+### Priority (P0–P3), with threat intelligence kept separate
+Threat intelligence (CISA KEV, EPSS) does **not** change the score; it escalates the operational priority:
 
-## Confidence and priority
+| Priority | When |
+|---|---|
+| **P0** immediate | score ≥ 70, **or** active CISA KEV with confirmed application reachability, **or** score ≥ 45 with a confirmed production path |
+| **P1** this sprint | score ≥ 45, **or** score ≥ 25 with a confirmed production path, **or** any active CISA KEV |
+| **P2** scheduled | score ≥ 25 |
+| **P3** monitor | everything else |
+| *Deprioritised* | verified **test-only** or **unimported** with no active KEV: capped at **P2** (P3 if the label is already low) |
 
-Every finding also gets a **confidence** (cross-verified, range-validated, reachability known, CVSS present) and a **priority P0-P3** (P0 = reachable/exploited and critical).
+EPSS ≥ 20 % is recorded as an escalation reason. KEV and EPSS are statistical or exploitation evidence, not proof about your code.
 
-Example: a transitive CVSS-CRITICAL finding without KEV scores 55 → **HIGH**; with KEV 85 → **CRITICAL**; a direct LOW finding stays **LOW**.
+### Confidence
+Each finding gets a confidence level from independent signals: cross-verified by a second OSV query route, affected range validated locally, reachability known, numeric CVSS present. It is shown on the Investigation tab. Findings whose affected range could not be confirmed locally are listed with that unknown.
 
-## Typosquatting
+## Non-vulnerability findings
+Pipeline, typosquatting and lockfile findings are scored by a simple additive rule set (they have no CVSS or reachability):
 
-Evidence strength (high 45 / medium 30 / low 15) + exposure (direct +5) + correlations (added in lockfile history +10, also vulnerable +5).
-Strength comes from similarity techniques plus registry signals (very young package, very few downloads, name not found); established
-packages (> 1 year and ≥ 20 000 monthly downloads) are suppressed. Without registry corroboration strength is capped at *low*.
-**Label cap: HIGH** — name similarity is a signal, never proof.
+* **Pipeline findings (Dockerfile, compose, CI):** severity points CRITICAL 75, HIGH 50, MEDIUM 28, LOW 12, INFO 4; −8 when the evidence is heuristic; +5 for an unpinned third-party action.
+* **Typosquatting:** evidence strength (high 45 / medium 30 / low 15) + exposure (direct +5) + correlations (added in lockfile history +10, also vulnerable +5). Strength comes from similarity plus registry signals (very young package, very few downloads, name not found); established packages (> 1 year and ≥ 20 000 monthly downloads) are suppressed; without registry corroboration strength is capped at *low*. **Label cap: HIGH** — name similarity is a signal, never proof.
+* **Lockfile changes:** classification points (`potentially_suspicious` 30, `unexplained_change` 12, `normal_update` 0, `insufficient_baseline` 0) + evidence bonus (high +20, medium +8) + correlations (+10 if the package is also vulnerable or a typosquat candidate). **Label cap: HIGH** — a lockfile change never proves compromise.
 
-## Lockfile changes
+Signals that make a change `potentially_suspicious`: integrity hash changed for the *same* version, integrity hash removed, source/registry host changed, a dependency newly resolved from a git/URL/path source. `unexplained_change`: a direct dependency changed with no manifest change in the same directory, a downgrade not mentioned by a manifest diff, a new package with no changed parent, a deleted lockfile. Everything consistent with a manifest edit or a dependency cascade is `normal_update` and is not reported.
 
-Classification points (`potentially_suspicious` 30, `unexplained_change` 12, `normal_update` 0, `insufficient_baseline` 0) + evidence strength bonus
-(high +20, medium +8) + correlations (+10 if the package is vulnerable or a typosquat candidate). **Label cap: HIGH** — a lockfile change never proves compromise.
+## How counts are reported
+The numbers on every page and in every report come from one place (`reporting/counts.py`):
 
-Signals that make a change `potentially_suspicious`: integrity hash changed for the *same* version, integrity hash removed, source/registry host changed,
-a dependency newly resolved from a git/URL/path source. `unexplained_change`: a direct dependency changed with no manifest change in the same directory,
-a downgrade not mentioned by a manifest diff, a new package with no changed parent, a deleted lockfile. Everything consistent with a manifest edit or a dependency
-cascade is `normal_update` and is not reported as a finding.
+* **Findings** = vulnerability findings, confirmed + unconfirmed. **By CVSS severity** and **by contextual risk / priority** are separate breakdowns of the same findings.
+* The contextual-risk and priority breakdowns count **vulnerability findings only**; pipeline and package-risk assessments are counted separately so the totals add up.
+* **Components** = software packages (files, container images and CI actions are excluded and listed on Pipeline & Containers).
+* **Remediation** counts findings fixed or covered **once**, even when several proposals touch the same finding.
 
 ## Overriding
-
-Pass a JSON file to `ScanOptions(rules_path=...)`; keys are deep-merged over the defaults (see `DEFAULT_RULES`). The defaults are never mutated.
+Pass a JSON file to `ScanOptions(rules_path=...)`; keys are deep-merged over `DEFAULT_RULES` (weights, thresholds, per-source points). The defaults are never mutated.

@@ -1,8 +1,8 @@
 # Container Image Vulnerability Scanning Guide
 
-**Document Version:** 2.2.0  
+**Document Version:** 2.3.0  
 **Status:** Implemented  
-**Scope:** Dockerfile discovery, Compose analysis, CI build linking, and Opt-in Trivy image vulnerability scanning  
+**Scope:** Dockerfile discovery, Compose analysis, CI build linking, opt-in Trivy image vulnerability scanning, and OS-package remediation with build-and-rescan validation  
 
 ---
 
@@ -36,7 +36,7 @@ These are unified into `DiscoveredContainerAsset` records:
 
 ## 3. Configuration & Opt-In Settings
 
-Container image scanning is controlled via environment variables or `scanner.toml`:
+Container image scanning is controlled via environment variables (or an optional `scanner.toml`):
 
 | Setting | Env Variable | Default | Description |
 |---|---|---|---|
@@ -73,7 +73,7 @@ Trivy JSON output is parsed into normalized `ContainerScanFinding` models:
 ## 5. Correlator & Dashboard Integration
 
 ### 5.1 Correlator Integration
-Container vulnerabilities are converted into `VulnerabilityFinding` records with `asset_type: "container_image"` and merged into `ScanState.vulns`.
+Container vulnerabilities are converted into complete `VulnerabilityFinding` records (every field the later stages need is filled from the model's defaults) with `asset_type: "container_image"` and merged into `ScanState.vulns`. This also holds for projects that contain only a Dockerfile and no package manifests.
 - **Deduplication:** Source vulnerabilities and container vulnerabilities are tracked with distinct compound keys `(cve_id, package_name, asset_type, source_file)`, preventing collision.
 - **Risk Scoring:** Scored via `score_vulnerability()`, preserving CVSS severity and attributing container layer details.
 
@@ -85,3 +85,40 @@ Container vulnerabilities are converted into `VulnerabilityFinding` records with
   - **Asset Source Filter:** Filter by `All Assets`, `Source Dependencies (OSV)`, or `Container Images (Trivy)`.
   - **Package Class Filter:** Toggle between OS packages (Debian/Alpine/RPM) and application libraries.
   - **Finding Details:** Detailed container metadata card displaying image tag, layer diff ID, package class, and origin Dockerfile.
+
+---
+
+## 6. Remediation of OS packages
+
+Language packages are fixed through their manifests (see the main README). Operating-system packages inside an image are fixed through the **Dockerfile**, and the fix version comes from the **distribution's own security data**, not from a language registry.
+
+### 6.1 Where the fix version comes from
+Trivy reports, per finding, the `FixedVersion` for exactly the distro release in the image (for example `2.38.1-5+deb12u1` on Debian 12). SC Guardian records it as the finding's fixed version. There is no separate database: the data is whatever Trivy's distro advisory sources (Debian Security Tracker, Ubuntu, Alpine secdb, Red Hat and others) provide for that release.
+
+### 6.2 What the proposal changes (`src/remediation/container_plan.py`)
+One proposal per (Dockerfile, image):
+* The OS-package findings that have a published fix are grouped, and a `RUN` layer is inserted **right after the last `FROM`** (the final stage, still root) that upgrades only those packages, using the tool for the detected distro:
+
+| Distro family | Layer |
+|---|---|
+| Debian, Ubuntu | `apt-get update && apt-get install -y --no-install-recommends --only-upgrade <pkgs> && rm -rf /var/lib/apt/lists/*` |
+| Alpine | `apk add --no-cache --upgrade <pkgs>` |
+| Red Hat family, Amazon, Oracle, Fedora, Photon, Azure Linux | `dnf upgrade -y <pkgs>` (falling back to `yum update -y <pkgs>`), then clean |
+
+* Package names are validated against a strict pattern before they are written into the Dockerfile. At most 40 packages per layer.
+* Findings without a published fix stay open and are listed in the rationale. Application-library findings in the image are fixed through the project's own manifests, not this change.
+* **No automatic patch** (a recommendation to rebuild with `--pull` or rebase onto a newer base-image tag instead) when no fixes are published yet, the base is distroless or `scratch` (no package manager), the image is not built from a Dockerfile in the project (for example compose-only or prebuilt), or the distro is not recognised.
+* Rebasing onto a newer tag of the same distro is always offered as an alternative: it picks up every fix at once and is the long-term fix.
+
+### 6.3 Validation: build and rescan
+Whether the distribution's repository actually has the fixed versions is verified, not assumed. During **Resolve** on a local folder:
+1. The patched Dockerfile is built in a scratch clone (`docker build`, context = the Dockerfile's folder).
+2. The built image is scanned with Trivy (`--scanners vuln`).
+3. OS-package findings before and after are compared: a fix passes only if it removes findings and introduces no new High/Critical ones. A build or scan failure fails the validation with the reason.
+4. The temporary image is deleted. Without Docker or Trivy the fix is shown as **unverified** and must be acknowledged before it can be accepted.
+
+Example from testing (Debian 12 base pinned to a June 2023 snapshot): the plan covered 138 findings in 31 packages; the rebuilt image went from 388 to 250 OS-package findings (138 fixed, 0 new). The 250 that remain have no distro fix yet.
+
+### 6.4 Where it appears
+* **Remediation page** — the proposal and its Dockerfile diff; **Resolve → Accept & Apply Changes** for local folders.
+* **Fix Report** — once applied, the Dockerfile change, the findings it fixed and the build/rescan validation record, with a one-page PDF.

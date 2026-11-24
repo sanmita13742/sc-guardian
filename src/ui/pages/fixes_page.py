@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from remediation.apply_local import applied_record, undo_in_place
 from remediation.local_trial import trial_record
 from reporting.fix_pdf import HAS_REPORTLAB, build_pdf
 from reporting.fix_report import SEV_ORDER, collect_fixes, totals
@@ -88,3 +89,12 @@ def render() -> None:
                     st.caption("No clone validation record for this fix (static what-if only).")
                 for w in v["warnings"]:
                     st.warning(w)
+            if repo.get("source") == "local":
+                prop = next((x for x in items if x["id"] == f["id"]), None)
+                root = repo.get("local_path") or repo.get("repo_dir") or repo.get("path") or "."
+                if prop and applied_record(root, prop) and st.button("↩️ Undo this change (restore the original files)", key=f"undo_{f['id']}"):
+                    res = undo_in_place(root, prop)
+                    if res["status"] == "success":
+                        st.rerun()
+                    else:
+                        st.error(res["error"])

@@ -369,7 +369,7 @@ def accept_validated(root: Path | str, rem: dict) -> dict[str, Any]:
     rec = {"status": "success", "id": rem["id"], "title": rem.get("title", ""), "files": list(files), "lock": trial.get("lock") or {}, "backup_dir": str(bdir), "backups": backups,
            "applied_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "validated": True,
            "fixed": (trial.get("comparison") or {}).get("fixed") or []}
-    sf = _state_file(root, rem["id"])
+    sf = _state_file(root, rem)
     sf.parent.mkdir(parents=True, exist_ok=True)
     sf.write_text(json.dumps(rec, indent=2), encoding="utf-8")
     return rec

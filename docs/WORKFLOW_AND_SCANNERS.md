@@ -43,13 +43,14 @@ Here is what happens under the hood during each stage of an SC Guardian scan:
 
 ---
 
-### Step 1: Repository Ingestion & Safe Cloning
-* **What happens**: The user or CI pipeline inputs a public GitHub repository URL (e.g., `https://github.com/OWASP/NodeGoat`).
-* **Processing**:
+### Step 1: Ingestion (GitHub URL or local folder)
+* **What happens**: The user or CI pipeline gives either a public GitHub repository URL (e.g., `https://github.com/OWASP/NodeGoat`) or the path of a project folder on the machine (e.g., `C:\projects\my-app`).
+* **Processing (GitHub URL)**:
   * The URL validator strips attack vectors (null bytes, query parameters, credential leaks, shell command injections).
   * Executes a shallow, hardened git clone (`git clone --depth 50 --no-single-branch`).
   * Cloned with **no git hooks**, **no submodules**, and **no symlinks**, confined strictly to an isolated temporary workspace (`.workspaces/`).
-* **Output**: A secure local checkout ready for static analysis.
+* **Processing (local folder)**: the path is resolved and checked (it must exist and be a folder); the folder is then analysed **in place, read-only**. Nothing is cloned or copied, cached scans are not reused, and git history checks run only when the folder is the top of a repository.
+* **Output**: A local checkout (or the folder itself) ready for static analysis.
 
 ---
 
@@ -70,9 +71,9 @@ Here is what happens under the hood during each stage of an SC Guardian scan:
 ### Step 3: CycloneDX SBOM Generation
 * **What happens**: Generates a standard **CycloneDX 1.5 JSON** Software Bill of Materials (SBOM).
 * **Processing**:
-  * Tries primary scanner (**Syft**).
+  * Tries primary scanner (**Syft**). Syft and Trivy are located on `PATH`, in the current Windows registry `PATH` (so a tool installed after the app started is still found) and in the usual install folders (winget, scoop, chocolatey, `~/bin`, `~/go/bin`); `SYFT_BIN` / `TRIVY_BIN` override.
   * If Syft misses components or is absent, falls back to **Trivy**.
-  * If neither external binary is installed, runs SC Guardian's zero-dependency **Native Built-in Rule Engine**.
+  * If neither external binary is installed, runs SC Guardian's zero-dependency **Native Built-in Rule Engine**. (Syft also reads installed `node_modules`, so its relationship graph is much richer than the lockfile-only built-in engine's. That matters for remediation: findings are grouped under the direct dependency that brings them in. On OWASP NodeGoat, Syft gives 31 groups (all 311 findings covered, 20 proposals with an automatic patch covering 226 findings), while the built-in engine gives 117 small groups (25 patchable, covering 92 findings). Prefer Syft when you want the most patchable proposals.)
 * **Output**: A standardized SBOM document identifying every component, ecosystem, and service boundary.
 
 ---
@@ -147,25 +148,28 @@ Here is what happens under the hood during each stage of an SC Guardian scan:
 
 ---
 
-### Step 10: What-If Remediation & Unified Diff Generation
-* **What happens**: Plans the safest, least disruptive fix for each finding.
+### Step 10: Remediation Planning & What-If Simulation
+* **What happens**: Plans the safest, least disruptive fix for each group of findings.
 * **Processing**:
-  * Checks for direct parent upgrades (preserving major version compatibility whenever possible).
-  * If a parent upgrade is unavailable, generates dependency override/resolution pins.
-  * **What-If Simulation**: In memory, applies the proposed version change, re-resolves dependencies via deps.dev, and checks whether the fix cleanly eliminates the CVE without introducing new ones.
+  * Checks for direct parent upgrades (preserving the major version whenever possible). Candidate versions are stable releases from deps.dev; pre-releases and **npm-deprecated versions are skipped**.
+  * If a parent upgrade is unavailable, generates dependency override/resolution pins (never for a package that is also a direct dependency; its own spec is raised instead).
+  * **What-If Simulation**: In memory, applies the proposed version change, re-resolves dependencies via deps.dev, and checks via OSV whether the fix cleanly eliminates the CVE without introducing new ones.
+  * **OS packages in images**: a Dockerfile `RUN` layer that upgrades the packages with distro fix versions (see `CONTAINER_SCANNING.md`).
+  * Plans up to 300 proposals within a 900 s budget (`remediation_max_groups`, `remediation_budget_s`); the Remediation page reports how many findings are covered and why the rest are not.
   * Formats unified patch files (`git apply --check` verified).
-* **Output**: Verified patches, compatibility ratings, and step-by-step rollback instructions.
+* **Output**: Proposals with patches, compatibility ratings, and step-by-step rollback instructions.
 
 ---
 
-### Step 11: Human-in-the-Loop Approval & Policy Gate
-* **What happens**: Presents findings and remediation diffs for human sign-off.
-* **Processing**:
-  * Requires a human analyst reason to Approve, Reject, or Waive a finding.
-  * Logs every decision into an immutable audit trail (`data/scanner.db`).
-  * Optionally runs the repository's test suite inside an isolated Docker sandbox with `--network none` to verify backward compatibility.
-  * Evaluates policy-as-code rules (`policies/default.yaml`).
-* **Output**: Pass/fail gate status for CI/CD pipelines, plus SARIF 2.1.0 and CycloneDX VEX export files.
+### Step 11: Validation, Human Decision, Audit & Policy Gate
+* **What happens**: Each fix is validated and then accepted or ignored by a human; every decision is audited.
+* **Processing (local folder)**:
+  * **Resolve** — the fix is applied to a scratch clone and the lockfile is refreshed with the package manager (scripts disabled); the clone is rescanned and compared with the original scan (fixed vs newly introduced); declared compatibility is checked from registry metadata (deprecation, `engines`, peer dependencies, major jumps, yanked releases); and the project's own tests run in an isolated Docker container with `--network none` for the test phase (container fixes: image build + Trivy rescan). A baseline run separates pre-existing failures from regressions.
+  * **Accept & Apply Changes** — available only if validation passed (warnings must be acknowledged). Exactly the tested files are copied into the real folder after confirming they have not changed since validation; originals are backed up outside the project and **Undo** restores them. **Ignore** discards the proposal.
+  * Live counters (open / applied / ignored / findings remaining) update after every Accept, and the **Fix Report** records each applied fix with its scores, the real diff, the validation record and a one-page PDF.
+* **Processing (GitHub repository)**: a human records Approve / Reject / Needs review with a reason; an approved fix can be exported as a patch and PR text, or committed to an isolated branch (never pushed or merged).
+* **Both**: every decision goes into an immutable audit trail (`data/scanner.db`). Policy-as-code rules (`policies/default.yaml`, `strict.yaml`) are evaluated by `guardian.py gate` and in CI.
+* **Output**: Applied fixes with an undo path, pass/fail gate status for CI/CD pipelines, plus SARIF 2.1.0 and CycloneDX VEX export files.
 
 ---
 
@@ -174,6 +178,7 @@ Here is what happens under the hood during each stage of an SC Guardian scan:
 * **Processing**:
   * Periodically re-queries OSV.dev and CISA KEV against stored inventories.
   * If a zero-day is disclosed today for a dependency scanned last week, generates an alert without needing to re-clone the repository.
+  * Applies to GitHub scans. Scans of local folders are not put on the watch list; rescan the folder instead.
 * **Output**: Real-time notifications for newly emerged supply-chain threats.
 
 ---

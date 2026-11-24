@@ -6,6 +6,8 @@
 **Version:** 2.0.0  
 **Target:** Implementation across `src/risk_analysis/`, `src/reachability/`, and `src/ui/pages/risk_page.py`
 
+> **Status — implemented.** The model described here is what runs today (rules version `2.2-contextual`); the current definition is in [`docs/RISK_SCORING.md`](../RISK_SCORING.md). Phase 6 (a separate *Risk & Explainability* page, `risk_page.py`) was later replaced by the **Risk breakdown** tab on *Vulnerability Findings*. Kept as design history.
+
 ---
 
 ## 1. Architectural Architecture & Core Formula
