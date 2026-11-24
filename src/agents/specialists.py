@@ -469,18 +469,44 @@ class ThreatAgent:
         if not st.git_history:
             rt.skip("lockfile_history", "not the top level of a Git repository")
             st.lres["limitations"] = ["The scanned path is not the top level of a Git repository, so no Git history comparison was possible (nothing inferred)."]
-            return
-        with rt.step("lockfile_history", f"Comparing the {o.lockfile_commits} most recent commit(s) with their parent{' / explicit baseline' if o.baseline else ''}") as b:
-            st.lres = detect_lockfile_changes(st.repo_dir, "HEAD", o.baseline, o.lockfile_commits, st.info.scan_timestamp)
-            sm = st.lres.get("summary") or {}
-            for c in st.lres.get("comparisons", []):
-                rt.progress("lockfile_history", f"{c['commit'][:8]} vs {(c['baseline'] or 'none')[:8]}: {c['status']}; lockfiles changed: {', '.join(c.get('lockfiles_changed', [])) or 'none'}")
-            for lim in st.lres.get("limitations", []):
-                rt.warn("lockfile_history", lim)
-            if sm.get("potentially_suspicious"):
-                rt.decide("lockfile_history", f"Escalate {sm['potentially_suspicious']} potentially suspicious change(s) to risk scoring",
-                          reason="Integrity/source anomalies were found in Git history.", agent="Supervisor")
-            b["message"] = f"{sm.get('total_changes', 0)} changes: {sm.get('potentially_suspicious', 0)} suspicious, {sm.get('unexplained_change', 0)} unexplained"
+        else:
+            with rt.step("lockfile_history", f"Comparing the {o.lockfile_commits} most recent commit(s) with their parent{' / explicit baseline' if o.baseline else ''}") as b:
+                st.lres = detect_lockfile_changes(st.repo_dir, "HEAD", o.baseline, o.lockfile_commits, st.info.scan_timestamp)
+                sm = st.lres.get("summary") or {}
+                for c in st.lres.get("comparisons", []):
+                    rt.progress("lockfile_history", f"{c['commit'][:8]} vs {(c['baseline'] or 'none')[:8]}: {c['status']}; lockfiles changed: {', '.join(c.get('lockfiles_changed', [])) or 'none'}")
+                for lim in st.lres.get("limitations", []):
+                    rt.warn("lockfile_history", lim)
+                if sm.get("potentially_suspicious"):
+                    rt.decide("lockfile_history", f"Escalate {sm['potentially_suspicious']} potentially suspicious change(s) to risk scoring",
+                              reason="Integrity/source anomalies were found in Git history.", agent="Supervisor")
+                b["message"] = f"{sm.get('total_changes', 0)} changes: {sm.get('potentially_suspicious', 0)} suspicious, {sm.get('unexplained_change', 0)} unexplained"
+
+        # Person 2: Execute unified suspicious change investigation and LangGraph AI investigator on scanned repository
+        try:
+            import json
+            import sys
+            from pathlib import Path
+            root_dir = Path(__file__).resolve().parent.parent.parent
+            if str(root_dir) not in sys.path:
+                sys.path.insert(0, str(root_dir))
+            from change_analyzer import ChangeAnalyzer
+
+            base_ref = o.baseline or (f"HEAD~{o.lockfile_commits}" if st.git_history else None)
+            analyzer = ChangeAnalyzer(
+                repo_dir=st.repo_dir,
+                base_commit=base_ref,
+                head_commit="HEAD" if st.git_history else None,
+                enable_ai=bool(getattr(o, "use_llm", False)),
+            )
+            ca_res = analyzer.run_investigation()
+            st.result["suspicious_changes"] = ca_res
+            try:
+                Path("suspicious_changes.json").write_text(json.dumps(ca_res, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+        except Exception:
+            pass
 
 
 def _overall(r: dict) -> str:
