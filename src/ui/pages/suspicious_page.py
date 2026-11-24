@@ -1,20 +1,48 @@
-"""Page 5: suspicious changes (typosquatting + modified lockfiles)."""
+"""Page 5: suspicious changes (typosquatting + modified lockfiles + autonomous AI investigations)."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import streamlit as st
 
 from ui.components.common import badge, df, page_header, require_result, risk_by_id
 
 
 def render() -> None:
-    page_header("Suspicious Changes", "Forensic threat signals: typosquatting package detection and lockfile modifications across Git history.")
+    page_header("Suspicious Changes", "Forensic threat signals: typosquatting package detection, lockfile modifications, and autonomous AI investigations.")
     r = require_result()
     if not r:
         return
 
     risks = risk_by_id(r)
     pkg = (r.get("package_risk") or {})
-    tab1, tab2, tab3 = st.tabs([f"Typosquatting ({len(r['typosquatting'])})", f"Modified Lockfiles ({len(r['lockfile_changes'])})", f"Package risk signals ({len(pkg.get('findings', []))})"])
+
+    # Load Phase 2/3 multi-layer investigation artifact if available
+    susp_file = Path("suspicious_changes.json")
+    susp_data = {}
+    if susp_file.exists():
+        try:
+            susp_data = json.loads(susp_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    scenarios = susp_data.get("correlated_scenarios", [])
+    ai_invs = susp_data.get("ai_investigations", [])
+
+    tab_titles = [
+        f"Typosquatting ({len(r['typosquatting'])})",
+        f"Modified Lockfiles ({len(r['lockfile_changes'])})",
+        f"Package risk signals ({len(pkg.get('findings', []))})"
+    ]
+    if ai_invs:
+        tab_titles.append(f"Autonomous AI Investigations ({len(ai_invs)})")
+    if scenarios:
+        tab_titles.append(f"Correlated Scenarios ({len(scenarios)})")
+
+    tabs = st.tabs(tab_titles)
+    tab1, tab2, tab3 = tabs[0], tabs[1], tabs[2]
+    tab_ai = tabs[3] if len(tabs) > 3 and ai_invs else None
+    tab_corr = tabs[4] if len(tabs) > 4 and scenarios else (tabs[3] if len(tabs) > 3 and not ai_invs and scenarios else None)
 
     with tab3:
         pv = pkg.get("provenance") or {}
@@ -81,3 +109,48 @@ def render() -> None:
                     st.markdown(f"• {why}")
                 if c_.get("diff_excerpt"):
                     st.code("\n".join(c_["diff_excerpt"]), language="diff")
+
+    if tab_ai:
+        with tab_ai:
+            st.caption(f"LangGraph tool-using autonomous AI investigations ({len(ai_invs)} findings examined). Strictly grounded with zero unverified host breach claims.")
+            df([{"Finding ID": inv["finding_id"], "Target File": f"{inv.get('affected_file')}:{inv.get('line_number')}",
+                 "Verdict": inv.get("verdict"), "Confidence": inv.get("confidence"),
+                 "Planner": inv.get("planner", "deterministic"), "Supporting": len(inv.get("supporting_evidence", [])),
+                 "Contradicting": len(inv.get("contradicting_evidence", []))} for inv in ai_invs], height=300)
+
+            for inv in ai_invs:
+                v = inv.get("verdict", "UNCONFIRMED")
+                v_icon = "🟢" if v == "BENIGN_EXPLANATION" else "🔴" if v == "SUSPECTED_SUPPLY_CHAIN_ATTACK" else "🟡"
+                with st.expander(f"{v_icon} {inv['finding_id']} · {v} ({inv.get('confidence')} Confidence)", expanded=False):
+                    st.markdown(f"**Rationale:** {inv.get('rationale')}")
+                    if inv.get("attack_scenario"):
+                        st.markdown(f"**Suspected Attack Narrative:** {inv.get('attack_scenario')}")
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("**Supporting Evidence (Suspicion Factors):**")
+                        for se in inv.get("supporting_evidence", []):
+                            st.markdown(f"• **{se.get('factor')}:** {se.get('detail')}")
+                    with c2:
+                        st.markdown("**Contradicting Evidence (Benign Factors):**")
+                        for ce in inv.get("contradicting_evidence", []):
+                            st.markdown(f"• **{ce.get('factor')}:** {ce.get('detail')}")
+
+                    steps = inv.get("investigation_steps", [])
+                    if steps:
+                        st.caption(f"Autonomous Tool Trace: {' ➔ '.join([s.get('tool') for s in steps])}")
+                    if inv.get("recommended_action"):
+                        st.info(f"**Recommended Action:** {inv.get('recommended_action')}")
+
+    if tab_corr:
+        with tab_corr:
+            st.caption(f"Phase 2 Cross-Signal Multi-Vector Attack Chains ({len(scenarios)} composite scenarios synthesized).")
+            for sc in scenarios:
+                with st.expander(f"⚠️ {sc.get('composite_id')} · {sc.get('scenario_name')} ({sc.get('severity')})", expanded=True):
+                    st.markdown(f"**MITRE ATT&CK Technique:** `{sc.get('attack_technique')}`")
+                    st.markdown(f"**Suspected Threat Scenario:** {sc.get('suspected_scenario')}")
+                    st.markdown(f"**Contributing Findings:** {', '.join(sc.get('primary_finding_ids', []))}")
+                    if sc.get("reasoning_chain"):
+                        st.markdown("**Reasoning Chain:**")
+                        for step in sc.get("reasoning_chain", []):
+                            st.markdown(f"1. {step}")

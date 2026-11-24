@@ -21,7 +21,7 @@ from suspicious_changes.popular_packages import POPULAR, REFERENCE_VERSION, TRUS
 from suspicious_changes.suspicious_models import TyposquatFinding
 
 HOMOGLYPHS = [("rn", "m"), ("vv", "w"), ("0", "o"), ("1", "l"), ("l", "i"), ("5", "s")]
-AFFIXES = ("js", "-js", ".js", "py", "-py", "python", "node", "-node", "nodejs", "-official", "-lib", "-dev", "-sdk", "-api")
+AFFIXES = ("js", "-js", ".js", "py", "-py", "python", "node", "-node", "nodejs", "-nodejs", "-official", "-lib", "-dev", "-sdk", "-api")
 REGISTRY_TTL = 24 * 3600
 
 
@@ -67,8 +67,9 @@ def candidate_matches(eco: str, name: str, refs: list[str]) -> list[dict]:
                 base += 2
                 break
         for af in AFFIXES:
-            if n == r + af or n == af.strip("-.") + "-" + r:
-                techniques.append(f"common affix ({af.strip('-.')})")
+            clean_af = af.strip("-.")
+            if n == r + af or n == af.strip("-.") + "-" + r or n == f"{r}-{clean_af}" or n == f"{clean_af}-{r}":
+                techniques.append(f"common affix ({clean_af})")
                 base += 1
                 break
         if techniques:

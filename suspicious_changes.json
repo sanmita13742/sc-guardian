@@ -1,0 +1,1371 @@
+{
+  "analysis_type": "Suspicious Supply Chain Change Detection",
+  "timestamp": "2026-11-24T06:56:11.087173+00:00",
+  "target": "Bosch",
+  "repository": "E:\\Bosch",
+  "base_commit": "8632dea787d4ec1fe1c333265ed5421c30a39584",
+  "head_commit": "78fdbfc56e301bc3458232f38b4284c363d6b057",
+  "metrics": {
+    "total_findings": 29,
+    "category_counts": {
+      "Typosquatting": 7,
+      "Dependency Change": 1,
+      "Docker & CI/CD": 15,
+      "Dependency Source": 1,
+      "Lifecycle Script": 4,
+      "Repository Diff": 1
+    },
+    "severity_counts": {
+      "HIGH": 2,
+      "MEDIUM": 9,
+      "LOW": 18
+    },
+    "confidence_counts": {
+      "MEDIUM": 9,
+      "CONFIRMED": 12,
+      "LOW": 6,
+      "HIGH": 2
+    },
+    "evidence_type_counts": {
+      "HEURISTIC_FLAG": 28,
+      "OBSERVED_CHANGE": 1
+    },
+    "origin_counts": {
+      "PRE_EXISTING": 28,
+      "INTRODUCED_IN_RANGE": 1
+    }
+  },
+  "findings": [
+    {
+      "id": "SUSP-TYPO-BCRYPT-NODEJS",
+      "category": "Typosquatting",
+      "title": "Package 'bcrypt-nodejs' Shares High Name Similarity with 'bcrypt'",
+      "severity": "HIGH",
+      "confidence": "MEDIUM",
+      "status": "SUSPECTED",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 8,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "Package \"bcrypt-nodejs\" similar to popular \"bcrypt\" (similarity: 46.2%, edit distance: 7)",
+      "explanation": "Package 'bcrypt-nodejs' has an edit distance of 7 (46.2% similarity) from widely used package 'bcrypt'. Techniques identified: common affix (nodejs). Attackers frequently leverage lexical similarity to hijack accidental typos or wrapper searches.",
+      "technical_explanation": "Package 'bcrypt-nodejs' has an edit distance of 7 (46.2% similarity) from widely used package 'bcrypt'. Techniques identified: common affix (nodejs). Attackers frequently leverage lexical similarity to hijack accidental typos or wrapper searches.",
+      "potential_impact": "Developers or automated build tools may install unvetted typosquatting package.",
+      "recommended_action": "Verify whether 'bcrypt-nodejs' is legitimate or should be replaced with canonical 'bcrypt'.",
+      "references": [
+        "https://blog.reversinglabs.com/blog/typosquatting-in-open-source"
+      ]
+    },
+    {
+      "id": "SUSP-DEP-FLOATING-GRUNT-ENV",
+      "category": "Dependency Change",
+      "title": "Floating Dependency Version Constraint for 'grunt-env'",
+      "severity": "HIGH",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 50,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "\"grunt-env\": \"latest\",",
+      "explanation": "Package 'grunt-env' declares a floating 'latest' version constraint in 'devDependencies'. Floating constraints allow automated adoption of upstream breaking or malicious updates without manifest review.",
+      "technical_explanation": "Package 'grunt-env' declares a floating 'latest' version constraint in 'devDependencies'. Floating constraints allow automated adoption of upstream breaking or malicious updates without manifest review.",
+      "potential_impact": "Automatic installation of unvetted new releases or malicious package versions.",
+      "recommended_action": "Pin 'grunt-env' to a specific immutable semantic version.",
+      "references": [
+        "https://docs.npmjs.com/about-semantic-versioning"
+      ]
+    },
+    {
+      "id": "SUSP-DOCKER-DF012-L14",
+      "category": "Docker & CI/CD",
+      "title": "Service 'mongo' uses an end-of-life image",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/docker-compose.yml",
+      "line_number": 14,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "image: mongo:4.4",
+      "explanation": "MongoDB 5.0 and older are end-of-life (lifecycle table reviewed 2026-11).",
+      "technical_explanation": "MongoDB 5.0 and older are end-of-life (lifecycle table reviewed 2026-11).",
+      "potential_impact": "MongoDB 5.0 and older are end-of-life (lifecycle table reviewed 2026-11).",
+      "recommended_action": "Move to a supported release line.",
+      "references": []
+    },
+    {
+      "id": "SUSP-TYPO-LOCK-OBJECT-ASSIGN",
+      "category": "Typosquatting",
+      "title": "Transitive Dependency 'object-assign' Similar to 'object.assign'",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "status": "SUSPECTED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "Package \"object-assign\" has edit distance 1 from \"object.assign\"",
+      "explanation": "Lockfile package 'object-assign' shares similarity with 'object.assign' (single-edit (insertion/deletion/substitution/transposition), separator variant). Transitive similarity is flagged for dependency graph review.",
+      "technical_explanation": "Lockfile package 'object-assign' shares similarity with 'object.assign' (single-edit (insertion/deletion/substitution/transposition), separator variant). Transitive similarity is flagged for dependency graph review.",
+      "potential_impact": "Transitive dependency substitution or masquerading.",
+      "recommended_action": "Verify supply chain path introducing 'object-assign'.",
+      "references": []
+    },
+    {
+      "id": "SUSP-TYPO-LOCK-SAFE-BUFFER",
+      "category": "Typosquatting",
+      "title": "Transitive Dependency 'safe-buffer' Similar to 'safer-buffer'",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "status": "SUSPECTED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "Package \"safe-buffer\" has edit distance 1 from \"safer-buffer\"",
+      "explanation": "Lockfile package 'safe-buffer' shares similarity with 'safer-buffer' (single-edit (insertion/deletion/substitution/transposition), missing character). Transitive similarity is flagged for dependency graph review.",
+      "technical_explanation": "Lockfile package 'safe-buffer' shares similarity with 'safer-buffer' (single-edit (insertion/deletion/substitution/transposition), missing character). Transitive similarity is flagged for dependency graph review.",
+      "potential_impact": "Transitive dependency substitution or masquerading.",
+      "recommended_action": "Verify supply chain path introducing 'safe-buffer'.",
+      "references": []
+    },
+    {
+      "id": "SUSP-TYPO-LOCK-SAFER-BUFFER",
+      "category": "Typosquatting",
+      "title": "Transitive Dependency 'safer-buffer' Similar to 'safe-buffer'",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "status": "SUSPECTED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "Package \"safer-buffer\" has edit distance 1 from \"safe-buffer\"",
+      "explanation": "Lockfile package 'safer-buffer' shares similarity with 'safe-buffer' (single-edit (insertion/deletion/substitution/transposition), extra character). Transitive similarity is flagged for dependency graph review.",
+      "technical_explanation": "Lockfile package 'safer-buffer' shares similarity with 'safe-buffer' (single-edit (insertion/deletion/substitution/transposition), extra character). Transitive similarity is flagged for dependency graph review.",
+      "potential_impact": "Transitive dependency substitution or masquerading.",
+      "recommended_action": "Verify supply chain path introducing 'safer-buffer'.",
+      "references": []
+    },
+    {
+      "id": "SUSP-TYPO-LOCK-OBJECT.ASSIGN",
+      "category": "Typosquatting",
+      "title": "Transitive Dependency 'object.assign' Similar to 'object-assign'",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "status": "SUSPECTED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "Package \"object.assign\" has edit distance 1 from \"object-assign\"",
+      "explanation": "Lockfile package 'object.assign' shares similarity with 'object-assign' (single-edit (insertion/deletion/substitution/transposition), separator variant). Transitive similarity is flagged for dependency graph review.",
+      "technical_explanation": "Lockfile package 'object.assign' shares similarity with 'object-assign' (single-edit (insertion/deletion/substitution/transposition), separator variant). Transitive similarity is flagged for dependency graph review.",
+      "potential_impact": "Transitive dependency substitution or masquerading.",
+      "recommended_action": "Verify supply chain path introducing 'object.assign'.",
+      "references": []
+    },
+    {
+      "id": "SUSP-TYPO-LOCK-THROUGH",
+      "category": "Typosquatting",
+      "title": "Transitive Dependency 'through' Similar to 'through2'",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "status": "SUSPECTED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "Package \"through\" has edit distance 1 from \"through2\"",
+      "explanation": "Lockfile package 'through' shares similarity with 'through2' (single-edit (insertion/deletion/substitution/transposition), missing character). Transitive similarity is flagged for dependency graph review.",
+      "technical_explanation": "Lockfile package 'through' shares similarity with 'through2' (single-edit (insertion/deletion/substitution/transposition), missing character). Transitive similarity is flagged for dependency graph review.",
+      "potential_impact": "Transitive dependency substitution or masquerading.",
+      "recommended_action": "Verify supply chain path introducing 'through'.",
+      "references": []
+    },
+    {
+      "id": "SUSP-TYPO-LOCK-THROUGH2",
+      "category": "Typosquatting",
+      "title": "Transitive Dependency 'through2' Similar to 'through'",
+      "severity": "MEDIUM",
+      "confidence": "LOW",
+      "status": "SUSPECTED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "Package \"through2\" has edit distance 1 from \"through\"",
+      "explanation": "Lockfile package 'through2' shares similarity with 'through' (single-edit (insertion/deletion/substitution/transposition), extra character). Transitive similarity is flagged for dependency graph review.",
+      "technical_explanation": "Lockfile package 'through2' shares similarity with 'through' (single-edit (insertion/deletion/substitution/transposition), extra character). Transitive similarity is flagged for dependency graph review.",
+      "potential_impact": "Transitive dependency substitution or masquerading.",
+      "recommended_action": "Verify supply chain path introducing 'through2'.",
+      "references": []
+    },
+    {
+      "id": "SRC-GIT-DEP-GRUNT-IF",
+      "category": "Dependency Source",
+      "title": "Direct Git-Sourced Dependency 'grunt-if'",
+      "severity": "MEDIUM",
+      "confidence": "HIGH",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "\"grunt-if\": \"https://github.com/binarymist/grunt-if/tarball/master\"",
+      "explanation": "Package 'grunt-if' is sourced directly from a Git repository ('https://github.com/binarymist/grunt-if/tarball/master') rather than a registered package registry. Direct Git dependencies bypass registry integrity checks, vulnerability tracking, and immutable release audits unless pinned to a full commit SHA.",
+      "technical_explanation": "Package 'grunt-if' is sourced directly from a Git repository ('https://github.com/binarymist/grunt-if/tarball/master') rather than a registered package registry. Direct Git dependencies bypass registry integrity checks, vulnerability tracking, and immutable release audits unless pinned to a full commit SHA.",
+      "potential_impact": "Minimal risk when pinned to full commit SHA; mutable branches or tags can modify package code without audit trails.",
+      "recommended_action": "Ensure all Git dependencies remain pinned to full 40-character commit SHAs.",
+      "references": []
+    },
+    {
+      "id": "SCRIPT-DOCKER_LATEST-DOCKER-MONGO-L36",
+      "category": "Lifecycle Script",
+      "title": "Suspicious 'docker-mongo' Script: Unpinned Docker Execution in npm Script",
+      "severity": "MEDIUM",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 36,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "\"docker-mongo\": \"docker run -p 27017:27017 --name mongo  mongo:latest\"",
+      "explanation": "Script 'docker-mongo' defines command 'docker run -p 27017:27017 --name mongo  mongo:latest'. Pattern match for 'docker_latest': npm script invokes 'docker run' using mutable ':latest' image tag instead of an immutable digest.",
+      "technical_explanation": "Script 'docker-mongo' defines command 'docker run -p 27017:27017 --name mongo  mongo:latest'. Pattern match for 'docker_latest': npm script invokes 'docker run' using mutable ':latest' image tag instead of an immutable digest.",
+      "potential_impact": "npm script invokes 'docker run' using mutable ':latest' image tag instead of an immutable digest.",
+      "recommended_action": "Audit the script behavior. If installing dependencies, run with '--ignore-scripts' and replace inline commands with trusted build scripts.",
+      "references": [
+        "https://docs.npmjs.com/cli/v9/using-npm/scripts#life-cycle-scripts",
+        "https://github.blog/2021-02-04-preventing-supply-chain-attacks-like-dependency-confusion/"
+      ]
+    },
+    {
+      "id": "DIFF-SENSITIVE-FILE-_ENV_EXAMPLE",
+      "category": "Repository Diff",
+      "title": "Security-Sensitive File Modified: '.env.example' (Environment & Secret Configuration)",
+      "severity": "LOW",
+      "confidence": "HIGH",
+      "status": "OBSERVED",
+      "affected_file": ".env.example",
+      "line_number": 1,
+      "commit_reference": {
+        "sha": "78fdbfc56e301bc3458232f38b4284c363d6b057",
+        "author": "Surya HA",
+        "date": "2026-11-24T01:04:57+05:30",
+        "subject": "Optimize graph physics, add caching, enhance docs, and streamline configuration"
+      },
+      "change_origin": "INTRODUCED_IN_RANGE",
+      "evidence_type": "OBSERVED_CHANGE",
+      "evidence": "Git status: M\ndiff --git a/.env.example b/.env.example\nindex f5560c3..613e0d1 100644\n--- a/.env.example\n+++ b/.env.example\n@@ -1,12 +1,13 @@\n-# Optional: NVD API key (raises NVD rate limits). The scanner works without it.\n-NVD_API_KEY=\n-# Optional LLM (everything works without it - deterministic mode). Paste ONE ",
+      "explanation": "Commit 78fdbfc5 modified security-sensitive file '.env.example' (Environment & Secret Configuration). Critical architectural components (authentication, CI/CD, build hooks, server root) require focused peer review during supply chain auditing.",
+      "technical_explanation": "Commit 78fdbfc5 modified security-sensitive file '.env.example' (Environment & Secret Configuration). Critical architectural components (authentication, CI/CD, build hooks, server root) require focused peer review during supply chain auditing.",
+      "potential_impact": "Alterations to authentication, authorization, build gates or deployment workflows.",
+      "recommended_action": "Conduct targeted code review on modified lines in this security-sensitive component.",
+      "references": []
+    },
+    {
+      "id": "SUSP-CICD-GHA001-14",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/checkout' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": ".github/workflows/guardian.yml",
+      "line_number": 14,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/checkout@v4",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/checkout@<sha> # v4`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-15",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/setup-python' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": ".github/workflows/guardian.yml",
+      "line_number": 15,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/setup-python@v5",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/setup-python@<sha> # v5`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-23",
+      "category": "Docker & CI/CD",
+      "title": "Action 'github/codeql-action' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": ".github/workflows/guardian.yml",
+      "line_number": 23,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: github/codeql-action/upload-sarif@v3",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: github/codeql-action@<sha> # v3`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA004-1",
+      "category": "Docker & CI/CD",
+      "title": "No explicit token permissions (defaults may be read-write)",
+      "severity": "LOW",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "(no `permissions:` key)",
+      "explanation": "Without an explicit `permissions:` block the GITHUB_TOKEN gets the repository/org default, which can include write access.",
+      "technical_explanation": "Without an explicit `permissions:` block the GITHUB_TOKEN gets the repository/org default, which can include write access.",
+      "potential_impact": "Without an explicit `permissions:` block the GITHUB_TOKEN gets the repository/org default, which can include write access.",
+      "recommended_action": "Add a top-level `permissions: contents: read` and grant extra scopes per job.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/automatic-token-authentication"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-16",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/checkout' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 16,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/checkout@v2",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/checkout@<sha> # v2`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-21",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/setup-node' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 21,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/setup-node@v1",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/setup-node@<sha> # v1`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-26",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/cache' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 26,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/cache@v2",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/cache@<sha> # v2`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-58",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/upload-artifact' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/e2e-test.yml",
+      "line_number": 58,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/upload-artifact@v2",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/upload-artifact@<sha> # v2`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA004-1",
+      "category": "Docker & CI/CD",
+      "title": "No explicit token permissions (defaults may be read-write)",
+      "severity": "LOW",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/lint.yml",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "(no `permissions:` key)",
+      "explanation": "Without an explicit `permissions:` block the GITHUB_TOKEN gets the repository/org default, which can include write access.",
+      "technical_explanation": "Without an explicit `permissions:` block the GITHUB_TOKEN gets the repository/org default, which can include write access.",
+      "potential_impact": "Without an explicit `permissions:` block the GITHUB_TOKEN gets the repository/org default, which can include write access.",
+      "recommended_action": "Add a top-level `permissions: contents: read` and grant extra scopes per job.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/automatic-token-authentication"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-16",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/checkout' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/lint.yml",
+      "line_number": 16,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/checkout@v2",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/checkout@<sha> # v2`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-CICD-GHA001-21",
+      "category": "Docker & CI/CD",
+      "title": "Action 'actions/setup-node' is not pinned to a commit SHA",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/.github/workflows/lint.yml",
+      "line_number": 21,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "uses: actions/setup-node@v1",
+      "explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "technical_explanation": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "potential_impact": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+      "recommended_action": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/setup-node@<sha> # v1`.",
+      "references": [
+        "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+      ]
+    },
+    {
+      "id": "SUSP-DOCKER-DF002-L1",
+      "category": "Docker & CI/CD",
+      "title": "Base image tag is not pinned by digest",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/Dockerfile",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "FROM node:12-alpine",
+      "explanation": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
+      "technical_explanation": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
+      "potential_impact": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
+      "recommended_action": "Pin by digest: FROM node:12-alpine@sha256:<digest>.",
+      "references": []
+    },
+    {
+      "id": "SUSP-DOCKER-DF008-L5",
+      "category": "Docker & CI/CD",
+      "title": "`npm install` ignores the lockfile pin",
+      "severity": "LOW",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/Dockerfile",
+      "line_number": 5,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "RUN npm install --production --no-cache",
+      "explanation": "`npm install` may update dependencies; builds are not reproducible.",
+      "technical_explanation": "`npm install` may update dependencies; builds are not reproducible.",
+      "potential_impact": "`npm install` may update dependencies; builds are not reproducible.",
+      "recommended_action": "Use `npm ci` (exact lockfile install).",
+      "references": []
+    },
+    {
+      "id": "SUSP-DOCKER-DF002-L7",
+      "category": "Docker & CI/CD",
+      "title": "Base image tag is not pinned by digest",
+      "severity": "LOW",
+      "confidence": "CONFIRMED",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/Dockerfile",
+      "line_number": 7,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "FROM node:12-alpine",
+      "explanation": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
+      "technical_explanation": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
+      "potential_impact": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise).",
+      "recommended_action": "Pin by digest: FROM node:12-alpine@sha256:<digest>.",
+      "references": []
+    },
+    {
+      "id": "LOCK-INSTALL-SCRIPT-CYPRESS",
+      "category": "Lifecycle Script",
+      "title": "Dependency 'cypress@3.3.1' Declares Install Script in Lockfile",
+      "severity": "LOW",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "\"node_modules/cypress\": { \"hasInstallScript\": true, \"version\": \"3.3.1\" }",
+      "explanation": "Package 'cypress' declares 'hasInstallScript: true' in lockfile metadata. When installed without '--ignore-scripts', it automatically executes code on the host machine.",
+      "technical_explanation": "Package 'cypress' declares 'hasInstallScript: true' in lockfile metadata. When installed without '--ignore-scripts', it automatically executes code on the host machine.",
+      "potential_impact": "Code execution occurs during 'npm install' on developer workstations and CI runners.",
+      "recommended_action": "Verify package authenticity and run builds with '--ignore-scripts' where feasible.",
+      "references": [
+        "https://docs.npmjs.com/cli/v9/configuring-npm/package-lock-json"
+      ]
+    },
+    {
+      "id": "LOCK-INSTALL-SCRIPT-FSEVENTS",
+      "category": "Lifecycle Script",
+      "title": "Dependency 'fsevents@1.2.9' Declares Install Script in Lockfile",
+      "severity": "LOW",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "\"node_modules/fsevents\": { \"hasInstallScript\": true, \"version\": \"1.2.9\" }",
+      "explanation": "Package 'fsevents' declares 'hasInstallScript: true' in lockfile metadata. When installed without '--ignore-scripts', it automatically executes code on the host machine.",
+      "technical_explanation": "Package 'fsevents' declares 'hasInstallScript: true' in lockfile metadata. When installed without '--ignore-scripts', it automatically executes code on the host machine.",
+      "potential_impact": "Code execution occurs during 'npm install' on developer workstations and CI runners.",
+      "recommended_action": "Verify package authenticity and run builds with '--ignore-scripts' where feasible.",
+      "references": [
+        "https://docs.npmjs.com/cli/v9/configuring-npm/package-lock-json"
+      ]
+    },
+    {
+      "id": "LOCK-INSTALL-SCRIPT-NODEMON",
+      "category": "Lifecycle Script",
+      "title": "Dependency 'nodemon@1.19.1' Declares Install Script in Lockfile",
+      "severity": "LOW",
+      "confidence": "MEDIUM",
+      "status": "OBSERVED",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "commit_reference": {},
+      "change_origin": "PRE_EXISTING",
+      "evidence_type": "HEURISTIC_FLAG",
+      "evidence": "\"node_modules/nodemon\": { \"hasInstallScript\": true, \"version\": \"1.19.1\" }",
+      "explanation": "Package 'nodemon' declares 'hasInstallScript: true' in lockfile metadata. When installed without '--ignore-scripts', it automatically executes code on the host machine.",
+      "technical_explanation": "Package 'nodemon' declares 'hasInstallScript: true' in lockfile metadata. When installed without '--ignore-scripts', it automatically executes code on the host machine.",
+      "potential_impact": "Code execution occurs during 'npm install' on developer workstations and CI runners.",
+      "recommended_action": "Verify package authenticity and run builds with '--ignore-scripts' where feasible.",
+      "references": [
+        "https://docs.npmjs.com/cli/v9/configuring-npm/package-lock-json"
+      ]
+    }
+  ],
+  "correlated_scenarios": [
+    {
+      "composite_id": "CORR-CONTAINER-POISONING-001",
+      "scenario_name": "Container Image Supply Chain Vulnerability",
+      "scenario_type": "container_poisoning",
+      "attack_technique": "MITRE ATT&CK T1525 (Implant Internal Image)",
+      "primary_finding_ids": [
+        "SUSP-DOCKER-DF012-L14",
+        "SUSP-DOCKER-DF002-L1",
+        "SUSP-DOCKER-DF002-L7"
+      ],
+      "related_files": [
+        "nodegoat/Dockerfile",
+        "nodegoat/docker-compose.yml"
+      ],
+      "correlation_confidence": "MEDIUM",
+      "severity": "MEDIUM",
+      "status": "SUSPECTED_SCENARIO",
+      "observed_facts": [
+        "Container build specifications reference mutable base image tags: ['image: mongo:4.4', 'FROM node:12-alpine', 'FROM node:12-alpine']."
+      ],
+      "suspected_scenario": "Container build specifications do not pin base images by cryptographic sha256 digest. Upstream tag mutations or compromised registry layers could silently alter build output.",
+      "supporting_evidence": [
+        {
+          "finding_id": "SUSP-DOCKER-DF012-L14",
+          "evidence": "image: mongo:4.4",
+          "detail": "MongoDB 5.0 and older are end-of-life (lifecycle table reviewed 2026-11)."
+        },
+        {
+          "finding_id": "SUSP-DOCKER-DF002-L1",
+          "evidence": "FROM node:12-alpine",
+          "detail": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise)."
+        },
+        {
+          "finding_id": "SUSP-DOCKER-DF002-L7",
+          "evidence": "FROM node:12-alpine",
+          "detail": "Tags are mutable: the same tag can later point to different content (tag re-push or registry compromise)."
+        }
+      ],
+      "contradicting_evidence": [
+        {
+          "factor": "Official Base Image Publisher",
+          "detail": "Base image in 'nodegoat/docker-compose.yml' originates from an official Docker Hub verified repository.",
+          "mitigation_strength": "LOW"
+        },
+        {
+          "factor": "Official Base Image Publisher",
+          "detail": "Base image in 'nodegoat/Dockerfile' originates from an official Docker Hub verified repository.",
+          "mitigation_strength": "LOW"
+        },
+        {
+          "factor": "Official Base Image Publisher",
+          "detail": "Base image in 'nodegoat/Dockerfile' originates from an official Docker Hub verified repository.",
+          "mitigation_strength": "LOW"
+        }
+      ],
+      "traceable_relationships": [],
+      "reasoning_chain": [
+        "Step 1: Inspected Dockerfiles and Docker Compose build files.",
+        "Step 2: Identified 3 unpinned or end-of-life base image declaration(s).",
+        "Step 3: Assessed reproducibility and immutable layer integrity.",
+        "Step 4: Evaluated mitigations (official Docker Hub publishers).",
+        "Step 5: Formulated container supply chain correlation."
+      ],
+      "recommended_investigation_steps": [
+        "Pin container base images using immutable SHA-256 digests (e.g. FROM node:12-alpine@sha256:...).",
+        "Migrate end-of-life runtimes (e.g. Node 12, Mongo 4.4) to actively supported LTS releases.",
+        "Avoid build-time remote downloads without cryptographic verification."
+      ],
+      "citations": [
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ]
+    }
+  ],
+  "correlation_metrics": {
+    "by_severity": {
+      "MEDIUM": 1
+    },
+    "by_scenario_type": {
+      "container_poisoning": 1
+    },
+    "by_confidence": {
+      "MEDIUM": 1
+    }
+  },
+  "ai_investigations": [
+    {
+      "finding_id": "SUSP-TYPO-BCRYPT-NODEJS",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 8,
+      "verdict": "BENIGN_EXPLANATION",
+      "confidence": "HIGH",
+      "observed_facts": [
+        "Initial finding SUSP-TYPO-BCRYPT-NODEJS (Typosquatting) flagged in 'nodegoat/package.json' at line 8: Package 'bcrypt-nodejs' Shares High Name Similarity with 'bcrypt'.",
+        "Recorded evidence snippet: Package \"bcrypt-nodejs\" similar to popular \"bcrypt\" (similarity: 46.2%, edit distance: 7).",
+        "Dependency metadata: manifest constraint 'None', lockfile resolved: none.",
+        "Source snippet confirmed in 'nodegoat/package.json' lines 3-13."
+      ],
+      "attack_scenario": null,
+      "rationale": "The package 'bcrypt-nodejs' is a well-known, historically significant Node.js module used as a pure JavaScript fallback for the native 'bcrypt' library. While it shares name similarity with 'bcrypt', it is an established legacy package rather than a malicious typosquatting attempt, commonly found in older applications like NodeGoat.",
+      "supporting_evidence": [
+        {
+          "factor": "Name Similarity",
+          "detail": "Package name 'bcrypt-nodejs' shares high textual similarity and edit distance with the popular 'bcrypt' library."
+        }
+      ],
+      "contradicting_evidence": [
+        {
+          "factor": "Legacy Ecosystem Usage",
+          "detail": "'bcrypt-nodejs' is a recognized legacy package providing pure JavaScript bcrypt hashing functionality, widely documented and used in older training applications such as OWASP NodeGoat."
+        }
+      ],
+      "recommended_action": "Migrate the dependency from 'bcrypt-nodejs' to the modern, actively maintained 'bcrypt' or 'bcryptjs' package to ensure long-term security and compatibility.",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_dependency_metadata",
+          "args": {
+            "package_name": "bcrypt-nodejs"
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "package": "bcrypt-nodejs",
+            "declared_in_manifest": false,
+            "manifest_spec": null,
+            "dependency_section": null,
+            "lockfile_entry": null,
+            "typosquat_candidates": [
+              {
+                "ref": "bcrypt",
+                "similarity": 46.2,
+                "distance": 7,
+                "techniques": [
+                  "common affix (nodejs)"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "iteration": 2,
+          "tool": "inspect_source_snippet",
+          "args": {
+            "file_path": "nodegoat/package.json",
+            "line_number": 8,
+            "radius": 5
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": "nodegoat/package.json",
+            "line_number": 8,
+            "total_lines": 65,
+            "start_line": 3,
+            "end_line": 13
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    },
+    {
+      "finding_id": "SUSP-DEP-FLOATING-GRUNT-ENV",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 50,
+      "verdict": "BENIGN_EXPLANATION",
+      "confidence": "HIGH",
+      "observed_facts": [
+        "Initial finding SUSP-DEP-FLOATING-GRUNT-ENV (Dependency Change) flagged in 'nodegoat/package.json' at line 50: Floating Dependency Version Constraint for 'grunt-env'.",
+        "Recorded evidence snippet: \"grunt-env\": \"latest\",.",
+        "Git diff verified in commit 78fdbfc5: +0 / -0 line(s)."
+      ],
+      "attack_scenario": null,
+      "rationale": "The package.json configuration uses 'latest' for 'grunt-env' within a known vulnerable intentionally-insecure training application (OWASP NodeGoat). NodeGoat intentionally maintains outdated, unpinned, or vulnerable dependencies for educational and testing purposes. There is no active supply chain compromise or malicious injection indicated by the git diff history.",
+      "supporting_evidence": [
+        {
+          "factor": "Application Context",
+          "detail": "Nodegoat is a deliberately vulnerable web application designed for security training and testing."
+        }
+      ],
+      "contradicting_evidence": [
+        {
+          "factor": "Intentional Vulnerability Design",
+          "detail": "Unpinned or floating dependency versions are standard practice in intentionally vulnerable training apps to demonstrate risks rather than indicating a real-world supply chain attack."
+        }
+      ],
+      "recommended_action": "Pin dependency versions to specific stable releases if hardening the application for production use.",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_git_diff",
+          "args": {
+            "file_path": "nodegoat/package.json",
+            "base_commit": "8632dea787d4ec1fe1c333265ed5421c30a39584",
+            "head_commit": "78fdbfc56e301bc3458232f38b4284c363d6b057"
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": "nodegoat/package.json",
+            "base_commit": "8632dea787d4ec1fe1c333265ed5421c30a39584",
+            "head_commit": "78fdbfc56e301bc3458232f38b4284c363d6b057",
+            "commit_author": "Surya HA",
+            "commit_message": "Optimize graph physics, add caching, enhance docs, and streamline configuration",
+            "total_added_lines": 0,
+            "total_deleted_lines": 0,
+            "evidence_type": "OBSERVED_CHANGE"
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    },
+    {
+      "finding_id": "SUSP-DOCKER-DF012-L14",
+      "affected_file": "nodegoat/docker-compose.yml",
+      "line_number": 14,
+      "verdict": "BENIGN_EXPLANATION",
+      "confidence": "HIGH",
+      "observed_facts": [
+        "Initial finding SUSP-DOCKER-DF012-L14 (Docker & CI/CD) flagged in 'nodegoat/docker-compose.yml' at line 14: Service 'mongo' uses an end-of-life image.",
+        "Recorded evidence snippet: image: mongo:4.4.",
+        "Source snippet confirmed in 'nodegoat/docker-compose.yml' lines 9-17."
+      ],
+      "attack_scenario": null,
+      "rationale": "The finding flags the use of an older MongoDB image version (mongo:4.4) in a docker-compose configuration. NodeGoat is an intentionally vulnerable Node.js application designed for security training, education, and testing purposes, where legacy and vulnerable dependencies/services are expected and intentional components of the architecture.",
+      "supporting_evidence": [
+        {
+          "factor": "Application Purpose",
+          "detail": "NodeGoat is a deliberately vulnerable web application used for OWASP Top 10 training and security demonstrations."
+        },
+        {
+          "factor": "Intentional Legacy Configuration",
+          "detail": "Using older versions of databases and libraries is standard practice for vulnerable-by-design training applications to showcase real-world upgrade and patch challenges."
+        }
+      ],
+      "contradicting_evidence": [
+        {
+          "factor": "Not a Supply Chain Attack",
+          "detail": "The use of an end-of-life upstream image in a purposefully insecure training application does not constitute a software supply chain compromise or malicious injection."
+        }
+      ],
+      "recommended_action": "No remediation required if this repository is used strictly for educational or testing purposes. For production deployments, upgrade the MongoDB service to a supported, non-EOL version.",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_source_snippet",
+          "args": {
+            "file_path": "nodegoat/docker-compose.yml",
+            "line_number": 14,
+            "radius": 5
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": "nodegoat/docker-compose.yml",
+            "line_number": 14,
+            "total_lines": 17,
+            "start_line": 9,
+            "end_line": 17
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    },
+    {
+      "finding_id": "SUSP-TYPO-LOCK-OBJECT-ASSIGN",
+      "affected_file": "nodegoat/package-lock.json",
+      "line_number": 1,
+      "verdict": "CONFIRMED_ANOMALY",
+      "confidence": "MEDIUM",
+      "observed_facts": [
+        "Initial finding SUSP-TYPO-LOCK-OBJECT-ASSIGN (Typosquatting) flagged in 'nodegoat/package-lock.json' at line 1: Transitive Dependency 'object-assign' Similar to 'object.assign'.",
+        "Recorded evidence snippet: Package \"object-assign\" has edit distance 1 from \"object.assign\".",
+        "Dependency metadata: manifest constraint 'None', lockfile resolved: none.",
+        "Source snippet confirmed in 'nodegoat/package-lock.json' lines 1-6."
+      ],
+      "attack_scenario": null,
+      "rationale": "Verified anomalous configuration in 'nodegoat/package-lock.json': Transitive Dependency 'object-assign' Similar to 'object.assign'.",
+      "supporting_evidence": [],
+      "contradicting_evidence": [],
+      "recommended_action": "Verify supply chain path introducing 'object-assign'.",
+      "ai_assisted": false,
+      "planner": "deterministic",
+      "model": null,
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_dependency_metadata",
+          "args": {
+            "package_name": "unknown"
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "package": "unknown",
+            "declared_in_manifest": false,
+            "manifest_spec": null,
+            "dependency_section": null,
+            "lockfile_entry": null,
+            "typosquat_candidates": []
+          }
+        },
+        {
+          "iteration": 2,
+          "tool": "inspect_source_snippet",
+          "args": {
+            "file_path": "nodegoat/package-lock.json",
+            "line_number": 1,
+            "radius": 5
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": "nodegoat/package-lock.json",
+            "line_number": 1,
+            "total_lines": 27514,
+            "start_line": 1,
+            "end_line": 6
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    },
+    {
+      "finding_id": "SRC-GIT-DEP-GRUNT-IF",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 1,
+      "verdict": "SUSPECTED_SUPPLY_CHAIN_ATTACK",
+      "confidence": "HIGH",
+      "observed_facts": [
+        "Initial finding SRC-GIT-DEP-GRUNT-IF (Dependency Source) flagged in 'nodegoat/package.json' at line 1: Direct Git-Sourced Dependency 'grunt-if'.",
+        "Recorded evidence snippet: \"grunt-if\": \"https://github.com/binarymist/grunt-if/tarball/master\".",
+        "Source snippet confirmed in 'nodegoat/package.json' lines 1-6."
+      ],
+      "attack_scenario": "An attacker compromises the external repository 'binarymist/grunt-if' on the 'master' branch or performs a DNS/repositiory spoofing attack, replacing the legitimate tarball content with malicious code that executes during the installation lifecycle scripts when developers run 'npm install'.",
+      "rationale": "The package.json file specifies a direct git tarball URL for the dependency 'grunt-if' pointing to a specific GitHub repository branch ('master'). Fetching dependencies directly from arbitrary Git URLs or branches bypasses registry integrity guarantees (like cryptographic checksum verification provided by npm/yarn lockfiles) and introduces a significant supply chain vector where the upstream branch content can be modified arbitrarily without version changes.",
+      "supporting_evidence": [
+        {
+          "factor": "Direct Git-sourced dependency",
+          "detail": "The dependency 'grunt-if' is loaded via a raw tarball URL: 'https://github.com/binarymist/grunt-if/tarball/master'."
+        },
+        {
+          "factor": "Unpinned mutable reference",
+          "detail": "Pulling from the 'master' branch allows the underlying source code to change dynamically over time, undermining build reproducibility and integrity."
+        }
+      ],
+      "contradicting_evidence": [],
+      "recommended_action": "Replace the direct git tarball dependency with a securely published version from the official package registry, or pin the dependency to an immutable cryptographic commit hash with a verified lockfile entry.",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_source_snippet",
+          "args": {
+            "file_path": "nodegoat/package.json",
+            "line_number": 1,
+            "radius": 5
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": "nodegoat/package.json",
+            "line_number": 1,
+            "total_lines": 65,
+            "start_line": 1,
+            "end_line": 6
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    },
+    {
+      "finding_id": "SCRIPT-DOCKER_LATEST-DOCKER-MONGO-L36",
+      "affected_file": "nodegoat/package.json",
+      "line_number": 36,
+      "verdict": "CONFIRMED_ANOMALY",
+      "confidence": "MEDIUM",
+      "observed_facts": [
+        "Initial finding SCRIPT-DOCKER_LATEST-DOCKER-MONGO-L36 (Lifecycle Script) flagged in 'nodegoat/package.json' at line 36: Suspicious 'docker-mongo' Script: Unpinned Docker Execution in npm Script.",
+        "Recorded evidence snippet: \"docker-mongo\": \"docker run -p 27017:27017 --name mongo  mongo:latest\".",
+        "Lifecycle scripts analyzed in 'nodegoat/package.json': 11 script(s) found.",
+        "Source snippet confirmed in 'nodegoat/package.json' lines 31-41."
+      ],
+      "attack_scenario": null,
+      "rationale": "Verified anomalous configuration in 'nodegoat/package.json': Suspicious 'docker-mongo' Script: Unpinned Docker Execution in npm Script.",
+      "supporting_evidence": [],
+      "contradicting_evidence": [],
+      "recommended_action": "Audit the script behavior. If installing dependencies, run with '--ignore-scripts' and replace inline commands with trusted build scripts.",
+      "ai_assisted": false,
+      "planner": "deterministic",
+      "model": null,
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_lifecycle_scripts",
+          "args": {
+            "file_path": "nodegoat/package.json"
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": "nodegoat/package.json",
+            "scripts_analyzed": 11,
+            "scripts": {
+              "start": {
+                "command": "node server.js",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "dev": {
+                "command": "cross-env PORT=5000 nodemon",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "test:e2e": {
+                "command": "cross-env NODE_ENV=test cypress open",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "test:ci": {
+                "command": "cross-env NODE_ENV=test cypress run",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "test": {
+                "command": "node node_modules/grunt-cli/bin/grunt test",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "db:seed": {
+                "command": "cross-env NODE_ENV=test grunt db-reset",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "precommit": {
+                "command": "grunt precommit",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "docker-mongo": {
+                "command": "docker run -p 27017:27017 --name mongo  mongo:latest",
+                "is_benign_build": false,
+                "threats_detected": [
+                  {
+                    "pattern": "docker_latest",
+                    "severity": "MEDIUM",
+                    "title": "Unpinned Docker Execution in npm Script"
+                  }
+                ],
+                "is_lifecycle_hook": false
+              },
+              "start-infra": {
+                "command": "docker-compose up",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "stop-infra": {
+                "command": "docker-compose down",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              },
+              "cy:verify": {
+                "command": "cypress verify",
+                "is_benign_build": false,
+                "threats_detected": [],
+                "is_lifecycle_hook": false
+              }
+            }
+          }
+        },
+        {
+          "iteration": 2,
+          "tool": "inspect_source_snippet",
+          "args": {
+            "file_path": "nodegoat/package.json",
+            "line_number": 36,
+            "radius": 5
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": "nodegoat/package.json",
+            "line_number": 36,
+            "total_lines": 65,
+            "start_line": 31,
+            "end_line": 41
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    },
+    {
+      "finding_id": "DIFF-SENSITIVE-FILE-_ENV_EXAMPLE",
+      "affected_file": ".env.example",
+      "line_number": 1,
+      "verdict": "BENIGN_EXPLANATION",
+      "confidence": "HIGH",
+      "observed_facts": [
+        "Initial finding DIFF-SENSITIVE-FILE-_ENV_EXAMPLE (Repository Diff) flagged in '.env.example' at line 1: Security-Sensitive File Modified: '.env.example' (Environment & Secret Configuration).",
+        "Recorded evidence snippet: Git status: M\ndiff --git a/.env.example b/.env.example\nindex f5560c3..613e0d1 100644\n--- a/.env.example\n+++ b/.env.example\n@@ -1,12 +1,13 @@\n-# Optional: NVD API key (raises NVD rate limits). The scanner works without it.\n-NVD_API_KEY=\n-# Optional LLM (everything works without it - deterministic mode). Paste ONE .",
+        "Associated commit SHA: 78fdbfc56e.",
+        "Git diff verified in commit 78fdbfc5: +9 / -8 line(s)."
+      ],
+      "attack_scenario": null,
+      "rationale": "The modification to '.env.example' is a standard documentation and configuration template update for optional environment variables (such as NVD API keys and LLM settings). It does not contain hardcoded secrets or credentials, as `.env.example` files are strictly meant to serve as templates for developers to configure their local environments.",
+      "supporting_evidence": [
+        {
+          "factor": "File Type",
+          "detail": "The modified file is '.env.example', which is a non-secret template file used to guide developers on configuring local environment variables."
+        },
+        {
+          "factor": "Content Nature",
+          "detail": "The git diff shows updates to optional configuration keys (e.g., NVD_API_KEY, LLM options) without any actual secret values exposed."
+        }
+      ],
+      "contradicting_evidence": [
+        {
+          "factor": "Standard Development Practice",
+          "detail": "Updating template configuration files when new optional features or configuration parameters are introduced is a standard software engineering practice."
+        }
+      ],
+      "recommended_action": "No remediation required. Ensure that actual production secrets or populated '.env' files are excluded via `.gitignore`.",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_git_diff",
+          "args": {
+            "file_path": ".env.example",
+            "base_commit": "8632dea787d4ec1fe1c333265ed5421c30a39584",
+            "head_commit": "78fdbfc56e301bc3458232f38b4284c363d6b057"
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": ".env.example",
+            "base_commit": "8632dea787d4ec1fe1c333265ed5421c30a39584",
+            "head_commit": "78fdbfc56e301bc3458232f38b4284c363d6b057",
+            "commit_author": "Surya HA",
+            "commit_message": "Optimize graph physics, add caching, enhance docs, and streamline configuration",
+            "total_added_lines": 9,
+            "total_deleted_lines": 8,
+            "evidence_type": "OBSERVED_CHANGE"
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    },
+    {
+      "finding_id": "SUSP-CICD-GHA001-14",
+      "affected_file": ".github/workflows/guardian.yml",
+      "line_number": 14,
+      "verdict": "BENIGN_EXPLANATION",
+      "confidence": "HIGH",
+      "observed_facts": [
+        "Initial finding SUSP-CICD-GHA001-14 (Docker & CI/CD) flagged in '.github/workflows/guardian.yml' at line 14: Action 'actions/checkout' is not pinned to a commit SHA.",
+        "Recorded evidence snippet: uses: actions/checkout@v4.",
+        "Workflow security: permissions block=True, third-party actions=0.",
+        "Source snippet confirmed in '.github/workflows/guardian.yml' lines 9-19."
+      ],
+      "attack_scenario": null,
+      "rationale": "The workflow uses the standard official GitHub Action 'actions/checkout@v4', which is a widely accepted and ubiquitous practice across GitHub Actions workflows. Although pinning by full commit SHA provides a higher degree of immutability against tag mutation, using major version tags (like '@v4') is standard industry practice and does not represent an active supply chain attack or severe vulnerability by itself.",
+      "supporting_evidence": [
+        {
+          "factor": "Official Action Usage",
+          "detail": "The action referenced is 'actions/checkout', which is maintained directly by GitHub."
+        },
+        {
+          "factor": "Secure Workflow Context",
+          "detail": "The workflow configuration explicitly includes strict permissions blocks, mitigating the blast radius of potential compromises."
+        }
+      ],
+      "contradicting_evidence": [
+        {
+          "factor": "Tag Mutability",
+          "detail": "Using '@v4' relies on mutable tags rather than immutable commit SHAs, which leaves a theoretical window for tag redirection if the repository were ever compromised."
+        }
+      ],
+      "recommended_action": "Pin GitHub Actions to full immutable commit SHAs (e.g., actions/checkout@b4ffde65f46332ab88eb53be808477a3936bae11) for enhanced supply chain hardening, or utilize automated dependency update tools like Dependabot to manage SHA pinning.",
+      "ai_assisted": true,
+      "planner": "llm:gemini:gemini-3.5-flash-lite",
+      "model": "gemini-3.5-flash-lite",
+      "investigation_steps": [
+        {
+          "iteration": 1,
+          "tool": "inspect_workflow_security",
+          "args": {
+            "workflow_path": ".github/workflows/guardian.yml"
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "workflow": ".github/workflows/guardian.yml",
+            "has_permissions_block": true,
+            "third_party_actions": [],
+            "first_party_actions": [
+              "actions/checkout@v4          # pin to a commit SHA in production",
+              "actions/setup-python@v5",
+              "github/codeql-action/upload-sarif@v3"
+            ],
+            "findings": [
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA001",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "Action 'actions/checkout' is not pinned to a commit SHA",
+                "severity": "LOW",
+                "file": ".github/workflows/guardian.yml",
+                "line": 14,
+                "snippet": "uses: actions/checkout@v4",
+                "subject": "actions/checkout@v4",
+                "why": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+                "remediation": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/checkout@<sha> # v4`.",
+                "evidence_strength": "high",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {
+                  "third_party": false
+                }
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA001",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "Action 'actions/setup-python' is not pinned to a commit SHA",
+                "severity": "LOW",
+                "file": ".github/workflows/guardian.yml",
+                "line": 15,
+                "snippet": "uses: actions/setup-python@v5",
+                "subject": "actions/setup-python@v5",
+                "why": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+                "remediation": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: actions/setup-python@<sha> # v5`.",
+                "evidence_strength": "high",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {
+                  "third_party": false
+                }
+              },
+              {
+                "finding_id": "",
+                "kind": "pipeline",
+                "rule_id": "GHA001",
+                "category": "ci",
+                "ecosystem": "GitHub Actions",
+                "title": "Action 'github/codeql-action' is not pinned to a commit SHA",
+                "severity": "LOW",
+                "file": ".github/workflows/guardian.yml",
+                "line": 23,
+                "snippet": "uses: github/codeql-action/upload-sarif@v3",
+                "subject": "github/codeql-action/upload-sarif@v3",
+                "why": "Tags can be moved or re-pointed: a compromised upstream changes what your pipeline runs (this is how the tj-actions/changed-files supply-chain compromise spread).",
+                "remediation": "Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: github/codeql-action@<sha> # v3`.",
+                "evidence_strength": "high",
+                "references": [
+                  "https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"
+                ],
+                "evidence_id": null,
+                "scan_timestamp": "",
+                "extra": {
+                  "third_party": false
+                }
+              }
+            ]
+          }
+        },
+        {
+          "iteration": 2,
+          "tool": "inspect_source_snippet",
+          "args": {
+            "file_path": ".github/workflows/guardian.yml",
+            "line_number": 14,
+            "radius": 5
+          },
+          "summary": "Executed successfully",
+          "result": {
+            "file": ".github/workflows/guardian.yml",
+            "line_number": 14,
+            "total_lines": 28,
+            "start_line": 9,
+            "end_line": 19
+          }
+        }
+      ],
+      "citations": [
+        "Ohm et al. (2020), Backstabber's Knife Collection: A Review of Open Source Software Supply Chain Attacks",
+        "Ladisa et al. (2023), SoK: Taxonomy of Attacks on Open-Source Software Supply Chains"
+      ],
+      "grounding_problems": []
+    }
+  ]
+}
