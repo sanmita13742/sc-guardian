@@ -49,7 +49,7 @@ if _missing:
     st.stop()
 
 from ui.pages import (agents_page, graph_page, health_page, monitor_page, architecture_page, pipeline_page, policy_page, reports_page, remediation_page, risk_page,
-                      sbom_page, scan_page, suspicious_page, vulns_page)
+                      sbom_page, scan_page, suspicious_page, validation_page, vulns_page)
 
 # Page configuration
 st.set_page_config(
@@ -70,6 +70,7 @@ NAVIGATION_PAGES = {
         st.Page(suspicious_page.render, title="Suspicious Changes", icon="⚠️", url_path="suspicious"),
         st.Page(risk_page.render, title="Risk & Explainability", icon="🧭", url_path="risk"),
         st.Page(remediation_page.render, title="Remediation", icon="🛠️", url_path="remediation"),
+        st.Page(validation_page.render, title="Fix Validation", icon="🧪", url_path="fix-validation"),
         st.Page(policy_page.render, title="Policy & Gate", icon="🚦", url_path="policy"),
     ],
     "Operations": [

@@ -142,6 +142,8 @@ class FixValidationAgent:
                 raise
             if self.use_sandbox:
                 self._sandbox(r, repo)
+            else:
+                r.sandbox = SandboxOutcome(status="skipped", reason="sandbox turned off for this run")
             self._lockfile(r)
             if r.sandbox.install_ok or (r.lock_run and r.lock_run.get("exit_code") == 0):
                 r.limitations.append("Inventory taken after dependency resolution in the sandbox: it reflects the regenerated lockfile.")
@@ -276,7 +278,7 @@ class FixValidationAgent:
             return
         ds = r.docker or sbx.docker_status()
         if not ds.get("available") or not self.use_sandbox:
-            r.limitations.append(f"{lr['lockfile']} could not be regenerated: {ds.get('reason') or 'sandbox disabled'}.")
+            r.limitations.append(f"{lr['lockfile']} could not be regenerated: {(ds.get('reason') or 'sandbox turned off for this run').rstrip('.')}.")
             return
         self.say(f"Regenerating {lr['lockfile']} in the sandbox (no install scripts run) ...")
         recipe = {"image": lr["image"], "workdir": rem.service if rem.service not in ("", None) else ".", "lock": lr["lock"],
