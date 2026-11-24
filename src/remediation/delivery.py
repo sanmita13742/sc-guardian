@@ -12,6 +12,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from core.git_manager import GitError, run_git
 from remediation.export import patch_text
@@ -27,6 +28,65 @@ def _sanitize_branch_name(pkg: str, version: str) -> str:
 def can_dispatch_gh_cli() -> bool:
     """Check if GitHub CLI (gh) is available on the system."""
     return shutil.which("gh") is not None
+
+
+def github_repo_slug(url: str) -> Optional[str]:
+    """Return ``owner/repo`` for a GitHub URL, independent of HTTPS/SSH spelling."""
+    value = str(url or "").strip()
+    if value.startswith("git@github.com:"):
+        path = value.split(":", 1)[1]
+    else:
+        parsed = urlparse(value)
+        if parsed.hostname not in {"github.com", "www.github.com"}:
+            return None
+        path = parsed.path
+    parts = [part for part in path.strip("/").removesuffix(".git").split("/") if part]
+    return "/".join(parts[:2]) if len(parts) >= 2 else None
+
+
+def _origin_matches_target(root: Path, repo_url: str) -> bool:
+    """Do not let a reused same-name workspace redirect delivery to another owner."""
+    target = github_repo_slug(repo_url)
+    if not target:
+        return True
+    origin = run_git(["remote", "get-url", "origin"], cwd=root, check=False).stdout.strip()
+    return not origin or github_repo_slug(origin) == target
+
+
+def _checkout_scanned_base(root: Path, repo: dict) -> Optional[str]:
+    """Return the managed workspace to the exact revision that produced the proposal.
+
+    PR workspaces are reused between UI clicks, so their current branch is not a safe
+    patch base. Refuse tracked local edits, fetch the recorded commit when necessary,
+    and detach at that immutable commit before checking/applying the patch.
+    """
+    dirty = run_git(["status", "--porcelain", "--untracked-files=no"], cwd=root, check=False).stdout.strip()
+    if dirty:
+        return "The remediation workspace has tracked local changes; refusing to overwrite them. Commit or remove those changes and retry."
+    sha = str(repo.get("commit_sha") or "").strip()
+    if not sha:
+        return None
+    exists = run_git(["cat-file", "-e", f"{sha}^{{commit}}"], cwd=root, check=False).returncode == 0
+    if not exists:
+        try:
+            run_git(["fetch", "--depth", "1", "origin", sha], cwd=root, timeout=180)
+        except GitError as e:
+            return f"Could not fetch the scanned commit {sha[:12]}: {e}"
+    try:
+        run_git(["checkout", "--detach", sha], cwd=root)
+    except GitError as e:
+        return f"Could not check out the scanned commit {sha[:12]}: {e}"
+    return None
+
+
+def _available_branch(root: Path, desired: str) -> str:
+    """Choose a new local branch without reusing a prior partially delivered branch."""
+    for n in range(1, 1000):
+        name = desired if n == 1 else f"{desired}-{n}"
+        exists = run_git(["show-ref", "--verify", "--quiet", f"refs/heads/{name}"], cwd=root, check=False).returncode == 0
+        if not exists:
+            return name
+    raise GitError(f"Could not allocate a unique branch derived from {desired}")
 
 
 def commit_and_create_pr_branch(
@@ -53,12 +113,15 @@ def commit_and_create_pr_branch(
                 break
 
     repo_url = repo.get("url") or ""
+    target_repo = github_repo_slug(repo_url)
+    if root and (root / ".git").exists() and not _origin_matches_target(root, repo_url):
+        root = None
     if not root or not (root / ".git").exists():
         if repo_url.startswith(("http://", "https://", "git@")):
             from config.settings import get_settings
             s = get_settings()
             repo_name = repo.get("name") or "repo"
-            clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", repo_name)
+            clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", (target_repo or repo_name).replace("/", "_"))
             rem_ws = Path(s.workspace_dir or ".workspaces") / f"remediation_{clean_name}"
             rem_ws.parent.mkdir(parents=True, exist_ok=True)
             if not (rem_ws / ".git").exists():
@@ -66,6 +129,8 @@ def commit_and_create_pr_branch(
                     run_git(["clone", "--depth", "50", repo_url, str(rem_ws)])
                 except GitError as e:
                     return {"status": "error", "error": f"Could not acquire repository workspace from {repo_url}: {e}"}
+            elif not _origin_matches_target(rem_ws, repo_url):
+                return {"status": "error", "error": f"Existing remediation workspace does not belong to target repository {target_repo}."}
             root = rem_ws
         else:
             return {"status": "error", "error": f"Working repository path not found (checked '{repo_dir}') and no remote Git URL available."}
@@ -96,6 +161,10 @@ def commit_and_create_pr_branch(
     try:
         patch_file.write_text(patch, encoding="utf-8")
 
+        base_error = _checkout_scanned_base(root, repo)
+        if base_error:
+            return {"status": "error", "error": base_error}
+
         # 1. Test patch with --check first
         try:
             run_git(["apply", "--check", str(patch_file)], cwd=root)
@@ -106,15 +175,12 @@ def commit_and_create_pr_branch(
             except GitError as e:
                 return {"status": "error", "error": f"Patch application check failed: {e}"}
 
-        # 2. Check out new branch
+        # 2. Check out a new branch rooted at the immutable scanned commit.
         try:
+            branch_name = _available_branch(root, branch_name)
             run_git(["checkout", "-b", branch_name], cwd=root)
-        except GitError:
-            # If branch already exists, switch to it or try a suffixed name
-            try:
-                run_git(["checkout", branch_name], cwd=root)
-            except GitError as e:
-                return {"status": "error", "error": f"Could not create or checkout branch {branch_name}: {e}"}
+        except GitError as e:
+            return {"status": "error", "error": f"Could not create branch {branch_name}: {e}"}
 
         # 3. Apply the patch
         try:
@@ -137,6 +203,11 @@ def commit_and_create_pr_branch(
         pr_file_path = guardian_dir / f"PR_{rem['id']}.md"
         pr_file_path.write_text(pr_body, encoding="utf-8")
 
+        gh_pr_args = ["gh", "pr", "create"]
+        if target_repo:
+            gh_pr_args += ["--repo", target_repo]
+        gh_pr_args += ["--head", branch_name, "--title", pr_title, "--body-file", str(pr_file_path.resolve())]
+
         return {
             "status": "success",
             "branch": branch_name,
@@ -144,8 +215,12 @@ def commit_and_create_pr_branch(
             "pr_title": pr_title,
             "pr_body": pr_body,
             "pr_file": str(pr_file_path.relative_to(root)),
+            "pr_file_absolute": str(pr_file_path.resolve()),
             "used_repo_template": used_template,
             "gh_cli_available": can_dispatch_gh_cli(),
+            "target_repo": target_repo,
+            "target_repo_url": repo_url,
+            "gh_pr_args": gh_pr_args,
         }
     except Exception as e:  # noqa: BLE001
         return {"status": "error", "error": f"Failed committing patch: {e}"}

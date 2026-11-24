@@ -58,6 +58,47 @@ def test_run_phase_mounts_cache_and_env(monkeypatch, tmp_path):
     assert "scg-cache-npm:/cache" in c and "npm_config_cache=/cache/npm" in c and c[c.index("--network") + 1] == "none"
 
 
+def _compose_fixture(tmp_path, *, unsafe_volume=False):
+    (tmp_path / "package.json").write_text('{"scripts":{"test":"node --test"}}', encoding="utf-8")
+    (tmp_path / "Dockerfile").write_text("FROM node:22\n", encoding="utf-8")
+    volume = '\n    volumes: ["/host:/work"]' if unsafe_volume else ""
+    (tmp_path / "docker-compose.yml").write_text(
+        'services:\n  db:\n    image: postgres:16-alpine\n  web:\n    build: .\n    ports: ["${APP_PORT:-8888}:3000"]' + volume + '\n', encoding="utf-8")
+
+
+def test_detects_safe_compose_integration_recipe(tmp_path):
+    _compose_fixture(tmp_path)
+    recipe = sbx.detect_recipe(tmp_path, "npm")
+    assert recipe["kind"] == "compose"
+    assert recipe["compose_service"] == "web"
+    assert recipe["app_url"] == "http://localhost:3000"
+    assert "blocked_reason" not in recipe
+
+
+def test_blocks_compose_host_bind_mount(tmp_path):
+    _compose_fixture(tmp_path, unsafe_volume=True)
+    recipe = sbx.detect_recipe(tmp_path, "npm")
+    assert "host bind mount" in recipe["blocked_reason"]
+
+
+def test_compose_phase_starts_tests_and_always_stops(monkeypatch, tmp_path):
+    _compose_fixture(tmp_path)
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        if "exec" in cmd:
+            return SimpleNamespace(returncode=0, stdout="# tests 17\n# pass 17\n# fail 0", stderr="")
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(sbx.subprocess, "run", fake_run)
+    result = sbx.run_phase("docker", tmp_path, sbx.detect_recipe(tmp_path, "npm"), "test")
+    assert result["exit_code"] == 0 and "# pass 17" in result["log_tail"]
+    assert any("up" in c and "--wait" in c for c in calls)
+    assert any("exec" in c and "APP_URL=http://localhost:3000" in c for c in calls)
+    assert any("down" in c and "-v" in c for c in calls)
+
+
 def test_baseline_is_computed_once_per_commit(monkeypatch, tmp_path):
     runs = []
 

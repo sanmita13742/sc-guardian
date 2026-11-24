@@ -1,4 +1,4 @@
-"""Validation runs repository code, so only a person's approval authorises it; policy auto-approvals are refused or skipped."""
+"""P2/P3 policy approvals validate automatically; P0/P1 still require a person."""
 import os
 import tempfile
 
@@ -6,7 +6,7 @@ import pytest
 
 from storage.database import Database
 from storage.memory import Memory
-from validation.fix_validator import ValidationError, approved_items, is_human_approval, load_request
+from validation.fix_validator import ValidationError, approved_items, is_human_approval, is_validation_approved, load_request
 
 URL = "https://github.com/o/demo-app"
 
@@ -27,26 +27,36 @@ def test_is_human_approval(ap, human):
 @pytest.fixture
 def db(item):
     d = Database(os.path.join(tempfile.mkdtemp(), "t.db"))
-    auto = {**item, "id": "REM-002", "fingerprint": "fp-auto"}
+    auto = {**item, "id": "REM-002", "fingerprint": "fp-auto", "priority": "P2"}
+    high_auto = {**item, "id": "REM-004", "fingerprint": "fp-high-auto", "priority": "P1"}
     unapproved = {**item, "id": "REM-003", "fingerprint": "fp-none"}
     d.save_scan({"repo": {"scan_id": "s1", "url": URL, "name": "demo-app", "commit_sha": "abc", "scan_timestamp": "2026-11-24T00:00:00Z"},
-                 "status": "completed", "summary": {}, "vulnerabilities": [], "remediation": {"items": [item, auto, unapproved]}})
+                 "status": "completed", "summary": {}, "vulnerabilities": [], "remediation": {"items": [item, auto, high_auto, unapproved]}})
     m = Memory(d)
     m.set_approval(URL, item["fingerprint"], "approved", "looks safe", item["title"], "analyst")
     m.set_approval(URL, "fp-auto", "approved", "Automated policy: MEDIUM severity proposal auto-approved without human intervention", "t", "SC Guardian Policy Engine")
+    m.set_approval(URL, "fp-high-auto", "approved", "Automated policy", "t", "SC Guardian Policy Engine")
     return d
 
 
-def test_batch_validates_human_and_reports_auto_approved(db):
-    assert approved_items(db, "s1") == (["REM-001"], ["REM-002"])
+def test_batch_validates_human_and_low_medium_policy_approval(db):
+    assert approved_items(db, "s1") == (["REM-001", "REM-002"], ["REM-004"])
 
 
-def test_single_auto_approved_proposal_is_refused(db):
-    with pytest.raises(ValidationError, match="approved automatically by 'SC Guardian Policy Engine'"):
-        load_request(db, "s1", "REM-002")
+def test_low_medium_policy_approval_passes_but_high_policy_approval_is_refused(db):
+    load_request(db, "s1", "REM-002")
+    with pytest.raises(ValidationError, match="Only P2/P3 proposals"):
+        load_request(db, "s1", "REM-004")
     load_request(db, "s1", "REM-001")  # human approval passes the gate
+
+
+def test_validation_approval_policy():
+    auto = {"state": "approved", "actor": "SC Guardian Policy Engine", "reason": "Automated policy"}
+    assert is_validation_approved(auto, "P2") and is_validation_approved(auto, "P3")
+    assert not is_validation_approved(auto, "P0") and not is_validation_approved(auto, "P1")
+    assert not is_validation_approved({"state": "approved", "actor": "", "reason": ""}, "P3")
 
 
 def test_later_human_approval_replaces_auto_approval(db):
     Memory(db).set_approval(URL, "fp-auto", "approved", "reviewed the diff", "t", "analyst")
-    assert approved_items(db, "s1") == (["REM-001", "REM-002"], [])
+    assert approved_items(db, "s1") == (["REM-001", "REM-002"], ["REM-004"])

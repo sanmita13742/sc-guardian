@@ -52,7 +52,7 @@ def page_env(tmp_path, item):
     art, data = tmp_path / "artifacts", tmp_path / "data"
     data.mkdir()
     db = Database(data / "scanner.db")
-    auto = {**item, "id": "REM-002", "fingerprint": "fp-auto", "title": "Upgrade underscore", "automation_tier": "automated"}
+    auto = {**item, "id": "REM-002", "fingerprint": "fp-auto", "title": "Upgrade underscore", "automation_tier": "automated", "priority": "P2"}
     result = {"repo": {"scan_id": "s1", "url": URL, "name": "demo-app", "commit_sha": "abc", "scan_timestamp": "2026-11-24T00:00:00Z"},
               "status": "completed", "summary": {}, "vulnerabilities": [], "remediation": {"items": [item, auto]}}
     m = Memory(db)
@@ -85,8 +85,7 @@ def test_page_renders_proposals_gate_and_results(page_env):
     assert not at.exception, at.exception
     text = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
     assert "Fixed, untested" in text  # verdict card of the stored run
-    assert "REM-002" in text and "need a person" in text  # auto-approved proposal is waiting for a human
-    assert [o for o in at.multiselect[0].options] == ["REM-001"]  # only the human-approved proposal can be validated
+    assert [o for o in at.multiselect[0].options] == ["REM-001", "REM-002"]  # P2 policy approval is eligible
     assert at.toggle[0].value is False  # no Docker -> sandbox off
-    assert [t.label for t in at.tabs] == ["Before / After", "Sandbox", "Agent decisions", "Timings", "Provenance"]
+    assert [t.label for t in at.tabs] == ["Analyst summary", "Before / After", "Sandbox", "Agent decisions", "Timings", "Provenance"]
     assert at.button(key="fv_go").disabled is False  # static run allowed without consent when the sandbox is off

@@ -5,6 +5,7 @@ install/test commands in Docker, so it needs an explicit consent tick every time
 """
 from __future__ import annotations
 
+import json
 import os
 import queue
 import time
@@ -21,7 +22,8 @@ from storage.memory import Memory
 from ui.components.common import df, page_header, require_result
 from validation import history
 from validation.decider import Decider
-from validation.fix_validator import ValidationError, is_human_approval, validate_fix
+from validation.fix_validator import ValidationError, approval_mode, is_validation_approved, validate_fix
+from validation.report import audit_pdf_bytes
 
 VERDICT_STYLE = {  # verdict -> (colour, label, meaning)
     "verified_fixed": ("#3fb950", "Verified fixed", "Targeted findings are gone and tests that actually ran still pass."),
@@ -40,10 +42,15 @@ def _docker() -> dict:
     return docker_status()
 
 
-def _approval_label(ap: Optional[dict]) -> str:
+def _approval_label(ap: Optional[dict], priority: Optional[str]) -> str:
     if not ap or ap.get("state") != "approved":
         return f"— {ap['state'].replace('_', ' ')}" if ap else "— none"
-    return f"✅ {ap.get('actor')}" if is_human_approval(ap) else "🤖 auto-policy (needs a person)"
+    mode = approval_mode(ap, priority)
+    if mode == "human":
+        return f"✅ {ap.get('actor')}"
+    if mode == "automated_policy":
+        return "🤖 auto-policy ✅"
+    return "🤖 auto-policy (P0/P1 needs a person)"
 
 
 def _verdict_card(fa: dict) -> None:
@@ -169,6 +176,48 @@ def _tab_provenance(run: dict) -> None:
             col.caption(f"{name} missing")
 
 
+def _tab_analyst_summary(run: dict) -> None:
+    audit = run.get("audit")
+    if not isinstance(audit, dict):
+        st.info("Run validation again to generate the consolidated analyst evidence report.")
+        return
+    conclusion, execution = audit.get("conclusion") or {}, audit.get("execution") or {}
+    delta, evidence, approval = audit.get("security_delta") or {}, audit.get("evidence") or {}, audit.get("approval") or {}
+    tests = execution.get("test_evidence") or {}
+    action = conclusion.get("analyst_action")
+    (st.success if action == "ready_for_review" else st.warning)(
+        "Ready for analyst review." if action == "ready_for_review" else "Hold: review the evidence and limitations before merging."
+    )
+    c = st.columns(5)
+    c[0].metric("Verdict", (conclusion.get("verdict") or "unknown").replace("_", " "))
+    c[1].metric("Tests", f"{tests.get('passed', 0)} passed / {tests.get('failed', 0)} failed" if tests else "not confirmed")
+    c[2].metric("Fixed", delta.get("targeted_fixed", 0))
+    c[3].metric("Remaining", delta.get("targeted_remaining", 0))
+    c[4].metric("New", delta.get("newly_introduced", 0))
+    st.caption(f"Approval: {approval.get('mode', 'unknown').replace('_', ' ')} by {approval.get('actor') or 'n/a'} · "
+               f"Sandbox: {execution.get('sandbox_status') or 'n/a'} · Rescan: {'passed' if execution.get('rescan_ok') else 'failed'}")
+    changes = delta.get("component_changes") or []
+    if changes:
+        st.markdown("**Dependency versions observed**")
+        df([{"component": x.get("key", "").split("|")[-1], "before": ", ".join(x.get("before") or []),
+             "after": ", ".join(x.get("after") or [])} for x in changes], key="fv_audit_changes")
+    subjects = evidence.get("artifact_digests") or []
+    st.markdown("**Integrity and provenance evidence**")
+    if subjects:
+        df([{"artifact": s.get("name"), "sha256": (s.get("digest") or {}).get("sha256")} for s in subjects], key="fv_audit_digests")
+    else:
+        st.caption("No artifact digest was produced.")
+    for limitation in conclusion.get("limitations") or []:
+        st.caption(f"Limitation: {limitation}")
+    pdf_path = Path((run.get("files") or {}).get("final_audit_report.pdf", ""))
+    pdf_data = pdf_path.read_bytes() if pdf_path.is_file() else audit_pdf_bytes(audit)
+    left, right = st.columns(2)
+    left.download_button("Download analyst PDF", pdf_data, file_name="final_audit_report.pdf",
+                         mime="application/pdf", key="fv_audit_pdf_download")
+    right.download_button("Download JSON evidence", json.dumps(audit, indent=2, ensure_ascii=False), file_name="final_audit_report.json",
+                          mime="application/json", key="fv_audit_json_download")
+
+
 def _run(scan_id: str, ids: list[str], settings, use_sandbox: bool, workers: int, actor: str) -> list[dict]:
     """Run validations in worker threads; progress is relayed through a queue because Streamlit elements must be updated from this thread."""
     q: "queue.Queue[str]" = queue.Queue()
@@ -233,20 +282,20 @@ def render() -> None:
 
     st.markdown("#### Proposals")
     df([{"id": i["id"], "title": i.get("title"), "priority": i.get("priority"), "tier": i.get("automation_tier") or "",
-         "approval": _approval_label(approvals.get(i.get("fingerprint"))), "last verdict": (runs.get(i["id"]) or {}).get("verdict") or ""} for i in items],
+         "approval": _approval_label(approvals.get(i.get("fingerprint")), i.get("priority")), "last verdict": (runs.get(i["id"]) or {}).get("verdict") or ""} for i in items],
        key="fv_items")
-    human = [i["id"] for i in items if is_human_approval(approvals.get(i.get("fingerprint")))]
-    waiting = [i["id"] for i in items if i["id"] not in human]
+    eligible = [i["id"] for i in items if is_validation_approved(approvals.get(i.get("fingerprint")), i.get("priority"))]
+    waiting = [i["id"] for i in items if i["id"] not in eligible]
     if waiting:
-        st.caption(f"{len(waiting)} proposal(s) need a person's approval before they can be validated: {', '.join(waiting)}. "
-                   "Use the Decision form on the 🛠️ Remediation page (automatic policy approvals do not count).")
+        st.caption(f"{len(waiting)} P0/P1 proposal(s) need a person's approval before validation: {', '.join(waiting)}. "
+                   "Policy approval is sufficient for P2/P3 proposals.")
 
     st.markdown("#### Run validation")
-    if not human:
-        st.info("No proposal has a human approval yet.")
+    if not eligible:
+        st.info("No proposal is eligible yet. P2/P3 need policy approval; P0/P1 need human approval.")
     else:
         with st.container(border=True):
-            pick = st.multiselect("Proposals", human, default=human[:1], key="fv_pick")
+            pick = st.multiselect("Proposals", eligible, default=eligible[:1], key="fv_pick")
             a, b = st.columns([2, 1])
             use_sandbox = a.toggle("Use Docker sandbox (install, tests, lockfile regeneration)", value=bool(ds.get("available")), disabled=not ds.get("available"),
                                    help=None if ds.get("available") else ds.get("reason"))
@@ -284,16 +333,18 @@ def render() -> None:
     st.markdown(" · ".join(f"{CHECK_ICON.get(v, '—')} {k.replace('_', ' ')}" for k, v in checks.items()))
     for lim in fa.get("limitations") or []:
         st.caption(f"Limitation: {lim}")
-    t = st.tabs(["Before / After", "Sandbox", "Agent decisions", "Timings", "Provenance"])
+    t = st.tabs(["Analyst summary", "Before / After", "Sandbox", "Agent decisions", "Timings", "Provenance"])
     with t[0]:
-        _tab_comparison(run.get("comparison"))
+        _tab_analyst_summary(run)
     with t[1]:
-        _tab_sandbox(rep)
+        _tab_comparison(run.get("comparison"))
     with t[2]:
-        _tab_agent(rep)
+        _tab_sandbox(rep)
     with t[3]:
-        _tab_timings(rep)
+        _tab_agent(rep)
     with t[4]:
+        _tab_timings(rep)
+    with t[5]:
         _tab_provenance(run)
 
     with st.expander(f"All validations for this scan ({len(runs)})"):

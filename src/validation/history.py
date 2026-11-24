@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 FILES = {"final": "final_assessment.json", "comparison": "before_after_comparison.json", "report": "validation_report.json",
-         "provenance": "provenance.intoto.json"}
+         "provenance": "provenance.intoto.json", "audit": "final_audit_report.json"}
 SBOM = "after_sbom.cdx.json"
+PDF = "final_audit_report.pdf"
 
 
 def _read(p: Path) -> Optional[Any]:
@@ -31,7 +32,7 @@ def load_run(artifacts_dir: Path, scan_id: str, remediation_id: str) -> Optional
         return None
     out: dict[str, Any] = {k: _read(d / f) for k, f in FILES.items()}
     out["dir"] = str(d)
-    out["files"] = {f: str(d / f) for f in [*FILES.values(), SBOM] if (d / f).exists()}
+    out["files"] = {f: str(d / f) for f in [*FILES.values(), SBOM, PDF] if (d / f).exists()}
     return out
 
 

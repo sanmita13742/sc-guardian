@@ -253,7 +253,8 @@ def render() -> None:
             if not ds["available"]:
                 st.info("Optional sandbox validation is unavailable: " + ds["reason"])
             else:
-                st.warning("Sandbox validation downloads dependencies and RUNS this repository's own build/test commands inside an isolated Docker container (tests run without network).")
+                st.warning("Sandbox validation downloads dependencies and RUNS this repository's own build/test commands in Docker. "
+                           "Single-container tests run without a network; validated Compose tests use an internal-only service network.")
                 ok = st.checkbox("I approve running this repository's build and tests in a Docker sandbox", key=f"sbx_ok_{i['id']}")
                 if st.button("Run sandbox validation", disabled=not ok, key=f"sbx_{i['id']}"):
                     from sandbox.runner import validate_in_sandbox
@@ -316,8 +317,11 @@ def render() -> None:
 
             pr_res = st.session_state.get(f"pr_res_{i['id']}") or i.get("delivery_result")
             if pr_res and pr_res.get("gh_cli_available"):
-                st.info("💡 GitHub CLI (`gh`) is available on this system! To dispatch remotely:")
-                st.code(f"gh pr create --title \"{pr_res['pr_title']}\" --body-file \"{pr_res['pr_file']}\"", language="bash")
+                target_repo = pr_res.get("target_repo") or repo.get("url")
+                st.info(f"GitHub CLI is available. This command is locked to the scanned repository: `{target_repo}`")
+                args = pr_res.get("gh_pr_args") or []
+                command = " ".join(f'\"{arg}\"' if any(c.isspace() for c in str(arg)) else str(arg) for arg in args)
+                st.code(command, language="bash")
 
             with st.expander("Preview Formatted Pull Request Body"):
                 pr_t, pr_b, used_tmpl = render_pull_request(i, repo, ap or {"state": "approved", "actor": "auto-policy"}, repo_dir=repo.get("repo_dir") or repo.get("local_path") or ".", impact=i.get("reachability_impact"))

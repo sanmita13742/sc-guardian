@@ -1,8 +1,11 @@
+from pathlib import Path
+
 from conftest import comp, make_after, vuln
 
 from validation.comparison import compare
 from validation.contracts import ApprovedRemediation, PhaseRun, SandboxOutcome
 from validation.provenance import sha256_text, statement
+from validation.report import audit_pdf_bytes, final_audit_report, write_outputs
 from validation.verdict import decide
 
 PASSED = SandboxOutcome(status="passed", runs=[PhaseRun(phase="install", exit_code=0), PhaseRun(phase="test", exit_code=0)],
@@ -68,6 +71,38 @@ def test_provenance_statement_shape():
     assert st["_type"].startswith("https://in-toto.io/Statement") and st["predicateType"] == "https://slsa.dev/provenance/v1"
     deps = st["predicate"]["buildDefinition"]["resolvedDependencies"]
     assert deps[0]["digest"]["gitCommit"] == "abc" and deps[2]["digest"] == {"sha256": "ff"}
+
+
+def test_final_audit_report_consolidates_decision_and_evidence():
+    audit = final_audit_report(
+        remediation={"id": "REM-003", "priority": "P2", "source_package": "ejs@3.1.10", "changes": [{"package": "ejs", "to": "4.0.1"}]},
+        approval={"state": "approved", "actor": "SC Guardian Policy Engine", "reason": "Automated policy: medium"},
+        final_assessment={"verdict": "verified_fixed", "reasons": ["fixed"], "checks": {"tests_ok": True}, "limitations": [], "created_at": "now"},
+        comparison={"targeted_fixed": [{}, {}], "targeted_remaining": [], "newly_introduced": [], "components_changed": [{"key": "npm|.|ejs"}]},
+        validation_report={"sandbox": {"status": "passed", "test_evidence": {"executed": 17, "passed": 17, "failed": 0},
+                                                  "runs": [{"phase": "test", "exit_code": 0, "seconds": 1}]},
+                           "rescan": {"ok": True, "status": "completed"}, "signature": {"signed": False}},
+        provenance={"subject": [{"name": "after_sbom.cdx.json", "digest": {"sha256": "ab"}}],
+                    "predicate": {"buildDefinition": {"resolvedDependencies": [{"uri": "git+x@abc"}]}}},
+    )
+    assert audit["approval"]["mode"] == "automated_policy"
+    assert audit["conclusion"]["analyst_action"] == "ready_for_review"
+    assert audit["execution"]["test_evidence"]["passed"] == 17
+    assert audit["security_delta"]["targeted_fixed"] == 2
+    assert audit["evidence"]["artifact_digests"][0]["digest"]["sha256"] == "ab"
+
+
+def test_final_audit_report_writes_valid_pdf(tmp_path):
+    audit = {"remediation": {"id": "REM-001", "priority": "P1", "source_package": "morgan@1.12.0"},
+             "approval": {"mode": "manual", "actor": "analyst"},
+             "conclusion": {"verdict": "verified_fixed", "analyst_action": "ready_for_review", "reasons": ["fixed"], "limitations": []},
+             "execution": {"sandbox_status": "passed", "rescan_ok": True, "test_evidence": {"executed": 17, "passed": 17, "failed": 0}},
+             "security_delta": {"targeted_fixed": 1, "targeted_remaining": 0, "newly_introduced": 0, "target_versions_present": True},
+             "evidence": {"artifact_digests": []}, "created_at": "now"}
+    pdf = audit_pdf_bytes(audit)
+    assert pdf.startswith(b"%PDF-1.4") and pdf.endswith(b"%%EOF\n") and b"17 passed" in pdf
+    paths = write_outputs(tmp_path, comparison={}, validation_report={}, final_assessment={}, final_audit=audit)
+    assert Path(paths["final_audit_report.pdf"]).read_bytes() == pdf
 
 
 def test_two_copies_of_same_advisory_are_matched_copy_by_copy(item):

@@ -184,10 +184,17 @@ class FixValidationAgent:
         if not recipe:
             r.sandbox = SandboxOutcome(status="skipped", reason=f"No recognised build/test recipe for {rem.ecosystem} in this repository.", docker_version=r.docker["version"])
             return
+        if recipe.get("blocked_reason"):
+            r.sandbox = SandboxOutcome(status="skipped", reason=f"Compose validation blocked: {recipe['blocked_reason']}", recipe=recipe,
+                                       docker_version=r.docker["version"])
+            return
         recipe["cache"] = r.cache = sbx.cache_volume(rem.ecosystem, repo["url"], rem.id.lower())
         exe = r.docker["exe"]
+        isolation = ("validated Compose file, unique project, internal runtime network, loopback-only ephemeral published port, "
+                     "no-new-privileges, 2 CPU / 2 GB / 512 pids per service, no host env or secrets" if recipe.get("kind") == "compose" else
+                     "cap-drop ALL, no-new-privileges, 2 CPU / 2 GB / 512 pids, tests without network, no host env or secrets")
         out = SandboxOutcome(status="error", recipe=recipe, docker_version=r.docker["version"], cache={"volume": r.cache["volume"], "scope": r.cache["scope"]},
-                             isolation="cap-drop ALL, no-new-privileges, 2 CPU / 2 GB / 512 pids, tests without network, no host env or secrets")
+                             isolation=isolation)
         r.sandbox = out
         self.say(f"Installing dependencies in {recipe['image']} (cache volume {r.cache['volume']}) ...")
         inst = self._timed("install", sbx.run_phase, exe, r.clone, recipe, "install")
@@ -214,7 +221,8 @@ class FixValidationAgent:
                 out.baseline = {"install_ok": bi["exit_code"] == 0, "status": "passed" if bi["exit_code"] == 0 else "failed", "runs": [bi], "cached": base["cached"]}
                 out.reason = "dependency installation failed with the patch" + (" and also without it (cannot attribute)" if bi["exit_code"] != 0 else "; the unpatched install succeeds")
                 return
-        self.say("Running the tests with the network disabled ...")
+        self.say("Starting the isolated Compose stack and running its integration tests ..." if recipe.get("kind") == "compose" else
+                 "Running the tests with the network disabled ...")
         test = self._timed("test", sbx.run_phase, exe, r.clone, recipe, "test")
         out.runs.append(PhaseRun.model_validate(test))
         out.test_evidence = test_evidence.summarize(test.get("log_tail", ""))
@@ -250,7 +258,8 @@ class FixValidationAgent:
         """Unpatched install (+ tests) for this commit and recipe. Memoised: every proposal of the same scan shares one baseline,
         so validating N proposals costs at most one baseline run instead of N. Keyed by commit, recipe and image digest."""
         digest = provenance.docker_image_digest(exe, recipe["image"])
-        key = provenance.sha256_text(json.dumps([repo["url"], repo.get("commit_sha"), recipe["image"], digest, recipe["workdir"], recipe["install"], recipe["test"]]))
+        key = provenance.sha256_text(json.dumps([repo["url"], repo.get("commit_sha"), recipe["image"], digest, recipe["workdir"], recipe["install"],
+                                                 recipe["test"], recipe.get("kind"), recipe.get("compose_file"), recipe.get("compose_service")]))
         cache = Cache(self.db)
         with _lock_for(key):
             hit = cache.get(BASELINE_NS, key, ttl=BASELINE_TTL_S)
@@ -338,8 +347,12 @@ class FixValidationAgent:
                              "agent": {"name": self.name, "version": TOOL_VERSION, "decider": {"enabled": self.decider.enabled, "model": self.decider.model, "threshold": self.threshold, "calls": self.decider.calls},
                                        "decisions": [asdict(d) for d in self.decisions], "notes": r.notes, "timings_seconds": self.timings},
                              "signature": provenance.signature_status(), "seconds": self.timings["total"], "tool_version": TOOL_VERSION}
-        paths = report.write_outputs(out_dir, comparison=r.cmp.model_dump(mode="json") if r.cmp else {"available": False}, validation_report=validation_report,
-                                     final_assessment=final, provenance=stmt)
+        comparison_doc = r.cmp.model_dump(mode="json") if r.cmp else {"available": False}
+        final_doc = final.model_dump(mode="json")
+        audit = report.final_audit_report(remediation=rem.model_dump(mode="json", by_alias=True, exclude={"patch_diff"}), approval=r.approval,
+                                          final_assessment=final_doc, comparison=comparison_doc, validation_report=validation_report, provenance=stmt)
+        paths = report.write_outputs(out_dir, comparison=comparison_doc, validation_report=validation_report,
+                                     final_assessment=final, provenance=stmt, final_audit=audit)
         mem.audit(repo["url"], self.actor, f"fix_validation_{v}", f"{rem.id} {rem.source_package}", "; ".join(reasons)[:1000])
         return {"final_assessment": final.model_dump(mode="json"), "files": paths, "decisions": [asdict(d) for d in self.decisions], "notes": r.notes, "timings": self.timings}
 

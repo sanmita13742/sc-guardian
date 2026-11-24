@@ -5,7 +5,7 @@ The workflow itself is owned by ``validation.agent.FixValidationAgent``:
                   -> rescan the patched tree (isolated DB/artifacts) -> before/after comparison -> verdict -> provenance -> reports
 
 Safety
-* Runs only for a proposal a human approved (``Memory.approvals``); start and end are written to the audit log.
+* P0/P1 proposals require human approval; policy-approved P2/P3 proposals may validate automatically. Start and end are audited.
 * Repository commands run only inside the Docker sandbox (``sandbox.runner``); without Docker the flow still rescans the patched
   manifests statically and the verdict can be at most ``fixed_untested``.
 * The rescan uses a throw-away database and artifacts folder, so the saved-scan list and the finding history are not touched.
@@ -31,8 +31,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-# Approvals written by an automated policy (remediation.delivery auto-delivery during the scan, or the UI's automated-tier PR button).
-# They may authorise a *proposal*, but never running repository code: the sandbox executes install/test commands, so a person must decide.
+# Approvals written by the low/medium automation policy.
 AUTOMATED_ACTORS = {"sc guardian policy engine", "auto-policy"}
 
 
@@ -42,6 +41,29 @@ def is_human_approval(ap: Optional[dict]) -> bool:
     actor = (ap.get("actor") or "").strip().lower()
     reason = (ap.get("reason") or "").strip().lower()
     return bool(actor) and actor not in AUTOMATED_ACTORS and not reason.startswith("automated policy")
+
+
+def is_policy_approval(ap: Optional[dict]) -> bool:
+    if not ap or ap.get("state") != "approved":
+        return False
+    actor = (ap.get("actor") or "").strip().lower()
+    reason = (ap.get("reason") or "").strip().lower()
+    return actor in AUTOMATED_ACTORS or reason.startswith("automated policy")
+
+
+def is_validation_approved(ap: Optional[dict], priority: Optional[str]) -> bool:
+    """Human approval always qualifies; policy approval qualifies only for P2/P3."""
+    if is_human_approval(ap):
+        return True
+    return is_policy_approval(ap) and priority in ("P2", "P3")
+
+
+def approval_mode(ap: Optional[dict], priority: Optional[str]) -> Optional[str]:
+    if is_human_approval(ap):
+        return "human"
+    if is_validation_approved(ap, priority):
+        return "automated_policy"
+    return None
 
 
 def load_request(db: Database, scan_id: str, remediation_id: str) -> tuple[dict, ApprovedRemediation, dict]:
@@ -57,9 +79,9 @@ def load_request(db: Database, scan_id: str, remediation_id: str) -> tuple[dict,
     ap = Memory(db).approvals(before["repo"]["url"]).get(rem.fingerprint)
     if not ap or ap.get("state") != "approved":
         raise ValidationError(f"{remediation_id} is not approved (state: {(ap or {}).get('state', 'none')}); approve it on the Remediation page first")
-    if not is_human_approval(ap):
-        raise ValidationError(f"{remediation_id} was approved automatically by '{ap.get('actor')}', not by a person. Validation runs the repository's "
-                              "install and test commands, so it needs a human approval: approve it on the Remediation page (Decision form) first")
+    if not is_validation_approved(ap, rem.priority):
+        raise ValidationError(f"{remediation_id} is {rem.priority or 'unclassified'} and was approved automatically by '{ap.get('actor')}'. "
+                              "Only P2/P3 proposals may use policy approval; P0/P1 validation requires a person")
     return before, rem, ap
 
 
@@ -110,19 +132,18 @@ def validate_fix(scan_id: str, remediation_id: str, *, settings: Optional[Settin
 
 
 def approved_items(db: Database, scan_id: str) -> tuple[list[str], list[str]]:
-    """(human-approved ids, auto-approved ids) of the scan's proposals that have a patch, in proposal order.
-    Only the first list is validated; the second is reported so nothing is skipped silently."""
+    """(validation-eligible ids, manual-approval-required ids), in proposal order."""
     before = db.load_scan(scan_id)
     if not before:
         raise ValidationError(f"scan '{scan_id}' not found")
     ap = Memory(db).approvals(before["repo"]["url"])
-    human, auto = [], []
+    eligible, manual_required = [], []
     for i in (before.get("remediation") or {}).get("items") or []:
         a = ap.get(i.get("fingerprint"))
         if not i.get("patch") or not a or a.get("state") != "approved":
             continue
-        (human if is_human_approval(a) else auto).append(i["id"])
-    return human, auto
+        (eligible if is_validation_approved(a, i.get("priority")) else manual_required).append(i["id"])
+    return eligible, manual_required
 
 
 def validate_all(scan_id: str, *, settings: Optional[Settings] = None, db: Optional[Database] = None, actor: str = "cli",
@@ -136,9 +157,9 @@ def validate_all(scan_id: str, *, settings: Optional[Settings] = None, db: Optio
     from validation.agent import FixValidationAgent
     s = settings or get_settings()
     db = db or Database(s.db_path)
-    ids, auto = approved_items(db, scan_id)
+    ids, manual_required = approved_items(db, scan_id)
     say = progress or (lambda m: None)
-    skipped = [{"remediation_id": rid, "skipped": "approved automatically by policy, not by a person; approve it manually to validate"} for rid in auto]
+    skipped = [{"remediation_id": rid, "skipped": "P0/P1 proposal requires a person's approval before validation"} for rid in manual_required]
 
     def one(rid: str) -> dict[str, Any]:
         try:
