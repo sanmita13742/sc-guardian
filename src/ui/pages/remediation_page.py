@@ -7,6 +7,7 @@ from config.settings import get_settings
 from remediation.delivery import (
     can_dispatch_gh_cli,
     commit_and_create_pr_branch,
+    dispatch_github_pull_request,
     get_remediation_severity_tier,
 )
 from remediation.export import patch_text, pr_markdown
@@ -21,6 +22,26 @@ STATE = {"approved": "✅ approved", "rejected": "❌ rejected", "needs_review":
 
 def _mem() -> Memory:
     return Memory(Database(get_settings().db_path))
+
+
+def _send_prepared_pr(res: dict, repo: dict, item: dict, mem: Memory | None, actor: str) -> dict | None:
+    """Dispatch immediately after preparation and always render a visible outcome."""
+    if res.get("status") != "success":
+        return None
+    if not res.get("gh_cli_available"):
+        sent = {"status": "error", "error": "GitHub CLI is not installed; the branch was prepared locally but was not sent."}
+    else:
+        with st.spinner("Checking GitHub access, preparing the correct fork, pushing the branch, and creating the pull request..."):
+            sent = dispatch_github_pull_request(res)
+    st.session_state[f"pr_sent_{item['id']}"] = sent
+    if sent.get("status") == "success":
+        if mem:
+            mem.audit(repo["url"], actor, "pull_request_created", item["title"], sent["url"])
+        st.success(f"Pull request ready in `{sent['target_repo']}`: {sent['url']}")
+        st.link_button("Open pull request", sent["url"], use_container_width=True)
+    else:
+        st.error(f"GitHub delivery failed: {sent.get('error')}")
+    return sent
 
 
 def render() -> None:
@@ -110,17 +131,17 @@ def render() -> None:
         st.warning(
             "⚠️ **Human Intervention Required (High / Critical Severity)**  \n"
             "This proposal addresses High or Critical risk findings. By policy, changes **will not** be committed or sent without explicit manual human approval. "
-            "Please **Accept** to create the PR branch or **Ignore** to dismiss."
+            "Please **Accept** to prepare and send the pull request, or **Ignore** to dismiss."
         )
         c_acc, c_ign, _ = st.columns([1.5, 1, 1.5])
-        if c_acc.button("✅ Accept & Create PR", key=f"quick_accept_{i['id']}", type="primary", use_container_width=True):
+        if c_acc.button("✅ Accept & Send PR", key=f"quick_accept_{i['id']}", type="primary", use_container_width=True):
             if mem:
                 mem.set_approval(repo["url"], i["fingerprint"], "approved", "Accepted manually by analyst in Streamlit UI", i["title"], "analyst")
             r_dir = repo.get("repo_dir") or repo.get("local_path") or repo.get("path") or "."
             res = commit_and_create_pr_branch(r_dir, i, repo, {"state": "approved", "actor": "analyst", "reason": "Accepted manually by analyst in Streamlit UI"})
             st.session_state[f"pr_res_{i['id']}"] = res
             if res.get("status") == "success":
-                st.success(f"🎉 Proposal accepted! Changes committed to branch `{res.get('branch', 'remediation/...')}`.")
+                _send_prepared_pr(res, repo, i, mem, "analyst")
             else:
                 st.error(f"❌ Failed to create PR branch: {res.get('error')}")
 
@@ -135,12 +156,12 @@ def render() -> None:
             "This proposal addresses Low or Medium risk findings. Pull requests are automated and sent without requiring human intervention."
         )
         c_auto_act, c_auto_ign, _ = st.columns([1.5, 1, 1.5])
-        if c_auto_act.button("🚀 Commit & Create PR Branch", key=f"auto_commit_{i['id']}", type="primary", use_container_width=True):
+        if c_auto_act.button("🚀 Create & Send PR", key=f"auto_commit_{i['id']}", type="primary", use_container_width=True):
             r_dir = repo.get("repo_dir") or repo.get("local_path") or repo.get("path") or "."
             res = commit_and_create_pr_branch(r_dir, i, repo, {"state": "approved", "actor": "auto-policy", "reason": "Automated Low/Medium severity PR"})
             st.session_state[f"pr_res_{i['id']}"] = res
             if res.get("status") == "success":
-                st.success(f"🎉 Changes committed to branch `{res['branch']}`! PR markdown saved to `{res.get('pr_file')}`.")
+                _send_prepared_pr(res, repo, i, mem, "auto-policy")
             else:
                 st.error(f"❌ Failed to create PR branch: {res.get('error')}")
 
@@ -305,23 +326,38 @@ def render() -> None:
             c_info2.markdown(f"**PR Template:** `{'✅ ' + tmpl_found[0] if tmpl_found else 'Standard Security PR Template'}`")
 
             c_act1, c_act2 = st.columns([1, 1])
-            if c_act1.button("🚀 Commit & Create PR Branch", key=f"commit_btn_{i['id']}", type="primary", use_container_width=True):
+            if c_act1.button("🚀 Prepare & Send PR", key=f"commit_btn_{i['id']}", type="primary", use_container_width=True):
                 r_dir = repo.get("repo_dir") or repo.get("local_path") or repo.get("path") or "."
                 res = commit_and_create_pr_branch(r_dir, i, repo, ap or {"state": "approved", "actor": "auto-policy", "reason": "Automated Low/Medium severity PR"})
                 st.session_state[f"pr_res_{i['id']}"] = res
                 if res.get("status") == "success":
-                    st.success(f"🎉 Branch `{res['branch']}` created and changes committed!")
-                    st.markdown(f"**PR markdown saved to:** `{res.get('pr_file')}`")
+                    _send_prepared_pr(res, repo, i, mem, (ap or {}).get("actor") or "auto-policy")
                 else:
                     st.error(f"Git commit failed: {res.get('error')}")
 
             pr_res = st.session_state.get(f"pr_res_{i['id']}") or i.get("delivery_result")
             if pr_res and pr_res.get("gh_cli_available"):
                 target_repo = pr_res.get("target_repo") or repo.get("url")
-                st.info(f"GitHub CLI is available. This command is locked to the scanned repository: `{target_repo}`")
-                args = pr_res.get("gh_pr_args") or []
-                command = " ".join(f'\"{arg}\"' if any(c.isspace() for c in str(arg)) else str(arg) for arg in args)
-                st.code(command, language="bash")
+                st.info(f"GitHub delivery is locked to the scanned repository: `{target_repo}`")
+                sent = st.session_state.get(f"pr_sent_{i['id']}")
+                if sent and sent.get("status") == "success":
+                    st.success(f"Pull request created: {sent['url']}")
+                    st.link_button("Open pull request", sent["url"], use_container_width=True)
+                elif st.button("Send PR to GitHub", key=f"send_pr_{i['id']}", type="primary", use_container_width=True):
+                    with st.spinner("Checking access, preparing the correct fork, pushing the branch, and creating the pull request..."):
+                        sent = dispatch_github_pull_request(pr_res)
+                    st.session_state[f"pr_sent_{i['id']}"] = sent
+                    if sent.get("status") == "success":
+                        if mem:
+                            mem.audit(repo["url"], ap.get("actor") if ap else "auto-policy", "pull_request_created", i["title"], sent["url"])
+                        st.success(f"Pull request created in `{sent['target_repo']}`: {sent['url']}")
+                        st.link_button("Open pull request", sent["url"], use_container_width=True)
+                    else:
+                        st.error(f"GitHub delivery failed: {sent.get('error')}")
+                with st.expander("Manual GitHub CLI fallback"):
+                    args = pr_res.get("gh_pr_args") or []
+                    command = " ".join(f'\"{arg}\"' if any(c.isspace() for c in str(arg)) else str(arg) for arg in args)
+                    st.code(command, language="bash")
 
             with st.expander("Preview Formatted Pull Request Body"):
                 pr_t, pr_b, used_tmpl = render_pull_request(i, repo, ap or {"state": "approved", "actor": "auto-policy"}, repo_dir=repo.get("repo_dir") or repo.get("local_path") or ".", impact=i.get("reachability_impact"))

@@ -100,12 +100,6 @@ def _pdf_lines(audit: dict[str, Any]) -> list[str]:
         lines.append(f"- {subject.get('name') or 'artifact'}: {(subject.get('digest') or {}).get('sha256') or 'digest unavailable'}")
     if not (evidence.get("artifact_digests") or []):
         lines.append("- No artifact digest was produced.")
-    lines.extend(["", "LIMITATIONS"])
-    for limitation in conclusion.get("limitations") or []:
-        lines.append(f"- {limitation}")
-    if not (conclusion.get("limitations") or []):
-        lines.append("- None recorded.")
-    lines.extend(["", "Supporting machine-readable evidence is stored beside this PDF."])
     return lines
 
 

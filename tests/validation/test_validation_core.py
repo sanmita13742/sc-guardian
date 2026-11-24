@@ -101,6 +101,7 @@ def test_final_audit_report_writes_valid_pdf(tmp_path):
              "evidence": {"artifact_digests": []}, "created_at": "now"}
     pdf = audit_pdf_bytes(audit)
     assert pdf.startswith(b"%PDF-1.4") and pdf.endswith(b"%%EOF\n") and b"17 passed" in pdf
+    assert b"LIMITATIONS" not in pdf and b"Supporting machine-readable evidence" not in pdf
     paths = write_outputs(tmp_path, comparison={}, validation_report={}, final_assessment={}, final_audit=audit)
     assert Path(paths["final_audit_report.pdf"]).read_bytes() == pdf
 
