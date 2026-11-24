@@ -70,7 +70,7 @@ def render() -> None:
     m_cols[1].metric("Introduced in Diff", introduced_count, help="Findings introduced in the analyzed Git commit range vs pre-existing in baseline.")
     m_cols[2].metric("High / Critical", high_crit_count, help="Findings with high or critical potential supply chain impact.")
     m_cols[3].metric("Correlated Scenarios", scenarios_count, help="Multi-vector attack chains synthesizing disparate indicators.")
-    m_cols[4].metric("AI Disambiguated", ai_count, f"{benign_ai} Benign · {anomaly_ai} Anom · {attack_ai} Attack", help="Findings autonomously investigated by LangGraph AI agent.")
+    m_cols[4].metric("AI Disambiguated", ai_count, f"{benign_ai} Safe · {anomaly_ai} Anomaly · {attack_ai} Attack", help="Findings autonomously investigated by AI agent.")
 
     st.markdown("---")
 
@@ -225,14 +225,14 @@ def render() -> None:
                             for se in ai_data.get("supporting_evidence", []):
                                 st.markdown(f"• **{se.get('factor')}:** {se.get('detail')}")
                         with col_con:
-                            st.markdown("**Contradicting Evidence (Benign Indicators):**")
+                            st.markdown("**Contradicting Evidence (Safe / Legitimate Indicators):**")
                             for ce in ai_data.get("contradicting_evidence", []):
                                 st.markdown(f"• **{ce.get('factor')}:** {ce.get('detail')}")
 
                         # Collapsible Tool Execution Trace
                         steps = ai_data.get("investigation_steps", [])
                         if steps:
-                            with st.expander(f"🔍 LangGraph Tool Execution Trace ({len(steps)} steps)", expanded=False):
+                            with st.expander(f"🔍 Autonomous Investigation Steps ({len(steps)} steps)", expanded=False):
                                 for s_idx, stp in enumerate(steps, 1):
                                     st.markdown(f"**Step {s_idx}: `{stp.get('tool')}`**")
                                     args_str = json.dumps(stp.get("args", {}), indent=2)
@@ -290,14 +290,14 @@ def render() -> None:
                         for se in inv.get("supporting_evidence", []):
                             st.markdown(f"• **{se.get('factor')}:** {se.get('detail')}")
                     with cs2:
-                        st.markdown("**Contradicting Evidence (Benign Factors):**")
+                        st.markdown("**Contradicting Evidence (Safe / Legitimate Factors):**")
                         for ce in inv.get("contradicting_evidence", []):
                             st.markdown(f"• **{ce.get('factor')}:** {ce.get('detail')}")
 
                     # Collapsible Tool Execution Trace
                     steps = inv.get("investigation_steps", [])
                     if steps:
-                        with st.expander(f"🔍 LangGraph Tool Execution Trace ({len(steps)} steps)", expanded=False):
+                        with st.expander(f"🔍 Autonomous Investigation Steps ({len(steps)} steps)", expanded=False):
                             for s_idx, stp in enumerate(steps, 1):
                                 st.markdown(f"**Step {s_idx}: `{stp.get('tool')}`**")
                                 st.caption(f"Inputs: `{json.dumps(stp.get('args', {}))}`")
