@@ -138,3 +138,16 @@ def validate_in_sandbox(settings: Settings, repo: dict, rem: dict, progress: Opt
         for w in (ws_patched, ws_base):
             if w:
                 gm.cleanup(w)
+
+
+# ------------------------------------------------------------------ public building blocks (used by validation.fix_validator)
+
+
+def prepare_workspace(settings: Settings, repo: dict, patch_diff: Optional[str]) -> tuple[Path, Path]:
+    """Fresh clone at the scanned commit with the patch applied. Returns (workspace, clone); the caller must ``git_manager.cleanup(workspace)``."""
+    return _prepare(settings, repo, patch_diff)
+
+
+def run_phase(exe: str, repo_dir: Path, recipe: dict, phase: str, timeout: Optional[int] = None) -> dict:
+    """Run one recipe phase (``install`` with network, ``test`` without) under the sandbox limits."""
+    return _run(exe, repo_dir, recipe, phase, timeout or (INSTALL_TIMEOUT if phase == "install" else TEST_TIMEOUT))

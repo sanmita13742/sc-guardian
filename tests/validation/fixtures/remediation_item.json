@@ -1,0 +1,19 @@
+{
+  "id": "REM-001",
+  "fingerprint": "rem|npm|.|express@4.17.1|upgrade|4.17.1->4.21.2",
+  "source_package": "express@4.17.1",
+  "root": "demo-app",
+  "ecosystem": "npm",
+  "service": ".",
+  "finding_ids": ["F-1", "F-2"],
+  "priority": "P1",
+  "risk_label": "HIGH",
+  "action": "upgrade",
+  "title": "Upgrade express 4.17.1 -> 4.21.2",
+  "target": {"package": "express", "from": "4.17.1", "to": "4.21.2", "ecosystem": "npm"},
+  "changes": [{"package": "express", "from": "4.17.1", "to": "4.21.2", "kind": "bump"}],
+  "patch": {"path": "package.json", "diff": "--- a/package.json\n+++ b/package.json\n@@ -3 +3 @@\n-    \"express\": \"4.17.1\"\n+    \"express\": \"4.21.2\"\n"},
+  "what_if": {"verdict": "reduces_risk", "fixed": [{"id": "GHSA-aaaa"}, {"id": "GHSA-bbbb"}], "remaining": [], "newly_introduced": []},
+  "compatibility": {"semver_change": "minor", "breaking_risk": "medium"},
+  "rollback": ["Revert package.json and the lockfile."]
+}

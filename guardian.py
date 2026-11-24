@@ -6,9 +6,11 @@
     python guardian.py monitor [--repo URL] [--max N]                 # re-check stored inventories for newly disclosed issues
     python guardian.py scans                                          # list stored scans
     python guardian.py report SCAN_ID --format sarif --out report.sarif
+    python guardian.py validate SCAN_ID REM-001 [--no-sandbox] [--json]  # validate an approved remediation (sandbox + rescan)
 
-Exit codes: 0 = pass / no new alerts, 1 = policy blocked (scan/gate) or new alerts (monitor), 2 = error.
-The scanner is static: repository code is never executed, built or installed.
+Exit codes: 0 = pass / no new alerts / fix verified, 1 = policy blocked (scan/gate), new alerts (monitor) or fix not verified (validate), 2 = error.
+The scanner is static: repository code is never executed, built or installed. Only `validate` runs repository build/tests, and only in the
+Docker sandbox, for a proposal a human approved.
 """
 from __future__ import annotations
 
@@ -106,6 +108,13 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("scan", nargs="?", default="latest")
     r.add_argument("--format", choices=["md", "html", "json", "sarif", "vex"], default="md")
     r.add_argument("--out")
+    v = sub.add_parser("validate", help="validate an approved remediation: sandbox build/tests, rescan, before/after, provenance")
+    v.add_argument("scan")
+    v.add_argument("remediation", help="remediation id, e.g. REM-001")
+    v.add_argument("--actor", default="cli")
+    v.add_argument("--no-sandbox", action="store_true", help="skip Docker build/tests; rescan the patched manifests only")
+    v.add_argument("--json", action="store_true")
+    v.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
     s = get_settings()
     db = Database(s.db_path)
@@ -136,6 +145,24 @@ def main(argv: list[str] | None = None) -> int:
             res = _load(db, a.scan)
             _emit(res, a.format, a.out, Memory(db).decisions(res["repo"]["url"]))
             return 0
+        if a.cmd == "validate":
+            from validation.fix_validator import ValidationError, validate_fix
+            try:
+                out = validate_fix(_load(db, a.scan)["repo"]["scan_id"], a.remediation, settings=s, db=db, actor=a.actor, use_sandbox=not a.no_sandbox,
+                                   progress=None if a.quiet else (lambda m: print(f"  {m}", file=sys.stderr)))
+            except ValidationError as e:
+                print(f"cannot validate: {e}", file=sys.stderr)
+                return 2
+            fa = out["final_assessment"]
+            if a.json:
+                print(json.dumps(out, indent=2, default=str))
+            else:
+                print(f"{fa['remediation_id']}: {fa['verdict']}")
+                for x in fa["reasons"]:
+                    print(f"  - {x}")
+                for name, path in out["files"].items():
+                    print(f"  wrote {path}", file=sys.stderr)
+            return 0 if fa["verdict"] in ("verified_fixed", "fixed_untested") else 1
         if a.cmd == "monitor":
             from monitor.watch import run_monitor
             out = run_monitor(s, db, repo_url=a.repo, max_repos=a.max)
