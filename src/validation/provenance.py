@@ -56,13 +56,13 @@ def subject(name: str, path: Path) -> Optional[dict[str, Any]]:
 
 
 def statement(subjects: list[dict], *, repo_url: str, commit_sha: str, patch_sha256: Optional[str], remediation_id: str,
-              recipe: Optional[dict], image_digest: Optional[str], started_on: str, finished_on: str, tool_version: str) -> dict[str, Any]:
+              recipe: Optional[dict], image_digest: Optional[str], started_on: str, finished_on: str, tool_version: str, image: Optional[str] = None) -> dict[str, Any]:
     materials = [{"uri": f"git+{repo_url}@{commit_sha}", "digest": {"gitCommit": commit_sha}}]
     if patch_sha256:
         materials.append({"uri": f"remediation:{remediation_id}.patch", "digest": {"sha256": patch_sha256}})
     if image_digest:
         name, _, dig = image_digest.partition("@")
-        materials.append({"uri": f"docker://{name}", "digest": {dig.split(":")[0]: dig.split(":")[1]}})
+        materials.append({"uri": f"docker://{image or name}", "digest": {dig.split(":")[0]: dig.split(":")[1]}})
     return {
         "_type": STATEMENT_TYPE,
         "subject": [s for s in subjects if s],

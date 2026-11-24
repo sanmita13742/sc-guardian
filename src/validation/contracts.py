@@ -66,17 +66,26 @@ class SandboxOutcome(BaseModel):
     attribution: Optional[str] = None
     docker_version: Optional[str] = None
     isolation: Optional[str] = None
+    test_evidence: Optional[dict[str, Any]] = None  # validation.test_evidence.summarize() of the patched test run
+    cache: Optional[dict[str, Any]] = None  # package-manager cache volume used (name, scope)
+    baseline_cached: bool = False  # the baseline result was reused from an earlier validation of the same commit + recipe
 
     @property
     def install_ok(self) -> Optional[bool]:
-        r = next((x for x in self.runs if x.phase == "install"), None)
-        return None if r is None else r.exit_code == 0
+        """True = installed, False = the patch broke the install, None = not run, or the unpatched install fails too (cannot attribute)."""
+        runs = [x for x in self.runs if x.phase == "install"]
+        if not runs:
+            return None
+        if runs[-1].exit_code == 0:
+            return True
+        return None if (self.baseline or {}).get("install_ok") is False else False
 
     @property
     def tests_ok(self) -> Optional[bool]:
-        """True = passed, False = the patch broke tests, None = not run / inconclusive / failure pre-existed."""
+        """True = passed with at least one executed test, False = the patch broke tests,
+        None = not run / no test executed / unconfirmed count / inconclusive / failure pre-existed."""
         if self.status == "passed":
-            return True
+            return True if (self.test_evidence or {}).get("executed") else None
         if self.status == "failed":
             return None if (self.baseline or {}).get("status") == "failed" else False
         return None

@@ -7,6 +7,7 @@
     python guardian.py scans                                          # list stored scans
     python guardian.py report SCAN_ID --format sarif --out report.sarif
     python guardian.py validate SCAN_ID REM-001 [--no-sandbox] [--json]  # validate an approved remediation (sandbox + rescan)
+    python guardian.py validate SCAN_ID --all-approved [--workers 2]     # validate every approved remediation of a scan
 
 Exit codes: 0 = pass / no new alerts / fix verified, 1 = policy blocked (scan/gate), new alerts (monitor) or fix not verified (validate), 2 = error.
 The scanner is static: repository code is never executed, built or installed. Only `validate` runs repository build/tests, and only in the
@@ -110,7 +111,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--out")
     v = sub.add_parser("validate", help="validate an approved remediation: sandbox build/tests, rescan, before/after, provenance")
     v.add_argument("scan")
-    v.add_argument("remediation", help="remediation id, e.g. REM-001")
+    v.add_argument("remediation", nargs="?", help="remediation id, e.g. REM-001 (or use --all-approved)")
+    v.add_argument("--all-approved", action="store_true", help="validate every approved proposal of the scan (baseline shared once per commit)")
+    v.add_argument("--workers", type=int, default=1, help="parallel validations (each sandbox uses 2 CPU / 2 GB; default 1)")
     v.add_argument("--actor", default="cli")
     v.add_argument("--no-sandbox", action="store_true", help="skip Docker build/tests; rescan the patched manifests only")
     v.add_argument("--json", action="store_true")
@@ -146,23 +149,42 @@ def main(argv: list[str] | None = None) -> int:
             _emit(res, a.format, a.out, Memory(db).decisions(res["repo"]["url"]))
             return 0
         if a.cmd == "validate":
-            from validation.fix_validator import ValidationError, validate_fix
+            from validation.fix_validator import ValidationError, validate_all, validate_fix
+            say = None if a.quiet else (lambda m: print(f"  {m}", file=sys.stderr))
+            sid = _load(db, a.scan)["repo"]["scan_id"]
             try:
-                out = validate_fix(_load(db, a.scan)["repo"]["scan_id"], a.remediation, settings=s, db=db, actor=a.actor, use_sandbox=not a.no_sandbox,
-                                   progress=None if a.quiet else (lambda m: print(f"  {m}", file=sys.stderr)))
+                if a.all_approved:
+                    outs = validate_all(sid, settings=s, db=db, actor=a.actor, use_sandbox=not a.no_sandbox, workers=a.workers, progress=say)
+                elif a.remediation:
+                    outs = [{"remediation_id": a.remediation, **validate_fix(sid, a.remediation, settings=s, db=db, actor=a.actor, use_sandbox=not a.no_sandbox, progress=say)}]
+                else:
+                    print("give a remediation id (e.g. REM-001) or --all-approved", file=sys.stderr)
+                    return 2
             except ValidationError as e:
                 print(f"cannot validate: {e}", file=sys.stderr)
                 return 2
-            fa = out["final_assessment"]
             if a.json:
-                print(json.dumps(out, indent=2, default=str))
-            else:
+                print(json.dumps(outs, indent=2, default=str))
+            for out in outs if not a.json else []:
+                if "error" in out:
+                    print(f"{out['remediation_id']}: error - {out['error']}")
+                    continue
+                fa = out["final_assessment"]
                 print(f"{fa['remediation_id']}: {fa['verdict']}")
                 for x in fa["reasons"]:
                     print(f"  - {x}")
+                for d in out.get("decisions", []):
+                    print(f"  decision [{d['step']}] {d['answer']} via {d['source']}" + (f" (p={d['probability']})" if d.get("probability") is not None else f" - {d['reason']}"))
+                for n in out.get("notes", []):
+                    print(f"  note for {n['for']}: {n['finding']} - {n['detail']}")
+                print("  timings (s): " + ", ".join(f"{k} {v}" for k, v in out.get("timings", {}).items()))
                 for name, path in out["files"].items():
                     print(f"  wrote {path}", file=sys.stderr)
-            return 0 if fa["verdict"] in ("verified_fixed", "fixed_untested") else 1
+            if not outs:
+                print("no approved proposals with a patch in this scan", file=sys.stderr)
+                return 2
+            ok = all("error" not in o and o["final_assessment"]["verdict"] in ("verified_fixed", "fixed_untested") for o in outs)
+            return 0 if ok else 1
         if a.cmd == "monitor":
             from monitor.watch import run_monitor
             out = run_monitor(s, db, repo_url=a.repo, max_repos=a.max)

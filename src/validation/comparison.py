@@ -62,16 +62,40 @@ def _suspicious_count(result: dict[str, Any]) -> int:
 def compare(before: dict[str, Any], after: dict[str, Any], rem: ApprovedRemediation) -> Comparison:
     rb, ra = _risk_index(before), _risk_index(after)
     b_vulns, a_vulns = before.get("vulnerabilities") or [], after.get("vulnerabilities") or []
-    a_keys = {finding_key(f): f for f in a_vulns}
-    b_keys = {finding_key(f): f for f in b_vulns}
-    targeted = [f for f in b_vulns if f.get("finding_id") in set(rem.finding_ids)]
-    t_keys = {finding_key(f) for f in targeted}
+    # The same advisory can hit several installed copies of a package (e.g. underscore 1.8.3 nested + 1.9.1 top level), so findings are
+    # grouped by the version-less key and matched copy by copy: same version first, then any version (an upgraded copy that is still
+    # affected by the same advisory is "remaining", not "fixed" + "new").
+    def by_key(vs: list[dict]) -> dict[str, list[dict]]:
+        out: dict[str, list[dict]] = {}
+        for f in vs:
+            out.setdefault(finding_key(f), []).append(f)
+        return out
 
+    def match(b: list[dict], a: list[dict]) -> tuple[list[tuple[dict, dict]], list[dict], list[dict]]:
+        b, a, pairs = list(b), list(a), []
+        for exact in (True, False):
+            for f in list(b):
+                g = next((x for x in a if not exact or x.get("installed_version") == f.get("installed_version")), None)
+                if g is not None:
+                    pairs.append((f, g))
+                    b.remove(f)
+                    a.remove(g)
+        return pairs, b, a  # matched, only-before (resolved), only-after (new)
+
+    bk, ak = by_key(b_vulns), by_key(a_vulns)
+    tids = set(rem.finding_ids)
     cmp = Comparison(before_scan_id=(before.get("repo") or {}).get("scan_id"), after_scan_id=(after.get("repo") or {}).get("scan_id"))
-    for f in targeted:
-        (cmp.targeted_remaining if finding_key(f) in a_keys else cmp.targeted_fixed).append(_ref(f, rb))
-    cmp.newly_introduced = [_ref(f, ra) for k, f in a_keys.items() if k not in b_keys]
-    cmp.other_resolved = [_ref(f, rb) for k, f in b_keys.items() if k not in a_keys and k not in t_keys]
+    for k in sorted(set(bk) | set(ak)):
+        bs = bk.get(k, [])
+        # targeted copies are matched first so a remaining advisory is attributed to them, not to an untargeted copy
+        bs = sorted(bs, key=lambda f: f.get("finding_id") not in tids)
+        pairs, gone, new = match(bs, ak.get(k, []))
+        for f, _ in pairs:
+            if f.get("finding_id") in tids:
+                cmp.targeted_remaining.append(_ref(f, rb))
+        for f in gone:
+            (cmp.targeted_fixed if f.get("finding_id") in tids else cmp.other_resolved).append(_ref(f, rb))
+        cmp.newly_introduced += [_ref(f, ra) for f in new]
 
     vb, va = _versions(before), _versions(after)
     for k in sorted(set(vb) | set(va)):

@@ -5,7 +5,8 @@ from validation.contracts import ApprovedRemediation, PhaseRun, SandboxOutcome
 from validation.provenance import sha256_text, statement
 from validation.verdict import decide
 
-PASSED = SandboxOutcome(status="passed", runs=[PhaseRun(phase="install", exit_code=0), PhaseRun(phase="test", exit_code=0)])
+PASSED = SandboxOutcome(status="passed", runs=[PhaseRun(phase="install", exit_code=0), PhaseRun(phase="test", exit_code=0)],
+                       test_evidence={"framework": "mocha", "executed": 12, "passed": 12, "failed": 0})
 NO_DOCKER = SandboxOutcome(status="skipped", reason="Docker is not installed")
 
 
@@ -67,3 +68,22 @@ def test_provenance_statement_shape():
     assert st["_type"].startswith("https://in-toto.io/Statement") and st["predicateType"] == "https://slsa.dev/provenance/v1"
     deps = st["predicate"]["buildDefinition"]["resolvedDependencies"]
     assert deps[0]["digest"]["gitCommit"] == "abc" and deps[2]["digest"] == {"sha256": "ff"}
+
+
+def test_two_copies_of_same_advisory_are_matched_copy_by_copy(item):
+    """Real NodeGoat case: underscore 1.8.3 (nested, targeted) and 1.9.1 (top level) share CVE-2021-23358.
+    The patch upgrades the top-level copy only: the targeted nested copy remains, the 1.9.1 finding is resolved."""
+    item = {**item, "finding_ids": ["F-1"], "changes": [{"package": "underscore", "from": "1.8.3", "to": "1.13.8", "kind": "bump"}]}
+    before = {"components": [comp("underscore", "1.8.3"), comp("underscore", "1.9.1")],
+              "vulnerabilities": [vuln("F-1", "underscore", "1.8.3", "CVE-2021-23358", "CRITICAL"), vuln("F-2", "underscore", "1.9.1", "CVE-2021-23358", "CRITICAL")]}
+    after = make_after([vuln("X", "underscore", "1.8.3", "CVE-2021-23358", "CRITICAL")], [comp("underscore", "1.8.3"), comp("underscore", "1.13.8")])
+    cmp = compare(before, after, ApprovedRemediation.from_item(item))
+    assert [(f.advisory, f.version) for f in cmp.targeted_remaining] == [("CVE-2021-23358", "1.8.3")]
+    assert [(f.advisory, f.version) for f in cmp.other_resolved] == [("CVE-2021-23358", "1.9.1")]
+    assert not cmp.targeted_fixed and not cmp.newly_introduced and cmp.target_versions_present is True
+
+
+def test_upgraded_copy_still_affected_is_remaining_not_new(item, before):
+    after = make_after([vuln("Y", "express", "4.21.2", "GHSA-aaaa"), vuln("Z", "qs", "6.7.0", "GHSA-bbbb", "MEDIUM")], [comp("express", "4.21.2"), comp("qs", "6.7.0")])
+    cmp = compare(before, after, ApprovedRemediation.from_item(item))
+    assert {f.advisory for f in cmp.targeted_remaining} == {"GHSA-aaaa", "GHSA-bbbb"} and not cmp.newly_introduced

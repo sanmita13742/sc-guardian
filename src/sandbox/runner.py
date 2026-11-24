@@ -12,7 +12,9 @@ Docker must be installed and its daemon running; otherwise the result is ``skipp
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -27,6 +29,39 @@ from llm.client import redact
 
 LIMITS = ["--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "512", "--memory", "2g", "--cpus", "2", "--tmpfs", "/tmp:rw,exec,size=1g", "-e", "HOME=/tmp"]
 INSTALL_TIMEOUT, TEST_TIMEOUT = 900, 900
+
+# Package-manager caches live in Docker named volumes mounted at /cache, so the install of the next validation re-uses downloads.
+# The same volume also carries state from the install container to the test container (Go modules, Cargo registry, Maven repo).
+CACHE_ENV = {
+    "npm": {"npm_config_cache": "/cache/npm"},
+    "PyPI": {"PIP_CACHE_DIR": "/cache/pip"},
+    "Go": {"GOMODCACHE": "/cache/gomod", "GOCACHE": "/cache/gobuild", "GOFLAGS": "-mod=readonly"},
+    "crates.io": {"CARGO_HOME": "/cache/cargo"},
+    "Maven": {"MAVEN_OPTS": "-Dmaven.repo.local=/cache/m2"},
+}
+# Caches whose entries are verified against the lockfile's content hashes on every use (npm integrity, go.sum, Cargo.lock checksums)
+# may be shared across repositories; pip and Maven caches are not content-verified the same way, so they are scoped per repository.
+SHARED_SAFE = {"npm", "Go", "crates.io"}
+VENV = "/work/.scg-venv"  # PyPI: dependencies installed in the bind-mounted tree survive into the (separate) test container
+
+
+def cache_volume(ecosystem: str, repo_url: str, run_id: str = "") -> dict:
+    """Volume and environment for the package cache. ``SCG_SANDBOX_CACHE``: auto (default) | repo | run (fresh per validation, removed after)."""
+    scope = os.environ.get("SCG_SANDBOX_CACHE", "auto").lower()
+    if scope not in ("auto", "repo", "run"):
+        scope = "auto"
+    if scope == "auto":
+        scope = "shared" if ecosystem in SHARED_SAFE else "repo"
+    slug = "".join(ch for ch in ecosystem.lower() if ch.isalnum())
+    name = {"shared": f"scg-cache-{slug}", "repo": f"scg-cache-{slug}-{hashlib.sha256(repo_url.encode()).hexdigest()[:12]}",
+            "run": f"scg-run-{slug}-{run_id or os.urandom(4).hex()}"}[scope]
+    return {"volume": name, "scope": scope, "env": CACHE_ENV.get(ecosystem, {})}
+
+
+def remove_volume(name: str) -> None:
+    exe = shutil.which("docker")
+    if exe and name.startswith("scg-run-"):
+        subprocess.run([exe, "volume", "rm", "-f", name], capture_output=True, timeout=60, shell=False, env=scrubbed_env())
 
 
 def docker_status() -> dict:
@@ -60,7 +95,8 @@ def detect_recipe(repo_dir: Path, ecosystem: str, service_dir: str = ".") -> Opt
         if not has_tests:
             return None
         inst = "pip install -r requirements.txt" if (d / "requirements.txt").exists() else "pip install ."
-        return {"image": "python:3.12-slim", "workdir": wd, "install": f"{inst} && pip install pytest", "test": "python -m pytest -q -x"}
+        return {"image": "python:3.12-slim", "workdir": wd, "install": f"python -m venv {VENV} && . {VENV}/bin/activate && {inst} && pip install pytest",
+                "test": f". {VENV}/bin/activate && python -m pytest -q -x"}
     if ecosystem == "Maven" and (d / "pom.xml").exists():
         return {"image": "maven:3.9-eclipse-temurin-21", "workdir": wd, "install": "mvn -B -q dependency:go-offline", "test": "mvn -B -q -o test"}
     if ecosystem == "Go" and (d / "go.mod").exists():
@@ -74,6 +110,11 @@ def _run(exe: str, repo_dir: Path, recipe: dict, phase: str, timeout: int) -> di
     cmd = [exe, "run", "--rm", *LIMITS]
     if phase == "test":
         cmd += ["--network", "none"]
+    cache = recipe.get("cache")
+    if cache:
+        cmd += ["-v", f"{cache['volume']}:/cache"]
+        for k, v in cache.get("env", {}).items():
+            cmd += ["-e", f"{k}={v}"]
     cmd += ["-v", f"{repo_dir.resolve()}:/work", "-w", "/work/" + recipe["workdir"].strip("./"), recipe["image"], "sh", "-c", recipe[phase]]
     t0 = time.time()
     try:
@@ -117,6 +158,7 @@ def validate_in_sandbox(settings: Settings, repo: dict, rem: dict, progress: Opt
         recipe = detect_recipe(clone, eco, rem.get("service") or ".")
         if not recipe:
             return {"status": "skipped", "reason": f"No recognised build/test recipe for {eco} in this repository (the Guardian never guesses commands)."}
+        recipe["cache"] = cache_volume(eco, repo["url"])
         say(f"Installing dependencies in {recipe['image']} (network allowed for this phase) ...")
         inst = _run(ds["exe"], clone, recipe, "install", INSTALL_TIMEOUT)
         if inst["exit_code"] != 0:
