@@ -12,7 +12,15 @@ def _k(eco: str, name: str) -> tuple[str, str]:
     return (eco, normalize_name(eco, name))
 
 
-def correlate_findings(vulns: list[dict], typos: list[dict], locks: list[dict], rules: dict | None = None, pipes: list[dict] | None = None) -> dict[str, Any]:
+def correlate_findings(
+    vulns: list[dict],
+    typos: list[dict],
+    locks: list[dict],
+    rules: dict | None = None,
+    pipes: list[dict] | None = None,
+    source_index: Any = None,
+    repo_dir: Any = None,
+) -> dict[str, Any]:
     """Return {assessments: [...], correlations: [...]} (assessments are deterministic and rule-based)."""
     v_by = defaultdict(list)
     t_by = defaultdict(list)
@@ -35,23 +43,31 @@ def correlate_findings(vulns: list[dict], typos: list[dict], locks: list[dict], 
     for v in vulns:
         key = _k(v["ecosystem"], v["package_name"])
         rel = {}
+        if source_index:
+            rel["source_index"] = source_index
+        if repo_dir:
+            rel["repo_dir"] = repo_dir
         if l_by.get(key):
-            rel["lockfile_change"] = f"{l_by[key][0]['finding_id']} ({l_by[key][0]['classification']}) changed this package in commit {l_by[key][0]['commit'][:10]}"
+            c_sha = (l_by[key][0].get("commit") or "HEAD")[:10]
+            rel["lockfile_change"] = f"{l_by[key][0]['finding_id']} ({l_by[key][0]['classification']}) changed this package in commit {c_sha}"
         assessments.append(score_vulnerability(v, rules, rel))
     for t in typos:
         key = _k(t["ecosystem"], t["package_name"])
         rel = {}
         added = [c for c in l_by.get(key, []) if c["change_type"] == "added"]
         if added:
-            rel["lockfile_addition"] = f"{added[0]['finding_id']}: added in commit {added[0]['commit'][:10]}"
+            c_sha = (added[0].get("commit") or "HEAD")[:10]
+            rel["lockfile_addition"] = f"{added[0]['finding_id']}: added in commit {c_sha}"
         if v_by.get(key):
-            rel["vulnerability"] = f"{v_by[key][0]['finding_id']} ({v_by[key][0]['primary_id']})"
+            pid = v_by[key][0].get("primary_id") or v_by[key][0].get("finding_id")
+            rel["vulnerability"] = f"{v_by[key][0]['finding_id']} ({pid})"
         assessments.append(score_typosquat(t, rules, rel))
     for c in locks:
         key = _k(c["ecosystem"], c["package_name"])
         rel = {}
-        if v_by.get(key) and c["classification"] != "insufficient_baseline":
-            rel["vulnerability"] = f"{v_by[key][0]['finding_id']} ({v_by[key][0]['primary_id']})"
+        if v_by.get(key) and c.get("classification") != "insufficient_baseline":
+            pid = v_by[key][0].get("primary_id") or v_by[key][0].get("finding_id")
+            rel["vulnerability"] = f"{v_by[key][0]['finding_id']} ({pid})"
         if t_by.get(key):
             rel["typosquat"] = f"{t_by[key][0]['finding_id']} resembles {t_by[key][0]['similar_to']}"
         assessments.append(score_lockfile_change(c, rules, rel))

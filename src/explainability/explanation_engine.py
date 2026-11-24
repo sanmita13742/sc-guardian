@@ -20,14 +20,28 @@ def _vuln_template(b: dict, risk: dict, f: dict) -> dict[str, str]:
               "unknown": f"The advisory was returned for this package but its affected range could not be validated locally for {comp['version']}",
               }.get(adv["affected_status"], adv["affected_status"])
     ranges = f" ({'; '.join(adv['affected_ranges'])})" if adv.get("affected_ranges") else ""
+    reach = f.get("reachability") or {}
+    rst = reach.get("status")
+    app_files = reach.get("app_files", 0)
+    density = reach.get("import_density") or reach.get("influence_tier")
+    if rst == "used_by_app":
+        reach_txt = f" Application imports {comp['name']} across {app_files} file(s)" + (", indicating heavy codebase influence and broad runtime exposure." if (density == "heavy" or app_files >= 5) else ".")
+    elif rst == "reachable_via_dependency":
+        reach_txt = f" Reached via dependency {', '.join(reach.get('via') or [reach.get('package')])}, which is imported by application source."
+    elif rst == "used_in_tests_only":
+        reach_txt = f" Imported only by test code ({reach.get('test_files', 0)} files); does not run in the production execution path."
+    elif rst == "not_imported":
+        reach_txt = " No static import found in application source; practical risk is deprioritized."
+    else:
+        reach_txt = " Whether the vulnerable code is reachable in this application has not been assessed."
+
     s = {
         "what": f"{adv['primary_id']} ({ids}) affects {comp['name']} {comp['version']}." + (f" Advisory summary: {adv['summary']}" if adv.get("summary") else ""),
         "why": f"{status}{ranges}. Version matching used {comp['ecosystem']} version semantics. Source(s): {', '.join(adv['sources'])}.",
         "package": f"{comp['name']} {comp['version']} ({comp['ecosystem']}" + (f", {comp['purl']}" if comp.get('purl') else "") + f") in service '{comp.get('service_dir')}'; SBOM component reference: {comp['bom_ref']}.",
         "how_entered": ("\n".join("path: " + fmt_path(p) for e in dep["exposures"] for p in e["paths"][:3]) or "No dependency path from a service root is recorded in the graph."),
         "direct_transitive": ("\n".join(fmt_exposures(dep["exposures"])) or "Direct/transitive status is unknown because the component is not reachable from any root."),
-        "impact": f"Severity: {sev}; {cvss}." + (" Listed in the CISA KEV catalog (known exploited)." if adv.get("kev") else " Not listed in the CISA KEV catalog.")
-                  + " Whether the vulnerable code is reachable in this application has not been assessed.",
+        "impact": f"Severity: {sev}; {cvss}." + (" Listed in the CISA KEV catalog (known exploited)." if adv.get("kev") else " Not listed in the CISA KEV catalog.") + reach_txt,
         "evidence": f"Advisory source(s): {', '.join(adv['sources'])}; retrieved {adv.get('retrieved_at')}. References: " + (", ".join(adv["urls"][:3]) or "none recorded") + ".",
         "remediation": f["remediation"],
         "unknown": " ".join(risk.get("unknowns", [])) or "No additional unknowns recorded.",

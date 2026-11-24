@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from core.repository_inspector import safe_read_text
-from pipeline_analysis.ci import analyze_generic_ci, analyze_github_workflow
+from pipeline_analysis.ci_adapters import analyze_ci_pipeline
 from pipeline_analysis.dockerfile import analyze_compose, analyze_dockerfile
 from pipeline_analysis.models import PipelineFinding
 
@@ -48,25 +48,31 @@ def analyze_repository(root: Path, dockerfiles: list[str], container_files: list
         findings += f
         images += im
         files.append({"file": rel, "type": "compose", "status": "analysed", "findings": len(f), "images": len(im)})
+    docker_builds: list[dict] = []
     for rel in ci_files:
         if rel in seen_ci:
             continue
         seen_ci.add(rel)
-        if rel.endswith("/") or not re.search(r"\.(ya?ml|groovy)$|Jenkinsfile$", rel):
+        if rel.endswith("/") or not re.search(r"\.(ya?ml|groovy)$|Jenkinsfile", rel, re.IGNORECASE):
             continue
         text = safe_read_text(root, rel)
         if text is None:
             files.append({"file": rel, "type": "CI", "status": "unreadable"})
             continue
-        if is_github_workflow(rel):
-            f, ac = analyze_github_workflow(text, rel)
-            actions += ac
-            files.append({"file": rel, "type": "GitHub Actions workflow", "status": "analysed", "findings": len(f), "actions": len(ac)})
-        else:
-            f, im = analyze_generic_ci(text, rel)
-            images += im
-            files.append({"file": rel, "type": "CI definition", "status": "analysed", "findings": len(f)})
-        findings += f
+        pipe_obj = analyze_ci_pipeline(text, rel)
+        findings += pipe_obj.findings
+        images += pipe_obj.container_images
+        actions += pipe_obj.external_dependencies
+        for db in pipe_obj.docker_builds:
+            docker_builds.append(db.__dict__ if hasattr(db, "__dict__") else db)
+        files.append({
+            "file": rel,
+            "type": f"{pipe_obj.platform} workflow",
+            "status": "analysed" if pipe_obj.parse_success else "parse_error",
+            "findings": len(pipe_obj.findings),
+            "actions": len(pipe_obj.external_dependencies),
+            "docker_builds": len(pipe_obj.docker_builds),
+        })
     # stable ids, de-duplicated by (rule, file, line, subject), worst first
     uniq: dict[tuple, PipelineFinding] = {}
     for f in findings:
@@ -79,6 +85,6 @@ def analyze_repository(root: Path, dockerfiles: list[str], container_files: list
     for f in ordered:
         by_sev[f.severity] = by_sev.get(f.severity, 0) + 1
     unpinned_actions = [a for a in actions if a.get("kind") == "action" and not a.get("pinned")]
-    return {"findings": [f.model_dump() for f in ordered], "images": images, "actions": actions, "files": files,
+    return {"findings": [f.model_dump() for f in ordered], "images": images, "actions": actions, "files": files, "docker_builds": docker_builds,
             "summary": {"files_analysed": sum(1 for x in files if x["status"] == "analysed"), "findings": len(ordered), "by_severity": by_sev, "images": len(images), "actions": len(actions),
-                        "actions_unpinned": len(unpinned_actions), "images_unpinned": sum(1 for i in images if not i.get("digest"))}}
+                        "actions_unpinned": len(unpinned_actions), "images_unpinned": sum(1 for i in images if not i.get("digest")), "docker_builds": len(docker_builds)}}

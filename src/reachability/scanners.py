@@ -178,14 +178,36 @@ def package_usage(idx: SourceIndex, eco: str, name: str, limit: int = 5) -> dict
     """Evidence for one package. ``status``: used_by_app | used_in_tests_only | not_imported | unknown (no analysable source for the ecosystem)."""
     lang = next((l for l, e in LANG_ECO.items() if e == eco), None)
     if not lang or not idx.files_by_lang.get(lang):
-        return {"status": "unknown", "reason": f"no {eco} source files were analysed", "app_files": 0, "test_files": 0, "locations": [], "confidence": "none"}
+        return {"status": "unknown", "reason": f"no {eco} source files were analysed", "app_files": 0, "test_files": 0, "locations": [], "confidence": "none",
+                "import_density": "none", "import_ratio": 0.0, "influence_tier": "unknown"}
     hits = [u for u in idx.by_lang.get(lang, []) if _matches(eco, name, u.module)]
     app = [u for u in hits if not u.test]
     tst = [u for u in hits if u.test]
     conf = "medium" if eco in ("Maven", "Packagist", "NuGet") else "high"
     locs = [{"path": u.path, "line": u.line, "module": u.module, "test": u.test} for u in (app + tst)[:limit]]
-    base = {"app_files": len({u.path for u in app}), "test_files": len({u.path for u in tst}), "locations": locs, "confidence": conf, "files_analysed": idx.files_by_lang.get(lang, 0),
-            "truncated": idx.truncated}
+    total_files = idx.files_by_lang.get(lang, 0)
+    app_files_count = len({u.path for u in app})
+    test_files_count = len({u.path for u in tst})
+    import_ratio = round(app_files_count / max(1, total_files), 3)
+
+    if app_files_count >= 5 or (total_files > 0 and import_ratio >= 0.15):
+        density = "heavy"
+        tier = "heavy"
+    elif app_files_count >= 2:
+        density = "moderate"
+        tier = "moderate"
+    elif app_files_count == 1:
+        density = "light"
+        tier = "light"
+    elif test_files_count > 0:
+        density = "test_only"
+        tier = "tests_only"
+    else:
+        density = "none"
+        tier = "not_imported"
+
+    base = {"app_files": app_files_count, "test_files": test_files_count, "locations": locs, "confidence": conf, "files_analysed": total_files,
+            "truncated": idx.truncated, "import_density": density, "import_ratio": import_ratio, "influence_tier": tier}
     if app:
         return {**base, "status": "used_by_app"}
     if tst:

@@ -131,9 +131,24 @@ def render() -> None:
         st.markdown(f"**Spec:** CycloneDX {r['sbom'].get('spec_version') or 'n/a'} &nbsp;·&nbsp; **Valid:** {v.get('valid', False)} &nbsp;·&nbsp; **Components:** {v.get('stats', {}).get('components', 0)}")
         for e in v.get("errors", []):
             st.error(e)
+
+        if tool.get("used") == "builtin":
+            st.success("✅ **CycloneDX 1.5 SBOM generated successfully by SC Guardian's built-in rule engine** (100% in-process fallback; external Syft/Trivy CLI binaries are optional).")
+        else:
+            st.success(f"✅ **CycloneDX 1.5 SBOM generated successfully using {tool.get('used', 'scanner')}**.")
+
         st.markdown("**Scanner attempts** (in the order tried)")
         att = tool.get("attempts") or []
-        df([{"Scanner": a["scanner"], "Result": "✓ used" if a["ok"] else "✗ failed / not available", "Version": a.get("version") or "—",
+
+        def _format_result(a: dict) -> str:
+            if a["ok"]:
+                return "✓ Used"
+            err = (a.get("error") or "").lower()
+            if "not found" in err or "not installed" in err:
+                return "○ Not installed (skipped)"
+            return "✗ Failed"
+
+        df([{"Scanner": a["scanner"], "Result": _format_result(a), "Version": a.get("version") or "—",
              "Seconds": a.get("duration_s"), "Detail": a.get("error") or "ok"} for a in att], height="content")
         for a in att:
             if a.get("command"):

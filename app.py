@@ -8,6 +8,31 @@ import importlib.util
 import sys
 from pathlib import Path
 
+# Silence harmless WinError 10054 on Windows when browser client disconnects or refreshes
+if sys.platform == "win32":
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+        _orig_call_connection_lost = _ProactorBasePipeTransport._call_connection_lost
+
+        def _silenced_call_connection_lost(self, exc):
+            try:
+                _orig_call_connection_lost(self, exc)
+            except (ConnectionResetError, OSError):
+                try:
+                    if self._sock is not None:
+                        self._sock.close()
+                        self._sock = None
+                    if getattr(self, "_server", None) is not None:
+                        self._server._detach()
+                        self._server = None
+                    self._called_connection_lost = True
+                except Exception:
+                    pass
+
+        _ProactorBasePipeTransport._call_connection_lost = _silenced_call_connection_lost
+    except Exception:
+        pass
+
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))  # application packages live in src/
@@ -25,8 +50,6 @@ if _missing:
 
 from ui.pages import (agents_page, graph_page, health_page, monitor_page, architecture_page, pipeline_page, policy_page, reports_page, remediation_page, risk_page,
                       sbom_page, scan_page, suspicious_page, vulns_page)
-from ui.state import get_active_scan, list_recent_scans, load_scan_from_db
-from ui.theme import status_pill_html
 
 # Page configuration
 st.set_page_config(
@@ -60,52 +83,14 @@ NAVIGATION_PAGES = {
 
 
 def _render_sidebar_context() -> None:
-    """Render global brand header, active scan context, and quick scan switcher."""
+    """Render global brand header and platform note."""
     with st.sidebar:
         st.markdown(
-            "<div style='font-size:18px; font-weight:700; color:#e6edf3; display:flex; align-items:center; gap:6px;'>"
+            "<div style='font-size:18px; font-weight:700; color:#e6edf3; display:flex; align-items:center; gap:6px; margin-bottom:12px;'>"
             "🛡️ SC Guardian"
-            "</div>"
-            "<div style='font-size:11px; color:#8b949e; margin-bottom:10px;'>"
-            "Supply Chain Security Platform"
             "</div>",
             unsafe_allow_html=True,
         )
-
-        r = get_active_scan()
-        if r:
-            repo = r.get("repo", {})
-            sm = r.get("summary", {})
-            sha = (repo.get("commit_sha") or "")[:8]
-            status = r.get("status", "completed")
-            cached = " ⚡" if r.get("from_cache") else ""
-            vulns = sm.get("vulnerabilities_confirmed", 0)
-            comps = sm.get("components", 0)
-            st.markdown(
-                f"<div style='border:1px solid #30363d; background:#161b22; border-radius:6px; padding:6px 10px; margin-bottom:8px; font-size:12px; color:#c9d1d9;'>"
-                f"<b>{repo.get('name', 'Repository')}</b> <code>{sha}</code>{cached}<br>"
-                f"<span style='color:#8b949e;'>{comps} packages · <b>{vulns}</b> vulns</span> · {status_pill_html(status)}"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-        scans = list_recent_scans(10)
-        if scans:
-            scan_opts = {s["scan_id"]: f"{s['repo_name']} ({s['commit_sha'][:7]})" for s in scans}
-            current_id = (r.get("repo", {}).get("scan_id") if r else "")
-            picked = st.selectbox(
-                "Saved Scans",
-                options=list(scan_opts.keys()),
-                index=list(scan_opts.keys()).index(current_id) if current_id in scan_opts else 0,
-                format_func=lambda sid: scan_opts[sid],
-                key="sidebar_scan_picker",
-                label_visibility="collapsed",
-            )
-            if picked and picked != current_id:
-                if st.button("Load scan", key="btn_sidebar_load", use_container_width=True):
-                    load_scan_from_db(picked)
-                    st.rerun()
-
         st.caption("Static analysis · Code is never executed")
 
 

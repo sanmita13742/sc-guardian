@@ -392,6 +392,8 @@ class VulnerabilityAgent:
             st.result.update(vuln_coverage={}, source_status={"OSV": {"source": "OSV", "state": "failed"}})
             return
         st.vulns = [f.model_dump() for f in st.vres["findings"]]
+        if st.pipe and st.pipe.get("container_findings"):
+            st.vulns.extend(st.pipe["container_findings"])
         st.result.update(vuln_coverage=st.vres["coverage"], source_status=st.vres["source_status"])
         cov = st.vres["coverage"]
         rt.observe("osv", f"{cov['queried_unique_packages']} unique packages queried; {cov['advisories_returned']} advisories returned; "
@@ -423,6 +425,8 @@ class VerificationAgent:
         with rt.step("verify", "Re-querying every PURL through OSV's PURL route and comparing with the name/version route") as b:
             res = cross_check(st.osv, st.vres["osv_name_route"], st.vres["findings"])
             st.vulns = [f.model_dump() for f in st.vres["findings"]]
+        if st.pipe and st.pipe.get("container_findings"):
+            st.vulns.extend(st.pipe["container_findings"])
             st.result["verification"] = res
             rt.observe("verify", f"{res['routes_agree']}/{res['components_checked']} components returned identical advisory sets by both routes; "
                        f"{res['findings_cross_verified']}/{res['findings_checked']} findings independently reproduced")
@@ -490,7 +494,15 @@ class RiskAgent:
 
     def score(self, st: ScanState, rt: Runtime) -> None:
         with rt.step("risk") as b:
-            st.risk = correlate_findings(st.vulns, [f.model_dump() for f in st.typo["findings"]], st.lres["findings"], st.rules, st.pipe["findings"] + st.pkgrisk["findings"])
+            st.risk = correlate_findings(
+                st.vulns,
+                [f.model_dump() for f in st.typo["findings"]],
+                st.lres["findings"],
+                st.rules,
+                st.pipe["findings"] + st.pkgrisk["findings"],
+                source_index=st.source_index,
+                repo_dir=getattr(st, "repo_dir", None),
+            )
             res = st.result
             res["risk_assessments"], res["correlations"] = st.risk["assessments"], st.risk["correlations"]
             res["risk_by_root"] = summarize_by_root(st.vulns, st.risk["assessments"])

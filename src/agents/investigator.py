@@ -173,11 +173,21 @@ class InvestigatorAgent:
         ev = {"reach": reach_ev, "path": path.get("evidence_id"), "osv": facts.get("evidence_id"), "epss": (epss or {}).get("evidence_id")}
         verdict = decide(f, reach, epss)
         conf = confidence(f, reach, epss)
-        f["reachability"] = {k: reach.get(k) for k in ("status", "package", "via", "locations", "app_files", "test_files", "confidence", "reason", "files_analysed")}
+        f["reachability"] = {k: reach.get(k) for k in ("status", "package", "via", "locations", "app_files", "test_files", "confidence", "reason", "files_analysed", "import_density", "import_ratio", "influence_tier")}
         f["epss"], f["epss_percentile"] = (epss or {}).get("epss"), (epss or {}).get("percentile")
         f["verdict"], f["verdict_confidence"] = verdict, conf
+        app_cnt = reach.get("app_files", 0)
+        dens = reach.get("import_density") or reach.get("influence_tier") or "unknown"
+        sev = f.get("severity")
+        if sev in ("CRITICAL", "HIGH") and reach.get("status") in ("not_imported", "used_in_tests_only") and not f.get("kev"):
+            prio_shift = {"shift": "deprioritized", "reason": f"Deprioritized: no production imports detected despite {sev} advisory severity", "influence_tier": dens}
+        elif sev in ("MEDIUM", "LOW") and (dens == "heavy" or app_cnt >= 5):
+            prio_shift = {"shift": "elevated", "reason": f"Elevated: heavy application imports across {app_cnt} files in production codebase", "influence_tier": "heavy"}
+        else:
+            prio_shift = {"shift": "standard", "reason": "Consistent with advisory severity and codebase reachability", "influence_tier": dens}
+        f["prioritization"] = prio_shift
         return {"finding_id": fid, "verdict": verdict, "confidence": conf, "reachability": f["reachability"], "epss": epss, "steps": steps, "evidence_ids": [v for v in ev.values() if v],
-                "rationale": rationale(f, reach, epss, verdict, ev), "ai_assisted": False, "planner": "deterministic"}
+                "rationale": rationale(f, reach, epss, verdict, ev), "prioritization": prio_shift, "ai_assisted": False, "planner": "deterministic"}
 
     # ------------------------------------------------------------------ optional LLM planner
     def _llm_pass(self, st: ScanState, rt: Runtime, ctx: ToolContext, client) -> None:
