@@ -36,13 +36,39 @@ def commit_and_create_pr_branch(
     approval: Optional[dict] = None,
 ) -> dict[str, Any]:
     """Create an isolated git branch, apply the remediation patch, and commit with a conventional message."""
-    root = Path(repo_dir)
-    if not (root / ".git").exists():
-        return {"status": "error", "error": f"{root} is not a Git repository"}
-
     patch = patch_text(rem)
     if not patch:
-        return {"status": "error", "error": "No patch diff exists for this remediation proposal"}
+        action = rem.get("action", "remediation")
+        return {
+            "status": "error",
+            "error": f"Proposal '{rem.get('id')}' ({action}) does not have an automated code patch. See proposal rationale for manual mitigation.",
+        }
+
+    # Resolve target git working repository
+    root = Path(repo_dir) if repo_dir and str(repo_dir) != "." else None
+    if not root or not (root / ".git").exists():
+        for cand in (repo.get("local_path"), repo.get("repo_dir"), repo.get("path")):
+            if cand and Path(cand).exists() and (Path(cand) / ".git").exists():
+                root = Path(cand)
+                break
+
+    repo_url = repo.get("url") or ""
+    if not root or not (root / ".git").exists():
+        if repo_url.startswith(("http://", "https://", "git@")):
+            from config.settings import get_settings
+            s = get_settings()
+            repo_name = repo.get("name") or "repo"
+            clean_name = re.sub(r"[^a-zA-Z0-9_-]", "-", repo_name)
+            rem_ws = Path(s.workspace_dir or ".workspaces") / f"remediation_{clean_name}"
+            rem_ws.parent.mkdir(parents=True, exist_ok=True)
+            if not (rem_ws / ".git").exists():
+                try:
+                    run_git(["clone", "--depth", "50", repo_url, str(rem_ws)])
+                except GitError as e:
+                    return {"status": "error", "error": f"Could not acquire repository workspace from {repo_url}: {e}"}
+            root = rem_ws
+        else:
+            return {"status": "error", "error": f"Working repository path not found (checked '{repo_dir}') and no remote Git URL available."}
 
     target = rem.get("target") or {}
     src_pkg = rem.get("source_package") or rem.get("package") or "dep"
@@ -73,8 +99,12 @@ def commit_and_create_pr_branch(
         # 1. Test patch with --check first
         try:
             run_git(["apply", "--check", str(patch_file)], cwd=root)
-        except GitError as e:
-            return {"status": "error", "error": f"Patch application check failed: {e}"}
+        except GitError:
+            # Try with whitespace-nowarn
+            try:
+                run_git(["apply", "--check", "--whitespace=nowarn", str(patch_file)], cwd=root)
+            except GitError as e:
+                return {"status": "error", "error": f"Patch application check failed: {e}"}
 
         # 2. Check out new branch
         try:
@@ -88,7 +118,7 @@ def commit_and_create_pr_branch(
 
         # 3. Apply the patch
         try:
-            run_git(["apply", str(patch_file)], cwd=root)
+            run_git(["apply", "--whitespace=nowarn", str(patch_file)], cwd=root)
         except GitError as e:
             return {"status": "error", "error": f"git apply failed: {e}"}
 
@@ -117,9 +147,8 @@ def commit_and_create_pr_branch(
             "used_repo_template": used_template,
             "gh_cli_available": can_dispatch_gh_cli(),
         }
-
-    except GitError as e:
-        return {"status": "error", "error": str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"status": "error", "error": f"Failed committing patch: {e}"}
     finally:
         shutil.rmtree(td, ignore_errors=True)
 

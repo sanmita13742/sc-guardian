@@ -112,33 +112,51 @@ def render() -> None:
             "This proposal addresses High or Critical risk findings. By policy, changes **will not** be committed or sent without explicit manual human approval. "
             "Please **Accept** to create the PR branch or **Ignore** to dismiss."
         )
-        c_acc, c_ign, _ = st.columns([1.2, 1, 2])
+        c_acc, c_ign, _ = st.columns([1.5, 1, 1.5])
         if c_acc.button("✅ Accept & Create PR", key=f"quick_accept_{i['id']}", type="primary", use_container_width=True):
             if mem:
                 mem.set_approval(repo["url"], i["fingerprint"], "approved", "Accepted manually by analyst in Streamlit UI", i["title"], "analyst")
-                r_dir = repo.get("repo_dir") or repo.get("path") or "."
-                res = commit_and_create_pr_branch(r_dir, i, repo, {"state": "approved", "actor": "analyst", "reason": "Accepted manually by analyst in Streamlit UI"})
-                st.session_state[f"pr_res_{i['id']}"] = res
+            r_dir = repo.get("repo_dir") or repo.get("local_path") or repo.get("path") or "."
+            res = commit_and_create_pr_branch(r_dir, i, repo, {"state": "approved", "actor": "analyst", "reason": "Accepted manually by analyst in Streamlit UI"})
+            st.session_state[f"pr_res_{i['id']}"] = res
+            if res.get("status") == "success":
                 st.success(f"🎉 Proposal accepted! Changes committed to branch `{res.get('branch', 'remediation/...')}`.")
-                st.rerun()
+            else:
+                st.error(f"❌ Failed to create PR branch: {res.get('error')}")
 
         if c_ign.button("🚫 Ignore / Dismiss", key=f"quick_ignore_{i['id']}", type="secondary", use_container_width=True):
             if mem:
                 mem.set_approval(repo["url"], i["fingerprint"], "rejected", "Ignored manually by analyst in Streamlit UI", i["title"], "analyst")
-                st.info(f"🚫 Proposal `{i['id']}` ignored.")
-                st.rerun()
+            st.info(f"🚫 Proposal `{i['id']}` ignored.")
+            st.rerun()
     else:
         st.success(
             "⚡ **Automated Pull Request Policy Active (Low / Medium Severity)**  \n"
             "This proposal addresses Low or Medium risk findings. Pull requests are automated and sent without requiring human intervention."
         )
-        c_auto_msg, c_auto_ign = st.columns([3, 1])
-        c_auto_msg.caption("Status: Auto-approved under Low/Medium severity automation policy.")
+        c_auto_act, c_auto_ign, _ = st.columns([1.5, 1, 1.5])
+        if c_auto_act.button("🚀 Commit & Create PR Branch", key=f"auto_commit_{i['id']}", type="primary", use_container_width=True):
+            r_dir = repo.get("repo_dir") or repo.get("local_path") or repo.get("path") or "."
+            res = commit_and_create_pr_branch(r_dir, i, repo, {"state": "approved", "actor": "auto-policy", "reason": "Automated Low/Medium severity PR"})
+            st.session_state[f"pr_res_{i['id']}"] = res
+            if res.get("status") == "success":
+                st.success(f"🎉 Changes committed to branch `{res['branch']}`! PR markdown saved to `{res.get('pr_file')}`.")
+            else:
+                st.error(f"❌ Failed to create PR branch: {res.get('error')}")
+
         if c_auto_ign.button("🚫 Ignore Proposal", key=f"auto_ignore_{i['id']}", type="secondary", use_container_width=True):
             if mem:
                 mem.set_approval(repo["url"], i["fingerprint"], "rejected", "Overridden and ignored manually by analyst in Streamlit UI", i["title"], "analyst")
-                st.info(f"🚫 Proposal `{i['id']}` ignored.")
-                st.rerun()
+            st.info(f"🚫 Proposal `{i['id']}` ignored.")
+            st.rerun()
+
+    # Show persistent PR status if already dispatched in session
+    pr_status_disp = st.session_state.get(f"pr_res_{i['id']}")
+    if pr_status_disp:
+        if pr_status_disp.get("status") == "success":
+            st.success(f"🎉 Branch `{pr_status_disp['branch']}` created and committed! PR markdown file: `{pr_status_disp.get('pr_file')}`")
+        elif pr_status_disp.get("status") == "error":
+            st.error(f"❌ Branch commit failed: {pr_status_disp.get('error')}")
 
     if i.get("alternatives"):
         for a in i["alternatives"]:
@@ -201,6 +219,8 @@ def render() -> None:
             st.code(i["patch"]["diff"], language="diff")
             if i.get("lock_note"):
                 st.caption(f"Then refresh the lockfile: {i['lock_note']}")
+            if patch_text(i):
+                st.download_button("📥 Download .patch", patch_text(i), file_name=f"{i['id']}.patch", mime="text/x-diff", key=f"t_patch_dl_{i['id']}")
         else:
             st.info("No automatic patch could be produced for this proposal (manual change or no manifest found); the rationale lists what to do.")
         st.markdown("**Rollback**")
@@ -268,7 +288,7 @@ def render() -> None:
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
-        approved = bool(ap and ap["state"] == "approved")
+        approved = bool((ap and ap["state"] == "approved") or not is_manual)
         if approved:
             st.markdown("---")
             st.markdown("### 🤖 Remediation Agent Delivery")
@@ -277,7 +297,7 @@ def render() -> None:
             src_name = i.get("source_package") or i.get("package") or "dep"
             target_v = t_info.get("to") or "fix"
             branch_default = f"remediation/fix-{src_name}-{target_v}"
-            tmpl_found = find_pr_template(repo.get("repo_dir") or repo.get("path") or ".")
+            tmpl_found = find_pr_template(repo.get("repo_dir") or repo.get("local_path") or repo.get("path") or ".")
 
             c_info1, c_info2 = st.columns(2)
             c_info1.markdown(f"**Target Branch:** `{branch_default}`")
@@ -285,12 +305,12 @@ def render() -> None:
 
             c_act1, c_act2 = st.columns([1, 1])
             if c_act1.button("🚀 Commit & Create PR Branch", key=f"commit_btn_{i['id']}", type="primary", use_container_width=True):
-                r_dir = repo.get("repo_dir") or repo.get("path") or "."
-                res = commit_and_create_pr_branch(r_dir, i, repo, ap)
+                r_dir = repo.get("repo_dir") or repo.get("local_path") or repo.get("path") or "."
+                res = commit_and_create_pr_branch(r_dir, i, repo, ap or {"state": "approved", "actor": "auto-policy", "reason": "Automated Low/Medium severity PR"})
+                st.session_state[f"pr_res_{i['id']}"] = res
                 if res.get("status") == "success":
                     st.success(f"🎉 Branch `{res['branch']}` created and changes committed!")
                     st.markdown(f"**PR markdown saved to:** `{res.get('pr_file')}`")
-                    st.session_state[f"pr_res_{i['id']}"] = res
                 else:
                     st.error(f"Git commit failed: {res.get('error')}")
 
@@ -300,7 +320,7 @@ def render() -> None:
                 st.code(f"gh pr create --title \"{pr_res['pr_title']}\" --body-file \"{pr_res['pr_file']}\"", language="bash")
 
             with st.expander("Preview Formatted Pull Request Body"):
-                pr_t, pr_b, used_tmpl = render_pull_request(i, repo, ap, repo_dir=repo.get("repo_dir") or ".", impact=i.get("reachability_impact"))
+                pr_t, pr_b, used_tmpl = render_pull_request(i, repo, ap or {"state": "approved", "actor": "auto-policy"}, repo_dir=repo.get("repo_dir") or repo.get("local_path") or ".", impact=i.get("reachability_impact"))
                 st.caption(f"Template Conformance: {tmpl_found[0] if tmpl_found else 'Standard Enterprise Security PR Format'}")
                 st.code(pr_b, language="markdown")
 

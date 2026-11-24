@@ -501,7 +501,7 @@ class RiskAgent:
                 st.rules,
                 st.pipe["findings"] + st.pkgrisk["findings"],
                 source_index=st.source_index,
-                repo_dir=st.ctx.repo_dir,
+                repo_dir=getattr(st, "repo_dir", None),
             )
             res = st.result
             res["risk_assessments"], res["correlations"] = st.risk["assessments"], st.risk["correlations"]

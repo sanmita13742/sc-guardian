@@ -31,11 +31,20 @@ NOISY_PATTERNS = (
     "published_at",
     "registries:",
     "0 fetched",
+    "from cache",
     "integrity: absent",
     "avg completeness",
     "coverage (scanner",
-    "0 from cache",
-    "package(s) run install-time",
+    "install-time scripts",
+    "unique packages queried",
+    "advisories returned",
+    "package names compared",
+    "similarity candidates",
+    "source file(s) analysed",
+    "routes_agree",
+    "disagreement_count",
+    "attested of",
+    "verdicts: ",
 )
 
 
@@ -45,7 +54,7 @@ def _is_noisy(msg: str) -> bool:
     return any(p in m for p in NOISY_PATTERNS)
 
 
-def _clean_message(msg: str, max_len: int = 70) -> str:
+def _clean_message(msg: str, max_len: int = 65) -> str:
     """Clean and condense messages to a concise single line."""
     clean = " ".join(msg.split())
     if len(clean) > max_len:
@@ -84,11 +93,16 @@ class LiveProgress:
             text=f"{progress_pct}% · {active_agent} · {active_label}",
         )
 
-        # Filter out noisy petty telemetry from live activity
+        # Filter out noisy petty telemetry: only display high-signal decisions, warnings, errors, and key milestones
         msg = e.get("message", "")
         kind = e.get("kind", "progress")
 
-        if not _is_noisy(msg) and (kind in ("decision", "warning", "error", "done", "start") or len(msg) < 65):
+        # Suppress internal debug observations and raw counter metrics
+        is_high_signal = kind in ("decision", "warning", "error") or (
+            kind in ("done", "start") and not _is_noisy(msg) and len(msg) < 60
+        )
+
+        if is_high_signal and not _is_noisy(msg):
             t_str = f"{e.get('t', 0.0):4.1f}s"
             if kind == "decision":
                 icon = "🧭"
@@ -101,7 +115,9 @@ class LiveProgress:
 
             clean_msg = _clean_message(msg)
             entry = f"`{t_str}` {icon} **{active_agent}** · {clean_msg}"
-            self.log.append(entry)
+            # Keep log strictly capped at 3 entries to maintain minimalism
+            if not self.log or self.log[-1] != entry:
+                self.log.append(entry)
 
         self._render_milestones(cur, done)
         self._render_log()
@@ -121,14 +137,14 @@ class LiveProgress:
                 # Show subtle active step
                 step_label = next((lab for sid, _, lab in STEPS if sid == cur_step), None)
                 if step_label:
-                    lines.append(f"&nbsp;&nbsp;&nbsp;&nbsp;↳ _{_clean_message(step_label, 40)}_")
+                    lines.append(f"&nbsp;&nbsp;&nbsp;&nbsp;↳ _{_clean_message(step_label, 36)}_")
             else:
                 lines.append(f"⚪ <span style='color: #888;'>{stage_name}</span>")
 
         self.steps_ph.markdown("\n\n".join(lines), unsafe_allow_html=True)
 
     def _render_log(self) -> None:
-        recent = self.log[-4:] if self.log else ["_Awaiting agent observations..._"]
+        recent = self.log[-3:] if self.log else ["_Awaiting agent observations..._"]
         self.log_ph.markdown("**Activity**\n\n" + "\n\n".join(recent))
 
     def finish(self, ok: bool = True) -> None:

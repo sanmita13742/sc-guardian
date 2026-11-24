@@ -94,10 +94,12 @@ def render() -> None:
     df([{"ID": v["primary_id"], "Package": v["package_name"], "Installed": v["installed_version"],
          "Ecosystem": v["ecosystem"], "Severity": v["severity"] or "n/a",
          "CVSS": v["cvss_score"] if v["cvss_score"] is not None else "n/a",
+         "Context Score": f"{risks[v['finding_id']]['score']}/100" if v["finding_id"] in risks and risks[v["finding_id"]].get("score") is not None else "n/a",
+         "Priority": risks.get(v["finding_id"], {}).get("priority", "P3"),
+         "Context Risk": risks.get(v["finding_id"], {}).get("label", "n/a"),
          "Fixed in": ", ".join(v["fixed_versions"][:2]) or "none",
          "Type": v["dependency_type"], "Source Pkg": ", ".join(v["source_packages"][:2]) or "self",
-         "Verdict": (v.get("verdict") or "").replace("_", " "), "EPSS": f"{v['epss']:.1%}" if v.get("epss") is not None else "n/a",
-         "Priority": risks.get(v["finding_id"], {}).get("priority", ""), "Risk": risks.get(v["finding_id"], {}).get("label", "n/a")} for v in rows], height=380)
+         "Verdict": (v.get("verdict") or "").replace("_", " "), "EPSS": f"{v['epss']:.1%}" if v.get("epss") is not None else "n/a"} for v in rows], height=380)
 
     if rows:
         st.markdown("#### Finding Detail")
@@ -116,8 +118,25 @@ def render() -> None:
 
         m1, m2, m3 = st.columns(3)
         m1.markdown(f"**CVSS:** `{v['cvss_score'] or 'n/a'}` ({badge(v['severity'])})  \n**Source:** {v.get('severity_source') or 'n/a'}")
-        m2.markdown(f"**Project Risk:** {badge(a.get('label'))} (score {a.get('score', 0)})  \n**Status:** `{v['affected_status']}`")
+        score_val = a.get("score")
+        score_str = f"{score_val}/100" if score_val is not None else "n/a"
+        m2.markdown(f"**Contextual Risk (v2.0):** {badge(a.get('label'))} (Score **{score_str}** · {a.get('priority', 'P3')})  \n**Status:** `{v['affected_status']}`")
         m3.markdown(f"**Type:** `{v['dependency_type']}`  \n**Fixed in:** `{', '.join(v['fixed_versions']) or 'None'}`")
+
+        # 4-Factor Contextual Risk Model breakdown: R = 0.15C + 0.20A + 0.35P + 0.30I
+        dims = a.get("dimensions") or {}
+        if dims:
+            with st.expander("📐 Four-Factor Contextual Risk Breakdown: $R = 0.15C + 0.20A + 0.35P + 0.30I$", expanded=True):
+                st.caption(f"Contextual Model Result: **{score_str}** ({a.get('label', 'UNKNOWN')}, Priority **{a.get('priority', 'P3')}**)")
+                c1, c2, c3, c4 = st.columns(4)
+                c_dim = dims.get("C", {})
+                a_dim = dims.get("A", {})
+                p_dim = dims.get("P", {})
+                i_dim = dims.get("I", {})
+                c1.metric("CVSS Severity (C: 15%)", f"{c_dim.get('normalized_score', 0):.0f}/100", help="Raw technical severity normalized (10 x CVSS)")
+                c2.metric("App Reachability (A: 20%)", f"{a_dim.get('normalized_score', 'Unknown')}" + ("/100" if a_dim.get('normalized_score') is not None else ""), help="Application code static import & symbol reachability")
+                c3.metric("Prod Reachability (P: 35%)", f"{p_dim.get('normalized_score', 'Unknown')}" + ("/100" if p_dim.get('normalized_score') is not None else ""), help="Production entry point, container, and deployment execution path")
+                c4.metric("Function Impact (I: 30%)", f"{i_dim.get('normalized_score', 'Unknown')}" + ("/100" if i_dim.get('normalized_score') is not None else ""), help="Function-level responsibility, data sensitivity, boundary, and exposure")
 
         if v.get("asset_type") == "container_image":
             cd = v.get("container_details") or {}

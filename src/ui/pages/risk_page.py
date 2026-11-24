@@ -19,6 +19,8 @@ def render() -> None:
     if not r:
         return
 
+    from ui.components.common import risk_by_id
+    risk_by_id(r)  # Automatically populates risk_assessments if previously missing
     assess = r.get("risk_assessments", [])
     counts = {l: sum(1 for a in assess if a["label"] == l) for l in ORDER}
 
