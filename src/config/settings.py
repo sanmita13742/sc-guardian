@@ -42,6 +42,14 @@ class Settings:
     syft_timeout_s: int = 600
     max_file_bytes: int = 20 * 1024 * 1024  # per parsed manifest/lockfile
 
+    # container scanning (opt-in Trivy container image vulnerability analysis)
+    container_scan_enabled: bool = field(default_factory=lambda: os.environ.get("CONTAINER_SCAN_ENABLED", "").lower() in ("1", "true", "yes"))
+    container_scan_os_packages: bool = True
+    container_scan_app_packages: bool = True
+    container_scan_timeout_s: int = 180
+    container_scan_max_images: int = 5
+    container_scan_allow_remote_pull: bool = False
+
     # network
     http_timeout_s: int = 25
     http_retries: int = 3
@@ -65,6 +73,7 @@ class Settings:
     # remediation
     remediation_max_groups: int = 12  # source-package groups planned per scan (highest priority first)
     remediation_budget_s: int = 150  # wall-clock budget for planning
+    remediation_auto_pr_low_med: bool = True  # automated PR delivery for Low and Medium severity findings
 
     # cache bounds
     cache_max_rows: int = 2_000_000

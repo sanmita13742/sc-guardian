@@ -1,7 +1,8 @@
 """Configurable, documented risk rules (rule set version is recorded on every assessment).
 
-Points are additive; the label is derived from the total via THRESHOLDS. CVSS severity is displayed separately from
-the project-specific risk label. See docs/RISK_SCORING.md for the rationale.
+Contextual Vulnerability Risk Scoring v2.0 linear model:
+    R = 0.15*C + 0.20*A + 0.35*P + 0.30*I
+Points are normalized 0-100; threat intelligence (CISA KEV, EPSS) is decoupled as an independent priority escalation layer.
 """
 from __future__ import annotations
 
@@ -9,10 +10,15 @@ import copy
 import json
 from pathlib import Path
 
-RULES_VERSION = "2.1"
+RULES_VERSION = "2.2-contextual"
 
 DEFAULT_RULES: dict = {
     "thresholds": {"CRITICAL": 70, "HIGH": 45, "MEDIUM": 25, "LOW": 10},  # score >= threshold -> label
+    "contextual_v2": {
+        "weights": {"C": 0.15, "A": 0.20, "P": 0.35, "I": 0.30},
+        "thresholds": {"CRITICAL": 70, "HIGH": 45, "MEDIUM": 25, "LOW": 10},
+        "impact_subfactor_weights": {"F": 0.25, "S": 0.25, "B": 0.20, "D": 0.20, "X": 0.10},
+    },
     "vulnerability": {
         "severity_points": {"CRITICAL": 55, "HIGH": 40, "MEDIUM": 22, "LOW": 8, "UNAVAILABLE": 12},
         "kev": 30,
@@ -25,7 +31,7 @@ DEFAULT_RULES: dict = {
         "unreachable_cap": "MEDIUM",
         "test_only_cap": "MEDIUM",
         "correlated_lockfile_change": 5,
-        "epss": [[0.5, 20], [0.1, 10], [0.01, 3]],  # [min probability, points]; EPSS is an estimate, so it only nudges the score
+        "epss": [[0.5, 20], [0.1, 10], [0.01, 3]],
         "reachability": {
             "used_by_app_heavy": 35,
             "used_by_app_moderate": 20,
@@ -40,7 +46,7 @@ DEFAULT_RULES: dict = {
     },
     "pipeline": {
         "severity_points": {"CRITICAL": 75, "HIGH": 50, "MEDIUM": 28, "LOW": 12, "INFO": 4},
-        "heuristic_penalty": -8,  # evidence_strength 'medium' (heuristic rather than directly visible)
+        "heuristic_penalty": -8,
         "third_party_unpinned_action": 5,
     },
     "typosquatting": {
@@ -48,14 +54,14 @@ DEFAULT_RULES: dict = {
         "exposure": {"direct": 5, "direct_inferred": 4, "transitive": 0, "unknown": 0},
         "correlated_lockfile_addition": 10,
         "correlated_vulnerability": 5,
-        "cap": "HIGH",  # similarity is a signal, never proof
+        "cap": "HIGH",
     },
     "lockfile_change": {
         "classification_points": {"potentially_suspicious": 30, "unexplained_change": 12, "normal_update": 0, "insufficient_baseline": 0},
         "strength_bonus": {"high": 20, "medium": 8, "low": 0},
         "correlated_vulnerability": 10,
         "correlated_typosquat": 10,
-        "cap": "HIGH",  # a lockfile change never proves compromise
+        "cap": "HIGH",
     },
 }
 

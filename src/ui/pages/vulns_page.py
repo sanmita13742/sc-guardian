@@ -63,23 +63,32 @@ def render() -> None:
         return
 
     with st.expander("Filter Findings", expanded=False):
+        top_c1, top_c2 = st.columns(2)
+        f_asset = top_c1.selectbox("Asset Source", ["All Assets", "Source Dependencies (OSV)", "Container Images (Trivy)"])
+        f_pkg_class = top_c2.selectbox("Container Package Class", ["All", "OS Packages (Debian/Alpine/RPM)", "Application Libraries"]) if f_asset != "Source Dependencies (OSV)" else "All"
+
         a, b, d, e = st.columns(4)
         f_sev = a.multiselect("CVSS Severity", ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"])
         f_eco = b.multiselect("Ecosystem", sorted({v["ecosystem"] for v in vulns}))
-        f_dep = d.multiselect("Dependency Type", ["direct", "direct_inferred", "transitive"])
+        f_dep = d.multiselect("Dependency Type", ["direct", "direct_inferred", "transitive", "container_package"])
         f_stat = e.multiselect("Status", ["confirmed_affected", "unknown"])
         c1, c2, c3 = st.columns([1, 1, 1])
         f_pkg = c1.text_input("Package contains", placeholder="e.g. lodash")
         f_id = c2.text_input("Vulnerability ID", placeholder="e.g. CVE-2021-...")
         f_fix = c3.checkbox("Fix available only")
 
-    rows = [v for v in vulns if (not f_sev or (v["severity"] or "UNKNOWN") in f_sev)
-            and (not f_eco or v["ecosystem"] in f_eco)
-            and (not f_dep or v["dependency_type"] in f_dep)
-            and (not f_stat or v["affected_status"] in f_stat)
-            and (not f_pkg or f_pkg.lower() in v["package_name"].lower())
-            and (not f_id or any(f_id.lower() in i.lower() for i in v["vulnerability_ids"]))
-            and (not f_fix or v["fixed_versions"])]
+    rows = [
+        v for v in vulns
+        if (f_asset == "All Assets" or (f_asset.startswith("Source") and v.get("asset_type", "source_dependency") == "source_dependency") or (f_asset.startswith("Container") and v.get("asset_type") == "container_image"))
+        and (f_pkg_class == "All" or (f_pkg_class.startswith("OS") and (v.get("container_details") or {}).get("package_type") == "os_pkg") or (f_pkg_class.startswith("App") and (v.get("container_details") or {}).get("package_type") == "lang_pkg"))
+        and (not f_sev or (v["severity"] or "UNKNOWN") in f_sev)
+        and (not f_eco or v["ecosystem"] in f_eco)
+        and (not f_dep or v["dependency_type"] in f_dep)
+        and (not f_stat or v["affected_status"] in f_stat)
+        and (not f_pkg or f_pkg.lower() in v["package_name"].lower())
+        and (not f_id or any(f_id.lower() in i.lower() for i in v["vulnerability_ids"]))
+        and (not f_fix or v["fixed_versions"])
+    ]
 
     st.caption(f"Showing {len(rows)} of {len(vulns)} findings")
     df([{"ID": v["primary_id"], "Package": v["package_name"], "Installed": v["installed_version"],
@@ -109,6 +118,14 @@ def render() -> None:
         m1.markdown(f"**CVSS:** `{v['cvss_score'] or 'n/a'}` ({badge(v['severity'])})  \n**Source:** {v.get('severity_source') or 'n/a'}")
         m2.markdown(f"**Project Risk:** {badge(a.get('label'))} (score {a.get('score', 0)})  \n**Status:** `{v['affected_status']}`")
         m3.markdown(f"**Type:** `{v['dependency_type']}`  \n**Fixed in:** `{', '.join(v['fixed_versions']) or 'None'}`")
+
+        if v.get("asset_type") == "container_image":
+            cd = v.get("container_details") or {}
+            st.info(f"🐳 **Container Asset Finding**  \n"
+                    f"**Image:** `{cd.get('image_name', 'n/a')}`  \n"
+                    f"**Target Layer:** `{cd.get('target', 'n/a')}`  \n"
+                    f"**Package Type:** `{'Operating System Package' if cd.get('package_type') == 'os_pkg' else 'Application Library'}`  \n"
+                    f"**Origin Dockerfile:** `{cd.get('source_file', 'n/a')}`")
 
         # Dependency path
         path0 = next((p for e_ in v.get("exposures", []) for p in e_.get("paths", [])), [])

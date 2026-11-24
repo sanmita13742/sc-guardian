@@ -18,6 +18,31 @@ import sys
 import time
 from pathlib import Path
 
+# Silence harmless WinError 10054 on Windows when connections reset
+if sys.platform == "win32":
+    try:
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+        _orig_call_connection_lost = _ProactorBasePipeTransport._call_connection_lost
+
+        def _silenced_call_connection_lost(self, exc):
+            try:
+                _orig_call_connection_lost(self, exc)
+            except (ConnectionResetError, OSError):
+                try:
+                    if self._sock is not None:
+                        self._sock.close()
+                        self._sock = None
+                    if getattr(self, "_server", None) is not None:
+                        self._server._detach()
+                        self._server = None
+                    self._called_connection_lost = True
+                except Exception:
+                    pass
+
+        _ProactorBasePipeTransport._call_connection_lost = _silenced_call_connection_lost
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from config.settings import get_settings  # noqa: E402
