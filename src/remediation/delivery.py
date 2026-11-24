@@ -7,14 +7,17 @@ and optional GitHub CLI dispatch.
 from __future__ import annotations
 
 import os
+import json
 import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 from core.git_manager import GitError, run_git
+from core.safe_env import scrubbed_env
 from remediation.export import patch_text
 from remediation.pr_template_engine import generate_pr_title, render_pull_request
 
@@ -51,6 +54,143 @@ def _origin_matches_target(root: Path, repo_url: str) -> bool:
         return True
     origin = run_git(["remote", "get-url", "origin"], cwd=root, check=False).stdout.strip()
     return not origin or github_repo_slug(origin) == target
+
+
+def _run_external(args: list[str], *, cwd: Optional[Path] = None, timeout: int = 180, check: bool = True) -> subprocess.CompletedProcess:
+    """Run a fixed GitHub/Git argument list without a shell or application secrets."""
+    try:
+        proc = subprocess.run(args, cwd=str(cwd) if cwd else None, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=timeout, shell=False, env=scrubbed_env())
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise GitError(f"Could not run {Path(args[0]).name}: {exc}") from exc
+    if check and proc.returncode != 0:
+        raise GitError(f"{Path(args[0]).name} failed: {(proc.stderr or proc.stdout).strip()[:1200]}")
+    return proc
+
+
+def _gh_json(gh: str, args: list[str], *, cwd: Optional[Path] = None) -> Any:
+    proc = _run_external([gh, *args], cwd=cwd)
+    try:
+        return json.loads(proc.stdout or "null")
+    except ValueError as exc:
+        raise GitError("GitHub CLI returned an invalid JSON response") from exc
+
+
+def _fork_for_target(gh: str, target: str, login: str, target_meta: dict, *, cwd: Path) -> str:
+    """Return a fork in the target's network, creating an owner-qualified one if names collide."""
+    repo_name = target.split("/", 1)[1]
+    target_root = ((target_meta.get("parent") or {}).get("full_name") if target_meta.get("fork") else target) or target
+    forks = _gh_json(gh, ["api", f"repos/{target_root}/forks?per_page=100"], cwd=cwd) or []
+    for fork in forks:
+        if str((fork.get("owner") or {}).get("login") or "").lower() == login.lower():
+            return fork["full_name"]
+    candidates = [repo_name, re.sub(r"[^a-zA-Z0-9._-]", "-", f"{repo_name}-{target.split('/', 1)[0]}")]
+    for index, name in enumerate(candidates):
+        slug = f"{login}/{name}"
+        proc = _run_external([gh, "api", f"repos/{slug}"], cwd=cwd, check=False)
+        if proc.returncode == 0:
+            meta = json.loads(proc.stdout)
+            parent = (meta.get("parent") or {}).get("full_name")
+            if meta.get("fork") and parent in {target, target_root}:
+                return slug
+            continue
+        if index == 0 and name == repo_name:
+            # Prefer GitHub's normal fork name when it is available.
+            chosen = name
+        else:
+            chosen = name
+        _run_external([gh, "repo", "fork", target, "--fork-name", chosen, "--clone=false"], cwd=cwd)
+        return f"{login}/{chosen}"
+    suffix = abs(hash(target)) % 100000
+    chosen = f"{candidates[-1]}-{suffix}"
+    _run_external([gh, "repo", "fork", target, "--fork-name", chosen, "--clone=false"], cwd=cwd)
+    return f"{login}/{chosen}"
+
+
+def _push_for_pr(root: Path, remote_repo: str, branch: str, gh: str) -> str:
+    """Push without overwriting remote work; retry ref collisions with a unique name."""
+    remote = "guardian-pr"
+    url = f"https://github.com/{remote_repo}.git"
+    exists = run_git(["remote", "get-url", remote], cwd=root, check=False).returncode == 0
+    run_git(["remote", "set-url" if exists else "add", remote, url], cwd=root)
+    git = shutil.which("git")
+    if not git:
+        raise GitError("git executable not found")
+    gh_helper = gh.replace("\\", "/")
+    args = [git, "-c", "core.hooksPath=NUL" if os.name == "nt" else "core.hooksPath=/dev/null",
+            "-c", "credential.helper=", "-c", f'credential.https://github.com.helper=!"{gh_helper}" auth git-credential',
+            "push", "--set-upstream", remote]
+    refs = _run_external([git, "ls-remote", "--heads", url], cwd=root, check=False)
+    existing = {line.split("refs/heads/", 1)[1] for line in refs.stdout.splitlines() if "refs/heads/" in line}
+    last_error: Optional[GitError] = None
+    suffix = 1
+    for attempt in range(6):
+        remote_branch = branch if attempt == 0 else f"{branch}-{suffix}"
+        while remote_branch in existing:
+            suffix += 1
+            remote_branch = f"{branch}-{suffix}"
+        try:
+            _run_external([*args, f"{branch}:{remote_branch}"], cwd=root)
+            return remote_branch
+        except GitError as exc:
+            last_error = exc
+            detail = str(exc).lower()
+            if not any(marker in detail for marker in ("rejected", "non-fast-forward", "cannot lock ref", "(failed)")):
+                raise
+            existing.add(remote_branch)
+            suffix += 1
+    raise GitError(f"Could not allocate a remote remediation branch after safe retries: {last_error}")
+
+
+def dispatch_github_pull_request(delivery: dict[str, Any]) -> dict[str, Any]:
+    """Push a prepared branch and open a PR only against its recorded scan repository."""
+    target = delivery.get("target_repo")
+    branch = delivery.get("branch")
+    root = Path(delivery.get("repo_dir") or "")
+    body_file = Path(delivery.get("pr_file_absolute") or "")
+    gh = shutil.which("gh")
+    if not target or not github_repo_slug(f"https://github.com/{target}"):
+        return {"status": "error", "error": "The scanned repository is not a valid GitHub owner/repository target."}
+    if not gh:
+        return {"status": "error", "error": "GitHub CLI is not installed."}
+    if not branch or not root.is_dir() or not (root / ".git").exists() or not body_file.is_file():
+        return {"status": "error", "error": "The prepared branch or PR description is missing; prepare the PR branch again."}
+    try:
+        user = _gh_json(gh, ["api", "user"], cwd=root)
+        target_meta = _gh_json(gh, ["api", f"repos/{target}"], cwd=root)
+        login = user.get("login")
+        if not login:
+            raise GitError("GitHub CLI is not authenticated")
+        api_head = f"{login}:{branch}"
+        existing = _gh_json(gh, ["api", f"repos/{target}/pulls?state=open&head={api_head}"], cwd=root) or []
+        if not existing:
+            open_pulls = _gh_json(gh, ["api", f"repos/{target}/pulls?state=open&per_page=100"], cwd=root) or []
+            title = delivery.get("pr_title") or "Security remediation"
+            canonical_branch = re.sub(r"-\d+$", "", branch)
+            existing = [pull for pull in open_pulls
+                        if str((((pull.get("head") or {}).get("user") or {}).get("login")) or "").lower() == login.lower()
+                        and (pull.get("title") == title
+                             or re.sub(r"-\d+$", "", str((pull.get("head") or {}).get("ref") or "")) == canonical_branch)]
+        if existing:
+            found = existing[0]
+            source_repo = ((((found.get("head") or {}).get("repo") or {}).get("full_name")) or "existing fork")
+            return {"status": "success", "url": found.get("html_url") or found.get("url"), "number": found.get("number"),
+                    "target_repo": target, "source_repo": source_repo, "branch": branch, "existing": True}
+        can_push = bool((target_meta.get("permissions") or {}).get("push"))
+        remote_repo = target if can_push else _fork_for_target(gh, target, login, target_meta, cwd=root)
+        remote_branch = _push_for_pr(root, remote_repo, branch, gh)
+        head = remote_branch if can_push else f"{login}:{remote_branch}"
+        base = target_meta.get("default_branch") or "main"
+        proc = _run_external([gh, "pr", "create", "--repo", target, "--base", base, "--head", head,
+                              "--title", delivery.get("pr_title") or "Security remediation",
+                              "--body-file", str(body_file)], cwd=root)
+        url = next((line.strip() for line in reversed(proc.stdout.splitlines()) if line.strip().startswith("https://")), "")
+        if not url:
+            raise GitError("GitHub CLI did not return a pull request URL")
+        return {"status": "success", "url": url, "target_repo": target, "source_repo": remote_repo,
+                "branch": remote_branch, "local_branch": branch, "existing": False}
+    except (GitError, ValueError) as exc:
+        return {"status": "error", "error": str(exc), "target_repo": target, "branch": branch}
 
 
 def _checkout_scanned_base(root: Path, repo: dict) -> Optional[str]:
@@ -220,6 +360,7 @@ def commit_and_create_pr_branch(
             "gh_cli_available": can_dispatch_gh_cli(),
             "target_repo": target_repo,
             "target_repo_url": repo_url,
+            "repo_dir": str(root.resolve()),
             "gh_pr_args": gh_pr_args,
         }
     except Exception as e:  # noqa: BLE001
