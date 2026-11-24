@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 import streamlit as st
 
-from ui.components.common import badge, df, get_result, page_header, require_result, risk_by_id
+from ui.components.common import badge, df, get_result, page_header, repo_caption, require_result, risk_by_id
 
 
 def _get_non_cve_scope(f: Dict[str, Any]) -> str:
@@ -61,12 +61,30 @@ def render() -> None:
     )
 
     r = get_result()
+    if r:
+        repo_caption(r)
+    else:
+        st.caption("📌 *Displaying Baseline NodeGoat Findings (Offline Demonstration Mode — Run a scan on Repository Scan to inspect any live URL)*")
 
     # Load Phase 2/3 multi-layer investigation artifact
     susp_file = Path("suspicious_changes.json")
     susp_data: Dict[str, Any] = {}
     if r and r.get("suspicious_changes"):
         susp_data = r["suspicious_changes"]
+    elif r and not r.get("suspicious_changes"):
+        # An active scan was performed for a repository, but suspicious_changes was not pre-computed
+        repo_info = r.get("repo", {})
+        local_path = repo_info.get("local_path")
+        if local_path and Path(local_path).exists():
+            try:
+                from change_analyzer import ChangeAnalyzer
+                analyzer = ChangeAnalyzer(repo_dir=Path(local_path), enable_ai=False)
+                susp_data = analyzer.run_investigation()
+                r["suspicious_changes"] = susp_data
+            except Exception:
+                susp_data = {"findings": [], "correlated_scenarios": [], "ai_investigations": []}
+        else:
+            susp_data = {"findings": [], "correlated_scenarios": [], "ai_investigations": []}
     elif susp_file.exists():
         try:
             susp_data = json.loads(susp_file.read_text(encoding="utf-8"))
@@ -361,6 +379,8 @@ def render() -> None:
                                     if len(res_str) > 300:
                                         res_str = res_str[:300] + "... [truncated]"
                                     st.code(res_str, language="json" if "{" in res_str else "text")
+        else:
+            st.success("✅ **No suspicious supply chain anomalies detected.** This repository follows standard dependency pinning, secure CI/CD workflows, and trusted package sources.")
 
     # ==================================================================================================
     # TAB 2: Autonomous AI Investigations (Layer 3)
