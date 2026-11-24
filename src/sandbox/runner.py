@@ -262,6 +262,19 @@ def _run_compose_test(exe: str, repo_dir: Path, recipe: dict, timeout: int) -> d
     override.write_text(yaml.safe_dump({"services": hardening, "networks": {"default": {"internal": True}}}, sort_keys=True), encoding="utf-8")
     base = [exe, "compose", "-f", compose_file, "-f", str(override.resolve()), "-p", project]
     env = scrubbed_env({"APP_PORT": "127.0.0.1:0"})
+
+    # Ensure host node_modules, .git, and .scg-venv are excluded from BuildKit context transfer
+    dockerignore = repo_dir / ".dockerignore"
+    had_dockerignore = dockerignore.exists()
+    orig_dockerignore = dockerignore.read_text(encoding="utf-8") if had_dockerignore else None
+    needed_ignores = ["node_modules", "**/node_modules", ".git", ".scg-venv"]
+    if not had_dockerignore:
+        dockerignore.write_text("\n".join(needed_ignores) + "\n", encoding="utf-8")
+    else:
+        missing = [ig for ig in needed_ignores if ig not in orig_dockerignore]
+        if missing:
+            dockerignore.write_text(orig_dockerignore.rstrip() + "\n" + "\n".join(missing) + "\n", encoding="utf-8")
+
     t0, startup, test, logs = time.time(), None, None, None
     try:
         startup = subprocess.run([*base, "up", "--build", "-d", "--wait", "--wait-timeout", "180"], cwd=repo_dir, capture_output=True, text=True,
@@ -285,6 +298,13 @@ def _run_compose_test(exe: str, repo_dir: Path, recipe: dict, timeout: int) -> d
             pass
         try:
             override.unlink(missing_ok=True)
+        except OSError:
+            pass
+        try:
+            if had_dockerignore and orig_dockerignore is not None:
+                dockerignore.write_text(orig_dockerignore, encoding="utf-8")
+            elif not had_dockerignore:
+                dockerignore.unlink(missing_ok=True)
         except OSError:
             pass
 
