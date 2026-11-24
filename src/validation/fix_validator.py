@@ -31,6 +31,19 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# Approvals written by an automated policy (remediation.delivery auto-delivery during the scan, or the UI's automated-tier PR button).
+# They may authorise a *proposal*, but never running repository code: the sandbox executes install/test commands, so a person must decide.
+AUTOMATED_ACTORS = {"sc guardian policy engine", "auto-policy"}
+
+
+def is_human_approval(ap: Optional[dict]) -> bool:
+    if not ap or ap.get("state") != "approved":
+        return False
+    actor = (ap.get("actor") or "").strip().lower()
+    reason = (ap.get("reason") or "").strip().lower()
+    return bool(actor) and actor not in AUTOMATED_ACTORS and not reason.startswith("automated policy")
+
+
 def load_request(db: Database, scan_id: str, remediation_id: str) -> tuple[dict, ApprovedRemediation, dict]:
     before = db.load_scan(scan_id)
     if not before:
@@ -44,6 +57,9 @@ def load_request(db: Database, scan_id: str, remediation_id: str) -> tuple[dict,
     ap = Memory(db).approvals(before["repo"]["url"]).get(rem.fingerprint)
     if not ap or ap.get("state") != "approved":
         raise ValidationError(f"{remediation_id} is not approved (state: {(ap or {}).get('state', 'none')}); approve it on the Remediation page first")
+    if not is_human_approval(ap):
+        raise ValidationError(f"{remediation_id} was approved automatically by '{ap.get('actor')}', not by a person. Validation runs the repository's "
+                              "install and test commands, so it needs a human approval: approve it on the Remediation page (Decision form) first")
     return before, rem, ap
 
 
@@ -93,14 +109,20 @@ def validate_fix(scan_id: str, remediation_id: str, *, settings: Optional[Settin
     return FixValidationAgent(settings, db, actor=actor, progress=progress, use_sandbox=use_sandbox).run(scan_id, remediation_id)
 
 
-def approved_items(db: Database, scan_id: str) -> list[str]:
-    """Ids of the scan's remediation proposals that have a patch and are approved, in proposal order."""
+def approved_items(db: Database, scan_id: str) -> tuple[list[str], list[str]]:
+    """(human-approved ids, auto-approved ids) of the scan's proposals that have a patch, in proposal order.
+    Only the first list is validated; the second is reported so nothing is skipped silently."""
     before = db.load_scan(scan_id)
     if not before:
         raise ValidationError(f"scan '{scan_id}' not found")
     ap = Memory(db).approvals(before["repo"]["url"])
-    return [i["id"] for i in (before.get("remediation") or {}).get("items") or []
-            if i.get("patch") and (ap.get(i.get("fingerprint")) or {}).get("state") == "approved"]
+    human, auto = [], []
+    for i in (before.get("remediation") or {}).get("items") or []:
+        a = ap.get(i.get("fingerprint"))
+        if not i.get("patch") or not a or a.get("state") != "approved":
+            continue
+        (human if is_human_approval(a) else auto).append(i["id"])
+    return human, auto
 
 
 def validate_all(scan_id: str, *, settings: Optional[Settings] = None, db: Optional[Database] = None, actor: str = "cli",
@@ -114,8 +136,9 @@ def validate_all(scan_id: str, *, settings: Optional[Settings] = None, db: Optio
     from validation.agent import FixValidationAgent
     s = settings or get_settings()
     db = db or Database(s.db_path)
-    ids = approved_items(db, scan_id)
+    ids, auto = approved_items(db, scan_id)
     say = progress or (lambda m: None)
+    skipped = [{"remediation_id": rid, "skipped": "approved automatically by policy, not by a person; approve it manually to validate"} for rid in auto]
 
     def one(rid: str) -> dict[str, Any]:
         try:
@@ -125,4 +148,4 @@ def validate_all(scan_id: str, *, settings: Optional[Settings] = None, db: Optio
             return {"remediation_id": rid, "error": f"{type(e).__name__}: {str(e)[:300]}"}
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        return list(pool.map(one, ids))
+        return list(pool.map(one, ids)) + skipped

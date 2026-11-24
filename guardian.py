@@ -194,6 +194,9 @@ def main(argv: list[str] | None = None) -> int:
                 if "error" in out:
                     print(f"{out['remediation_id']}: error - {out['error']}")
                     continue
+                if "skipped" in out:
+                    print(f"{out['remediation_id']}: skipped - {out['skipped']}")
+                    continue
                 fa = out["final_assessment"]
                 print(f"{fa['remediation_id']}: {fa['verdict']}")
                 for x in fa["reasons"]:
@@ -205,10 +208,11 @@ def main(argv: list[str] | None = None) -> int:
                 print("  timings (s): " + ", ".join(f"{k} {v}" for k, v in out.get("timings", {}).items()))
                 for name, path in out["files"].items():
                     print(f"  wrote {path}", file=sys.stderr)
-            if not outs:
-                print("no approved proposals with a patch in this scan", file=sys.stderr)
+            ran = [o for o in outs if "skipped" not in o]
+            if not ran:
+                print("no human-approved proposals with a patch in this scan", file=sys.stderr)
                 return 2
-            ok = all("error" not in o and o["final_assessment"]["verdict"] in ("verified_fixed", "fixed_untested") for o in outs)
+            ok = all("error" not in o and o["final_assessment"]["verdict"] in ("verified_fixed", "fixed_untested") for o in ran)
             return 0 if ok else 1
         if a.cmd == "monitor":
             from monitor.watch import run_monitor
