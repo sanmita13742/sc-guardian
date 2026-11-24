@@ -9,21 +9,30 @@ import io
 import time
 from typing import Any
 
-from reportlab.lib.colors import HexColor, white
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.utils import simpleSplit
-from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.pdfgen.canvas import Canvas
-
-W, H = A4
-M = 34
-CW = W - 2 * M
-
-INK, MUTED, LINE, SOFT = HexColor("#0F172A"), HexColor("#64748B"), HexColor("#E2E8F0"), HexColor("#F8FAFC")
-GREEN, AMBER, RED = HexColor("#15803D"), HexColor("#B45309"), HexColor("#B91C1C")
-SEV = {"CRITICAL": HexColor("#B91C1C"), "HIGH": HexColor("#EA580C"), "MEDIUM": HexColor("#CA8A04"), "LOW": HexColor("#2563EB"),
-       "INFORMATIONAL": HexColor("#64748B"), "UNKNOWN": HexColor("#64748B")}
-DEL_BG, ADD_BG = HexColor("#FEE2E2"), HexColor("#DCFCE7")
+try:
+    from reportlab.lib.colors import HexColor, white
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.utils import simpleSplit
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.pdfgen.canvas import Canvas
+    HAS_REPORTLAB = True
+    W, H = A4
+    M = 34
+    CW = W - 2 * M
+    INK, MUTED, LINE, SOFT = HexColor("#0F172A"), HexColor("#64748B"), HexColor("#E2E8F0"), HexColor("#F8FAFC")
+    GREEN, AMBER, RED = HexColor("#15803D"), HexColor("#B45309"), HexColor("#B91C1C")
+    SEV = {"CRITICAL": HexColor("#B91C1C"), "HIGH": HexColor("#EA580C"), "MEDIUM": HexColor("#CA8A04"), "LOW": HexColor("#2563EB"),
+           "INFORMATIONAL": HexColor("#64748B"), "UNKNOWN": HexColor("#64748B")}
+    DEL_BG, ADD_BG = HexColor("#FEE2E2"), HexColor("#DCFCE7")
+except ImportError:
+    HAS_REPORTLAB = False
+    W, H = 595.27, 841.89  # Default A4 dimensions in points
+    M = 34
+    CW = W - 2 * M
+    INK, MUTED, LINE, SOFT = None, None, None, None
+    GREEN, AMBER, RED = None, None, None
+    SEV = {}
+    DEL_BG, ADD_BG = None, None
 
 
 def _t(s: Any) -> str:
@@ -321,6 +330,8 @@ def draw_fix_page(c: Canvas, fix: dict, page: int, pages: int) -> None:
 
 def build_pdf(fixes: list[dict], title: str = "SC Guardian remediation report") -> bytes:
     """One page per fix."""
+    if not HAS_REPORTLAB:
+        return b""
     buf = io.BytesIO()
     c = Canvas(buf, pagesize=A4)
     c.setTitle(_t(title))

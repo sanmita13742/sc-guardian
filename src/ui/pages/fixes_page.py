@@ -5,7 +5,7 @@ import streamlit as st
 
 from remediation.apply_local import applied_record, undo_in_place
 from remediation.local_trial import trial_record
-from reporting.fix_pdf import build_pdf
+from reporting.fix_pdf import HAS_REPORTLAB, build_pdf
 from reporting.fix_report import SEV_ORDER, collect_fixes, totals
 from ui.components.common import df, page_header, require_result
 
@@ -39,14 +39,20 @@ def render() -> None:
     name = (repo.get("name") or "project").replace(" ", "-")
     c1, c2 = st.columns([3, 1])
     c1.caption(f"{len(fixes)} fix(es), newest first. Each PDF is a single page with the vulnerability scoring, the fix, the files and the validation record.")
-    c2.download_button("⬇ All fixes (PDF)", build_pdf(fixes), file_name=f"{name}-fix-report.pdf", mime="application/pdf", type="primary", use_container_width=True, key="pdf_all")
+    if HAS_REPORTLAB:
+        c2.download_button("⬇ All fixes (PDF)", build_pdf(fixes), file_name=f"{name}-fix-report.pdf", mime="application/pdf", type="primary", use_container_width=True, key="pdf_all")
+    else:
+        c2.caption("PDF export disabled (install 'reportlab')")
 
     for n, f in enumerate(fixes):
         top = next((k for k in SEV_ORDER if f["severity_counts"].get(k)), "UNKNOWN")
         with st.expander(f"{f['id']} · {f['title']} · {len(f['findings'])} finding(s) fixed", expanded=(n == 0)):
             h1, h2 = st.columns([4, 1])
             h1.caption(f"{f['how']} · {(f['applied_at'] or '').replace('T', ' ').replace('Z', ' UTC')} · priority {f['priority'] or '-'}")
-            h2.download_button("⬇ PDF", build_pdf([f]), file_name=f"{name}-{f['id']}.pdf", mime="application/pdf", key=f"pdf_{f['id']}", use_container_width=True)
+            if HAS_REPORTLAB:
+                h2.download_button("⬇ PDF", build_pdf([f]), file_name=f"{name}-{f['id']}.pdf", mime="application/pdf", key=f"pdf_{f['id']}", use_container_width=True)
+            else:
+                h2.caption("PDF disabled")
 
             k = st.columns(4)
             k[0].metric("Findings fixed", len(f["findings"]))

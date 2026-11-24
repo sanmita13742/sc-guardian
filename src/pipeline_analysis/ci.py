@@ -70,9 +70,9 @@ def analyze_github_workflow(text: str, path: str) -> tuple[list[PipelineFinding]
     jobs = data.get("jobs") if isinstance(data.get("jobs"), dict) else {}
 
     if perms is None and not any(isinstance(j, dict) and j.get("permissions") is not None for j in jobs.values()):
-        findings.append(_f("GHA004", "No explicit token permissions (defaults may be read-write)", "LOW", "GitHub Actions", path, 1, "(no `permissions:` key)", "permissions",
-                           "Without an explicit `permissions:` block the GITHUB_TOKEN gets the repository/org default, which can include write access.",
-                           "Add a top-level `permissions: contents: read` and grant extra scopes per job.", strength="medium",
+        findings.append(_f("GHA004", "No explicit token permissions declared", "LOW", "GitHub Actions", path, 1, "(no `permissions:` key)", "permissions",
+                           "Workflow omits an explicit `permissions:` declaration. Effective GITHUB_TOKEN permissions default to the repository/org configuration (which may be read-only or read-write).",
+                           "Declare explicit least-privilege permissions (`permissions: contents: read`) to ensure deterministic access controls across all runner environments.", strength="medium",
                            refs=["https://docs.github.com/actions/security-guides/automatic-token-authentication"]))
     if perms in ("write-all",) or (isinstance(perms, dict) and any(v == "write" for v in perms.values()) and untrusted):
         findings.append(_f("GHA004", "Over-broad GITHUB_TOKEN permissions", "HIGH", "GitHub Actions", path, _find(lines, "permissions"), "permissions: " + (perms if isinstance(perms, str) else "write scopes"),
@@ -107,12 +107,15 @@ def analyze_github_workflow(text: str, path: str) -> tuple[list[PipelineFinding]
                     actions.append({**ref, "file": path, "line": ln, "job": jname})
                 if ref and ref.get("kind") == "action" and not ref["pinned"]:
                     branchy = ref["ref"] in ("main", "master", "latest", "develop", "dev", "trunk")
-                    sev = "HIGH" if branchy else ("LOW" if ref.get("first_party") else "MEDIUM")
-                    findings.append(_f("GHA001", f"Action '{ref['name']}' is not pinned to a commit SHA", sev, "GitHub Actions", path, ln, f"uses: {uses}", uses,
-                                       ("The reference is a moving branch: " if branchy else "Tags can be moved or re-pointed: ") + "a compromised upstream changes what your pipeline runs "
-                                       "(this is how the tj-actions/changed-files supply-chain compromise spread).",
-                                       f"Pin to the full 40-character commit SHA (keep the tag in a comment): `uses: {ref['name']}@<sha> # {ref['ref']}`.",
-                                       refs=["https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"], third_party=not ref.get("first_party")))
+                    is_official = ref.get("first_party", False)
+                    sev = "HIGH" if (branchy and not is_official) else ("LOW" if is_official else "MEDIUM")
+                    action_type = "First-party (official)" if is_official else "Third-party"
+                    findings.append(_f("GHA001", f"{action_type} Action '{ref['name']}' is not pinned to a commit SHA", sev, "GitHub Actions", path, ln, f"uses: {uses}", uses,
+                                       ("The reference points to a moving branch: " if branchy else "Tags are mutable references: ")
+                                       + ("while official GitHub/first-party actions have audited release processes, " if is_official else "third-party tags can be re-pointed or modified upstream. ")
+                                       + "Pinning to a full 40-character commit SHA ensures immutable execution.",
+                                       f"Pin to the full 40-character commit SHA: `uses: {ref['name']}@<sha> # {ref['ref']}`.",
+                                       refs=["https://docs.github.com/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions"], third_party=not is_official))
                 if ref and ref.get("kind") == "action" and ref["name"].lower() in DEPRECATED_BELOW:
                     mm = re.match(r"^v?(\d+)", ref["ref"] or "")
                     if mm and int(mm.group(1)) < DEPRECATED_BELOW[ref["name"].lower()]:
