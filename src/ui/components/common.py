@@ -129,9 +129,10 @@ def repo_caption(r: dict) -> None:
     crit = summary.get("by_cvss_severity", {}).get("CRITICAL", 0)
     high = summary.get("by_cvss_severity", {}).get("HIGH", 0)
 
-    vuln_summary = f"<b>{vulns}</b> vulns"
+    unconf = summary.get("vulnerabilities_unknown", 0)
+    vuln_summary = f"<b>{vulns + unconf}</b> findings" + (f" ({unconf} unconfirmed)" if unconf else "")
     if crit or high:
-        vuln_summary += f" (<span style='color:#f85149; font-weight:600;'>{crit} crit</span> · <span style='color:#f0883e; font-weight:600;'>{high} high</span>)"
+        vuln_summary += f" · CVSS <span style='color:#f85149; font-weight:600;'>{crit} critical</span> · <span style='color:#f0883e; font-weight:600;'>{high} high</span>"
 
     st.markdown(
         f"""

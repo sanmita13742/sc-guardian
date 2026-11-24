@@ -17,7 +17,7 @@ class RepoInfo(BaseModel):
     scan_timestamp: str
     local_path: str = ""
     shallow: bool = False
-    source: str = "github"  # github | local-fixture
+    source: str = "github"  # github | local
 
 
 class ManifestFile(BaseModel):

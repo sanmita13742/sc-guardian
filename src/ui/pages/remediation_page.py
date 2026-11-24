@@ -4,12 +4,15 @@ from __future__ import annotations
 import streamlit as st
 
 from config.settings import get_settings
+from remediation.apply_local import applied_record, undo_in_place
+from remediation.local_trial import accept_validated, discard_trial, latest_trial, run_trial, tests_possible
 from remediation.delivery import (
     can_dispatch_gh_cli,
     commit_and_create_pr_branch,
     get_remediation_severity_tier,
 )
 from remediation.export import patch_text, pr_markdown
+from reporting.counts import remediation_totals
 from remediation.pr_template_engine import find_pr_template, render_pull_request
 from storage.database import Database
 from storage.memory import Memory
@@ -23,6 +26,128 @@ def _mem() -> Memory:
     return Memory(Database(get_settings().db_path))
 
 
+def _local_state(root: str, i: dict, ap: dict | None) -> str:
+    """Where a proposal is in the Resolve -> Accept flow (local-folder scans)."""
+    if applied_record(root, i):
+        return "Applied"
+    if ap and ap["state"] == "rejected":
+        return "Ignored"
+    t = latest_trial(root, i) if i.get("patch") else None
+    if t:
+        return "Validated" if t["status"] == "passed" else "Validation failed"
+    return "No automatic fix" if not i.get("patch") else "Open"
+
+
+def _local_progress(items: list[dict], root: str, vulns: list[dict], approvals: dict) -> dict:
+    """Live counters: proposals by state and the findings that remain after the applied fixes."""
+    states = {i["id"]: _local_state(root, i, approvals.get(i["fingerprint"])) for i in items}
+    fixed: set[tuple] = set()
+    for i in items:
+        rec = applied_record(root, i)
+        for f in (rec or {}).get("fixed") or []:
+            fixed.add((f.get("package"), f.get("version"), f.get("id")))
+    remaining = [v for v in vulns if (v.get("package_name"), v.get("installed_version"), v.get("primary_id")) not in fixed]
+    return {"states": states, "fixed": len(fixed), "remaining": remaining}
+
+
+def _local_actions(i: dict, repo: dict, mem, ap, root: str, result: dict) -> None:
+    """Local-folder flow: Resolve (clone, apply, rescan, compatibility, tests) -> Accept & Apply or Ignore -> Undo."""
+    rec = applied_record(root, i)
+    if rec:
+        lock = rec.get("lock") or {}
+        st.success(f"✅ **Applied to your project** at {rec['applied_at']}: " + ", ".join(f"`{f}`" for f in rec["files"]) + (" (the exact files that passed validation)" if rec.get("validated") else ""))
+        if rec.get("fixed"):
+            st.caption(f"Fixes {len(rec['fixed'])} finding(s) once the project is rescanned.")
+        if lock.get("status") in ("tool_missing", "failed"):
+            st.warning(f"🔒 Lockfile not refreshed: {lock['note']}. Until it is, a rescan can still report this vulnerability.")
+        elif lock.get("note"):
+            st.caption(f"🔒 {lock['note']}.")
+        if st.button("↩️ Undo this change", key=f"undo_{i['id']}"):
+            res = undo_in_place(root, i)
+            if res["status"] == "success":
+                if mem:
+                    mem.audit(repo["url"], "analyst", "remediation_undone", i["title"], "restored " + ", ".join(res["restored"]))
+                    mem.set_approval(repo["url"], i["fingerprint"], "needs_review", "Change undone by analyst", i["title"], "analyst")
+                st.rerun()
+            else:
+                st.error(res["error"])
+        return
+    if not i.get("patch"):
+        st.warning("No automatic file change could be produced for this proposal; follow the rationale for a manual fix.")
+        return
+
+    trial = latest_trial(root, i)
+    if trial is None:  # step 1: only Resolve is offered
+        can_test, why_not = tests_possible(root, i)
+        if ap and ap["state"] == "rejected":
+            st.info(f"🚫 Ignored earlier by **{ap['actor']}**. You can still resolve it.")
+        st.caption("**Resolve** applies this fix to a clone of your project, rescans it, checks declared compatibility and runs the project's tests. Your files are not touched. Accept and Ignore appear afterwards.")
+        if can_test:
+            st.checkbox("Also run this project's own build/tests in the Docker sandbox", value=True, key=f"tests_ok_{i['id']}",
+                        help="Isolated container: dependencies are installed with network, tests run without network.")
+        else:
+            st.caption("Project tests will not run: " + why_not)
+        if st.button("🔧 Resolve", key=f"resolve_{i['id']}", type="primary"):
+            run_tests = bool(st.session_state.get(f"tests_ok_{i['id']}", True)) and can_test
+            box = st.status("Validating the fix on a clone of your project ...", expanded=True)
+            t = run_trial(root, i, result, get_settings(), with_tests=run_tests, progress=lambda m: box.write(m))
+            box.update(label=f"Validation {t['status']}", state="complete" if t["status"] == "passed" else "error", expanded=False)
+            st.rerun()
+        return
+
+    ok = trial["status"] == "passed"  # step 2: results, then Accept / Ignore
+    if ok:
+        st.success("🧪 **Resolved on a clone: validation passed.** Accept writes these exact tested files into your project.")
+    else:
+        st.error("🧪 **Validation failed.** " + "; ".join(trial.get("reasons") or ["see the steps below"]))
+    cmp_ = trial.get("comparison")
+    if cmp_:
+        m = st.columns(4)
+        m[0].metric("Findings before", cmp_["before"])
+        m[1].metric("After the fix", cmp_["after"], delta=cmp_["after"] - cmp_["before"], delta_color="inverse")
+        m[2].metric("Fixed", len(cmp_["fixed"]))
+        m[3].metric("Newly introduced", len(cmp_["new"]))
+    with st.expander("Validation steps", expanded=not ok):
+        for stp in trial.get("steps", []):
+            st.markdown(f"{'✅' if stp['ok'] else '❌'} **{stp['step']}** - {stp['detail']}")
+        comp = trial.get("compat") or {}
+        if comp.get("checks"):
+            st.markdown("**Declared compatibility** (registry metadata for the new version)")
+            icon = {"ok": "✅", "warn": "⚠️", "fail": "❌", "unknown": "❔"}
+            df([{"": icon.get(c["status"], ""), "Check": c["name"], "Detail": c["detail"]} for c in comp["checks"]], height="content")
+        for run in (trial.get("tests") or {}).get("runs", []):
+            with st.expander(f"{run['phase']} - exit code {run['exit_code']} ({run['seconds']}s)"):
+                st.code(run["log_tail"] or "(no output)", language="text")
+
+    warnings = trial.get("warnings") or []
+    acked = True
+    if ok and warnings:
+        st.warning("**Review before accepting**\n\n" + "\n".join(f"- {w}" for w in warnings))
+        acked = st.checkbox("I have reviewed these warnings", key=f"ack_{i['id']}")
+
+    if ap and ap["state"] == "rejected":
+        st.info(f"🚫 Ignored by **{ap['actor']}**.")
+    c_acc, c_ign, c_re = st.columns([1.5, 1, 1])
+    if c_acc.button("✅ Accept & Apply Changes", key=f"loc_accept_{i['id']}", type="primary", use_container_width=True, disabled=not (ok and acked),
+                    help=None if ok else "Only a proposal that passed validation on the clone can be accepted."):
+        res = accept_validated(root, i)
+        if res["status"] == "success":
+            if mem:
+                mem.set_approval(repo["url"], i["fingerprint"], "approved", "Accepted by analyst after passing clone validation", i["title"], "analyst")
+                mem.audit(repo["url"], "analyst", "remediation_applied_local", i["title"], "wrote validated " + ", ".join(res["files"]))
+            st.rerun()
+        else:
+            st.error(f"❌ {res['error']}")
+    if c_ign.button("🚫 Ignore", key=f"loc_ignore_{i['id']}", use_container_width=True):
+        if mem:
+            mem.set_approval(repo["url"], i["fingerprint"], "rejected", "Ignored by analyst (local folder scan)", i["title"], "analyst")
+        discard_trial(root, i)
+        st.rerun()
+    if c_re.button("🔁 Resolve again", key=f"reresolve_{i['id']}", use_container_width=True, help="Discard this validation and run it again from the Resolve step."):
+        discard_trial(root, i)
+        st.rerun()
+
+
 def render() -> None:
     page_header(
         "Remediation",
@@ -31,6 +156,8 @@ def render() -> None:
     r = require_result()
     if not r:
         return
+    if r.get("repo", {}).get("source") == "local":
+        st.caption("📁 Local folder scan: each fix is first applied to a **clone** of your project, rescanned and checked there. Only a fix that passes can be **Accepted**, which writes those exact tested files into your folder (with a backup and Undo). **Ignore** dismisses it. Nothing is committed or pushed.")
     rem = r.get("remediation") or {}
     items = rem.get("items") or []
     if not items:
@@ -45,19 +172,43 @@ def render() -> None:
         mem, approvals = None, {}
 
     vs = rem.get("validation_summary") or {}
-    fixed = sum(len((i.get("what_if") or {}).get("fixed", [])) for i in items)
+    totals = remediation_totals(items, len(r.get("vulnerabilities") or []))
+    fixed = totals["fixed_unique"]
     auto_count = sum(1 for i in items if i.get("automation_tier") == "automated" or i.get("priority") in ("P2", "P3"))
     manual_count = len(items) - auto_count
 
+    is_local_scan = repo.get("source") == "local"
+    scan_root = repo.get("local_path") or repo.get("repo_dir") or repo.get("path") or "."
+    vulns_all = r.get("vulnerabilities") or []
+    prog = _local_progress(items, scan_root, vulns_all, approvals) if is_local_scan else None
     c = st.columns(5)
-    c[0].metric("Proposals", len(items))
-    c[1].metric("Findings Fixed", fixed)
-    c[2].metric("⚡ Auto-PR (Low/Med)", auto_count)
-    c[3].metric("👤 Manual Review (High/Crit)", manual_count)
-    c[4].metric("Approved", sum(1 for i in items if approvals.get(i["fingerprint"], {}).get("state") == "approved"))
+    if prog:
+        st_counts = {k: sum(1 for v in prog["states"].values() if v == k) for k in set(prog["states"].values())}
+        open_n = len(items) - st_counts.get("Applied", 0) - st_counts.get("Ignored", 0)
+        c[0].metric("Proposals", len(items))
+        c[1].metric("Open", open_n, help="Not yet applied or ignored")
+        c[2].metric("Applied", st_counts.get("Applied", 0), help="Written to your project; rescan to confirm")
+        c[3].metric("Ignored", st_counts.get("Ignored", 0))
+        c[4].metric("Findings remaining", len(prog["remaining"]), delta=(-prog["fixed"] if prog["fixed"] else None), delta_color="inverse",
+                    help="Total findings minus those fixed by the proposals you applied")
+        if prog["fixed"]:
+            sev = {}
+            for v in prog["remaining"]:
+                sev[v.get("severity") or "UNKNOWN"] = sev.get(v.get("severity") or "UNKNOWN", 0) + 1
+            st.caption("Remaining by severity: " + " · ".join(f"{sev[k]} {k.lower()}" for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN") if sev.get(k)))
+    else:
+        c[0].metric("Proposals", len(items))
+        c[1].metric("Findings Fixed", fixed, help="Unique findings the proposals fix; proposals overlap, so this is not the sum of the table's Fixes column")
+        c[2].metric("⚡ Auto-PR (Low/Med)", auto_count)
+        c[3].metric("👤 Manual Review (High/Crit)", manual_count)
+        c[4].metric("Approved", sum(1 for i in items if approvals.get(i["fingerprint"], {}).get("state") == "approved"))
 
-    if rem.get("groups_not_planned"):
-        st.caption(f"{rem['groups_not_planned']} lower-priority source-package group(s) were not planned (limit or time budget).")
+    covered_ids = {f for i in items for f in i.get("finding_ids", [])}
+    uncovered = [v for v in vulns_all if v["finding_id"] not in covered_ids]
+    no_fix = sum(1 for v in uncovered if not v.get("fixed_versions"))
+    st.caption(f"{totals['covered_unique']} of {totals['total_findings']} findings are covered by a proposal."
+               + (f" Not covered: {len(uncovered)} ({no_fix} have no published fix; {len(uncovered) - no_fix} belong to {rem.get('groups_not_planned', 0)} lower-priority group(s) that hit the planning limit"
+                  f" of {get_settings().remediation_max_groups} proposals / {get_settings().remediation_budget_s}s: raise it in Settings & Health and rescan)." if uncovered else ""))
 
     # Table filter by automation policy
     col_f1, _ = st.columns([1, 2])
@@ -86,7 +237,7 @@ def render() -> None:
             "New": len(wi.get("newly_introduced", [])) if wi else "n/a",
             "Breaking risk": (i.get("compatibility") or {}).get("breaking_risk", ""),
             "Confidence": i.get("confidence", ""),
-            "Approval": STATE.get(ap["state"], "pending") if ap else "pending",
+            "State" if is_local_scan else "Approval": (prog["states"].get(i["id"], "Open") if prog else (STATE.get(ap["state"], "pending") if ap else "pending")),
         })
     df(rows, height=300)
 
@@ -101,12 +252,16 @@ def render() -> None:
     ap = approvals.get(i["fingerprint"])
     tier = i.get("automation_tier") or ("manual_review" if i.get("priority") in ("P0", "P1") else "automated")
     is_manual = (tier == "manual_review" or i.get("priority") in ("P0", "P1"))
+    is_local = repo.get("source") == "local"
+    local_root = repo.get("local_path") or repo.get("repo_dir") or repo.get("path") or "."
 
     st.markdown(f"### {ICON.get(i['action'], '')} {i['title']}")
     st.markdown(i.get("rationale", ""))
 
     # --- SEVERITY & AUTOMATION POLICY BAR WITH ACCEPT / IGNORE ACTIONS ---
-    if is_manual:
+    if is_local:
+        _local_actions(i, repo, mem, ap, local_root, r)
+    elif is_manual:
         st.warning(
             "⚠️ **Human Intervention Required (High / Critical Severity)**  \n"
             "This proposal addresses High or Critical risk findings. By policy, changes **will not** be committed or sent without explicit manual human approval. "
@@ -151,7 +306,7 @@ def render() -> None:
             st.rerun()
 
     # Show persistent PR status if already dispatched in session
-    pr_status_disp = st.session_state.get(f"pr_res_{i['id']}")
+    pr_status_disp = None if is_local else st.session_state.get(f"pr_res_{i['id']}")
     if pr_status_disp:
         if pr_status_disp.get("status") == "success":
             st.success(f"🎉 Branch `{pr_status_disp['branch']}` created and committed! PR markdown file: `{pr_status_disp.get('pr_file')}`")
@@ -277,19 +432,24 @@ def render() -> None:
             st.success(f"{STATE[ap['state']].title()} by **{ap['actor']}** on {ap['decided_at']}: {ap['reason']}")
         if mem is None:
             st.stop()
-        with st.form(f"approve_{i['id']}", clear_on_submit=True):
-            c1, c2 = st.columns([1, 1])
-            decision = c1.radio("Decision", ["approved", "rejected", "needs_review"], format_func=lambda x: STATE[x], horizontal=True)
-            actor = c2.text_input("Your name", value="analyst")
-            reason = st.text_input("Reason (required)", value="Manual review decision recorded via Streamlit")
-            if st.form_submit_button("Record decision"):
-                try:
-                    mem.set_approval(repo["url"], i["fingerprint"], decision, reason, i["title"], actor or "analyst")
-                    st.rerun()
-                except ValueError as e:
-                    st.error(str(e))
-        approved = bool((ap and ap["state"] == "approved") or not is_manual)
-        if approved:
+        if not is_local:  # local folders use Resolve -> Accept above instead of a manual decision form
+            with st.form(f"approve_{i['id']}", clear_on_submit=True):
+                c1, c2 = st.columns([1, 1])
+                decision = c1.radio("Decision", ["approved", "rejected", "needs_review"], format_func=lambda x: STATE[x], horizontal=True)
+                actor = c2.text_input("Your name", value="analyst")
+                reason = st.text_input("Reason (required)", value="Manual review decision recorded via Streamlit")
+                if st.form_submit_button("Record decision"):
+                    try:
+                        mem.set_approval(repo["url"], i["fingerprint"], decision, reason, i["title"], actor or "analyst")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
+        approved = bool((ap and ap["state"] == "approved") or (not is_manual and not is_local))
+        if is_local:
+            st.caption("Local folder scan: use **Accept & Apply Changes** above to edit the files in place. The patch can still be downloaded below.")
+            if patch_text(i):
+                st.download_button("Download .patch", patch_text(i), file_name=f"{i['id']}.patch", mime="text/x-diff", key=f"loc_patch_{i['id']}")
+        elif approved:
             st.markdown("---")
             st.markdown("### 🤖 Remediation Agent Delivery")
 

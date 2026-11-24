@@ -48,7 +48,7 @@ if _missing:
     st.markdown("or run `scripts/run.bat` (Windows) / `scripts/run.sh`. Alternatively: `python -m pip install -r requirements.txt` in the current environment.")
     st.stop()
 
-from ui.pages import (agents_page, graph_page, health_page, monitor_page, architecture_page, pipeline_page, policy_page, reports_page, remediation_page, risk_page,
+from ui.pages import (agents_page, graph_page, health_page, monitor_page, architecture_page, pipeline_page, fixes_page, reports_page, remediation_page,
                       sbom_page, scan_page, suspicious_page, vulns_page)
 
 # Page configuration
@@ -68,9 +68,8 @@ NAVIGATION_PAGES = {
         st.Page(vulns_page.render, title="Vulnerability Findings", icon="🚨", url_path="vulnerabilities"),
         st.Page(pipeline_page.render, title="Pipeline & Containers", icon="🐳", url_path="pipeline"),
         st.Page(suspicious_page.render, title="Suspicious Changes", icon="⚠️", url_path="suspicious"),
-        st.Page(risk_page.render, title="Risk & Explainability", icon="🧭", url_path="risk"),
         st.Page(remediation_page.render, title="Remediation", icon="🛠️", url_path="remediation"),
-        st.Page(policy_page.render, title="Policy & Gate", icon="🚦", url_path="policy"),
+        st.Page(fixes_page.render, title="Fix Report", icon="✅", url_path="fixes"),
     ],
     "Operations": [
         st.Page(agents_page.render, title="Agent Activity", icon="🤖", url_path="agents"),

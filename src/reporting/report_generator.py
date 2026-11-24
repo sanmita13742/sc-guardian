@@ -110,7 +110,7 @@ def generate_markdown(result: dict, extras: dict | None = None) -> str:
         ("Vulnerability findings (unconfirmed)", s.get("vulnerabilities_unknown")), ("Direct / transitive vulnerable", f"{s.get('vuln_direct')} / {s.get('vuln_transitive')}"),
         ("Known exploited (KEV)", s.get("kev")), ("With fix available", s.get("with_fix")),
         ("Typosquatting candidates", s.get("typosquatting")), ("Suspicious/unexplained lockfile changes", s.get("lockfile_findings")),
-        ("Risk: CRITICAL/HIGH/MEDIUM/LOW", " / ".join(str(s.get("by_risk", {}).get(l, 0)) for l in ("CRITICAL", "HIGH", "MEDIUM", "LOW")))]], ["Metric", "Value"]))
+        ("Vulnerability risk: CRITICAL/HIGH/MEDIUM/LOW", " / ".join(str(s.get("by_risk", {}).get(l, 0)) for l in ("CRITICAL", "HIGH", "MEDIUM", "LOW")))]], ["Metric", "Value"]))
     L += _guardian_sections(result, extras or {})
     q = result.get("quality", {})
     L.append("## SBOM and quality\n")

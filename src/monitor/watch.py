@@ -96,7 +96,7 @@ def acknowledge(db: Database, event_id: int) -> None:
 def _latest_scans(db: Database) -> dict[str, str]:
     seen: dict[str, str] = {}
     for s in db.list_scans(500):
-        if s["status"] != "failed" and not s["repo_url"].startswith("local-fixture") and s["repo_url"] not in seen:
+        if s["status"] != "failed" and not s["repo_url"].startswith(("local:", "local-fixture")) and s["repo_url"] not in seen:
             seen[s["repo_url"]] = s["scan_id"]
     return seen
 

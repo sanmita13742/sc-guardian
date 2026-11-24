@@ -2,7 +2,7 @@
 
 IGNORED_DIRS = {
     ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", "target",
-    ".tox", ".mypy_cache", ".pytest_cache", "bower_components", ".idea", ".vscode",
+    ".tox", ".mypy_cache", ".pytest_cache", "bower_components", ".idea", ".vscode", ".guardian",
 }
 
 EXTENSION_LANGUAGES = {

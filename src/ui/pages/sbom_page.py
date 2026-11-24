@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from reporting.counts import package_components
+
 from ui.components.common import df, kv_table, page_header, read_file, require_result
 
 
@@ -12,7 +14,7 @@ def render() -> None:
     if not r:
         return
 
-    q, comps = r.get("quality", {}), [c for c in r["components"] if c["type"] != "file" and not c.get("is_self")]
+    q, comps = r.get("quality", {}), package_components(r["components"])
     tool = r.get("sbom_tool") or {}
     used = tool.get("used") or r.get("inventory_source")
     if used in (None, "none"):
@@ -27,7 +29,7 @@ def render() -> None:
     if mm:
         st.error(f"🚨 **{len(mm)}** lockfile digest(s) do not match the registry's digest for the same version (possible tampered lockfile or republished package). See the Metadata tab.")
     c = st.columns(5)
-    c[0].metric("Components", len(comps))
+    c[0].metric("Components", len(comps), help="Software packages. CI actions and container images are listed on the Pipeline & Containers page.")
     c[1].metric("Inventory", (q.get("inventory_status") or "n/a").replace("_", " ").title())
     c[2].metric("Relationships", q.get("dependency_relationships", "n/a"))
     c[3].metric("Metadata completeness", f"{fusion['average_completeness']:.0%}" if fusion else (q.get("metadata_status") or "n/a").replace("_", " ").title())

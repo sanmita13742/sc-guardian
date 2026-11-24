@@ -45,7 +45,7 @@ Severity points CRITICAL 75, HIGH 50, MEDIUM 28, LOW 12, INFO 4; −8 when the e
 
 ## Confidence and priority
 
-Every finding also gets a **confidence** (cross-verified, range-validated, reachability known, CVSS present) and a **priority P0-P3** (P0 = reachable/exploited and critical). The factor table on *Risk & Explainability* shows each contribution.
+Every finding also gets a **confidence** (cross-verified, range-validated, reachability known, CVSS present) and a **priority P0-P3** (P0 = reachable/exploited and critical).
 
 Example: a transitive CVSS-CRITICAL finding without KEV scores 55 → **HIGH**; with KEV 85 → **CRITICAL**; a direct LOW finding stays **LOW**.
 

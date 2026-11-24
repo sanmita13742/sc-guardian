@@ -47,6 +47,11 @@ def npm(text: str, name: str, to: str, kind: str, lock_hint: str = "") -> Option
         return None
     if not isinstance(data, dict):
         return None
+    for sec in ("dependencies", "devDependencies", "optionalDependencies"):
+        cur = (data.get(sec) or {}).get(name)
+        if isinstance(cur, str):  # a direct dependency: raise its own spec; an override here would make npm fail with EOVERRIDE
+            data[sec][name] = ("~" if cur.startswith("~") else "^") + to
+            return _json_dump(data, text)
     if "yarn" in lock_hint:
         data.setdefault("resolutions", {})[name] = to
     elif "pnpm" in lock_hint:

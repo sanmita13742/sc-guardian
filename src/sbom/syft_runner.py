@@ -12,6 +12,7 @@ from typing import Optional
 
 from config.settings import Settings, get_settings
 from core.safe_env import scrubbed_env
+from sbom.tool_locator import find_tool
 
 
 @dataclass
@@ -39,7 +40,7 @@ def resolve_syft(settings: Settings | None = None) -> Optional[str]:
     cand = s.syft_bin
     if os.path.sep in cand or "/" in cand:
         return cand if Path(cand).exists() else None
-    return shutil.which(cand)
+    return shutil.which(cand) or find_tool(cand)
 
 
 def syft_version(syft_bin: str) -> Optional[str]:

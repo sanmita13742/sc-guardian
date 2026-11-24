@@ -26,7 +26,7 @@ from core import git_manager as gm
 from core.http import HttpClient
 from core.models import RepoInfo
 from core.repository_inspector import headline_languages
-from core.url_validator import validate_github_url, validate_ref
+from core.url_validator import looks_like_local_path, resolve_local_path, validate_github_url, validate_ref
 from reporting import json_exporter
 from orchestration.supervisor import SCANNER_VERSION, cleanup as _cleanup
 from risk_analysis.risk_rules import RULES_VERSION, load_rules
@@ -147,8 +147,15 @@ def run_scan(options: ScanOptions, settings: Settings | None = None, db: Databas
     on_event = on_event or _legacy_progress(progress)
     s = settings or get_settings()
     db = db or Database(s.db_path)
+    if looks_like_local_path(options.url):
+        try:
+            local = resolve_local_path(options.url)
+        except Exception as e:
+            Runtime(on_event).fail("validate", str(e))
+            raise
+        return scan_local_directory(local, options, s, db, on_event=on_event)
     rt = Runtime(on_event)
-    rt.begin("validate", "Validating the repository URL (HTTPS GitHub only, no credentials, no local paths)")
+    rt.begin("validate", "Validating the repository URL (HTTPS GitHub, no credentials) or a local project folder path")
     try:
         repo_ref = validate_github_url(options.url)
         ref = validate_ref(options.ref) or repo_ref.ref
@@ -203,7 +210,7 @@ def run_scan(options: ScanOptions, settings: Settings | None = None, db: Databas
 
 def scan_local_directory(path: Path, options: ScanOptions | None = None, settings: Settings | None = None, db: Database | None = None,
                          on_event: Optional[OnEvent] = None, name: str | None = None, progress: Optional[Callable] = None) -> dict[str, Any]:
-    """Analyse an existing local directory (developer/CLI use only; never reachable from the UI URL box)."""
+    """Analyse an existing local project folder in place (read-only; nothing is cloned or copied)."""
     on_event = on_event or _legacy_progress(progress)
     options = options or ScanOptions()
     s = settings or get_settings()
@@ -213,12 +220,12 @@ def scan_local_directory(path: Path, options: ScanOptions | None = None, setting
     top = gm.run_git(["rev-parse", "--show-toplevel"], cwd=path, check=False).stdout.strip()
     is_top = bool(top) and Path(top).resolve() == path
     sha = gm.run_git(["rev-parse", "HEAD"], cwd=path, check=False).stdout.strip() if top else ""
-    info = RepoInfo(scan_id=uuid.uuid4().hex[:12], url=f"local-fixture:{path.name}", name=name or path.name, ref=options.ref,
+    info = RepoInfo(scan_id=uuid.uuid4().hex[:12], url=f"local:{path.as_posix()}", name=name or path.name, ref=options.ref,
                     branch=gm.current_branch(path) if is_top else None,
                     commit_sha=(sha if is_top else (sha + " (enclosing repository HEAD; scanned path is a subdirectory)" if sha else "unversioned")),
-                    scan_timestamp=_now(), shallow=gm.is_shallow(path) if is_top else False, source="local-fixture")
+                    scan_timestamp=_now(), shallow=gm.is_shallow(path) if is_top else False, source="local")
     info.local_path = str(path)
-    rt.done("validate", "local directory (developer mode)")
+    rt.done("validate", f"Accepted local folder {path}")
     rt.skip("clone", "scanning an existing local directory")
     return analyze(path, info, options, _Ctx(s, db), rt, git_history=is_top, workspace=None)
 

@@ -136,6 +136,8 @@ def scan_container_image(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",  # Trivy emits UTF-8 JSON; the Windows default (cp1252) crashes on it and silently yields zero findings
             timeout=s.container_scan_timeout_s,
             shell=False,
             env=scrubbed_env(),

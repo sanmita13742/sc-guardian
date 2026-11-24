@@ -357,6 +357,8 @@ class VulnerabilityAgent:
             for step in self.ORDER:
                 rt.skip(step, "no components with a known ecosystem and version")
             st.result.update(vuln_coverage={}, source_status={"OSV": {"source": "OSV", "state": "not_queried"}})
+            if st.pipe and st.pipe.get("container_findings"):  # a Dockerfile-only project still has image findings
+                st.vulns = list(st.pipe["container_findings"])
             return
         st.osv = OsvClient(ctx.http, ctx.cache, s.osv_batch_size, s.osv_workers)
 
@@ -425,15 +427,14 @@ class VerificationAgent:
         with rt.step("verify", "Re-querying every PURL through OSV's PURL route and comparing with the name/version route") as b:
             res = cross_check(st.osv, st.vres["osv_name_route"], st.vres["findings"])
             st.vulns = [f.model_dump() for f in st.vres["findings"]]
-        if st.pipe and st.pipe.get("container_findings"):
-            st.vulns.extend(st.pipe["container_findings"])
+            if st.pipe and st.pipe.get("container_findings"):
+                st.vulns.extend(st.pipe["container_findings"])
             st.result["verification"] = res
             rt.observe("verify", f"{res['routes_agree']}/{res['components_checked']} components returned identical advisory sets by both routes; "
                        f"{res['findings_cross_verified']}/{res['findings_checked']} findings independently reproduced")
             if res["disagreement_count"]:
                 rt.warn("verify", f"{res['disagreement_count']} component(s) differ between the two routes (listed in the Ground Truth view)")
             b["message"] = f"{res['findings_cross_verified']}/{res['findings_checked']} findings cross-verified"
-
 
 # ====================================================================================================== Threat
 class ThreatAgent:
@@ -676,9 +677,8 @@ def _summary(st: ScanState, result: dict) -> dict:
     by_sev: dict[str, int] = {}
     for f in v:
         by_sev[f["severity"] or "UNKNOWN"] = by_sev.get(f["severity"] or "UNKNOWN", 0) + 1
-    by_risk: dict[str, int] = {}
-    for a in st.risk["assessments"]:
-        by_risk[a["label"]] = by_risk.get(a["label"], 0) + 1
+    from reporting.counts import risk_breakdown
+    by_risk, by_priority, by_risk_other = risk_breakdown(st.risk["assessments"], v)
     confirmed = [f for f in v if f["affected_status"] == "confirmed_affected"]
     return {
         "components": len([c for c in st.components if c.type not in ("file", "container") and c.purl_type not in ("docker", "github") and not c.is_self]), "by_ecosystem": st.quality.get("components_by_ecosystem", {}),
@@ -688,5 +688,5 @@ def _summary(st: ScanState, result: dict) -> dict:
         "typosquatting": len(st.typo["findings"]),
         "pipeline_findings": len(st.pipe["findings"]), "pipeline_critical_high": sum(1 for f in st.pipe["findings"] if f["severity"] in ("CRITICAL", "HIGH")),
         "lockfile_findings": len([c for c in st.lres["findings"] if c["classification"] != "insufficient_baseline"]),
-        "by_risk": by_risk, "services": len(st.insp.services), "cross_verified": (result.get("verification") or {}).get("findings_cross_verified"),
+        "by_risk": by_risk, "by_priority": by_priority, "by_risk_other": by_risk_other, "services": len(st.insp.services), "cross_verified": (result.get("verification") or {}).get("findings_cross_verified"),
     }

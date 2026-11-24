@@ -14,7 +14,7 @@ from ui.components.live_progress import LiveProgress
 
 
 def render() -> None:
-    page_header("Repository Scan", "Analyze software supply chain security for public GitHub repositories statically.")
+    page_header("Repository Scan", "Analyze software supply chain security for public GitHub repositories or local project folders statically.")
     s = get_settings()
 
     from llm.client import detect_provider
@@ -25,7 +25,8 @@ def render() -> None:
         st.error("❌ **Invalid LLM API Key**: Key format unrecognized. Please verify your `LLM_API_KEY` in `.env` (expected `gsk_...`, `AIza...`, `sk-ant-...`, or `sk-...`).")
 
     with st.form("scan_form"):
-        url = st.text_input("GitHub repository URL", placeholder="https://github.com/OWASP/NodeGoat", value=st.session_state.get("last_url", ""))
+        url = st.text_input("GitHub repository URL or local project folder", placeholder="https://github.com/OWASP/NodeGoat  or  C:\\projects\\my-app",
+                            value=st.session_state.get("last_url", ""), help="Paste a public GitHub URL, or the path to a project folder on this machine (scanned in place, read-only).")
         c1, c2 = st.columns(2)
         ref = c1.text_input("Branch or tag (optional)", help="Defaults to default branch.")
         commits = c2.number_input("Lockfile history commits", 1, 25, 1, help="Commits to inspect for lockfile tampering.")
@@ -75,7 +76,7 @@ def _run(url: str, ref: str, opts: ScanOptions) -> None:
         result = run_scan(opts, on_event=live)
     except InvalidRepositoryURL as e:
         live.finish(False)
-        st.error(f"Invalid repository URL: {e}")
+        st.error(f"Invalid repository URL or folder: {e}")
         return
     except Exception as e:
         live.finish(False)

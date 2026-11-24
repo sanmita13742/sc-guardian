@@ -99,8 +99,8 @@ def render() -> None:
     c[0].metric("Service Roots", len(roots))
     c[1].metric("Direct Deps", len(direct_nodes))
     c[2].metric("Transitive Deps", len(trans_nodes))
-    c[3].metric("Vuln Direct", len({n for n in vmap if n in direct_nodes}))
-    c[4].metric("Vuln Transitive", len({n for n in vmap if n in trans_nodes}))
+    c[3].metric("Vulnerable direct pkgs", len({n for n in vmap if n in direct_nodes}))
+    c[4].metric("Vulnerable transitive pkgs", len({n for n in vmap if n in trans_nodes}))
     c[5].metric("Total Edges", g.number_of_edges())
 
     info = {}
@@ -183,7 +183,7 @@ def render() -> None:
         spv = r.get("source_package_view", [])
         df([{"Risk": x["worst_risk"], "Severity": x["worst_severity"] or "n/a", "Source Package": x["source_package"],
              "Itself Vulnerable": "Yes" if x["is_itself_vulnerable"] else "No",
-             "Transitive CVEs": x["vulnerable_packages"], "Findings": x["findings"],
+             "Vulnerable packages": x["vulnerable_packages"], "Findings": x["findings"],
              "Suggested Fix": x["top_fix"] or ""} for x in spv], height=360)
 
     with tab_inspect:

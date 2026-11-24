@@ -250,7 +250,10 @@ class Database:
     def load_scan(self, scan_id: str) -> Optional[dict]:
         with self.connect() as c:
             r = c.execute("SELECT result_json FROM scans WHERE scan_id=?", (scan_id,)).fetchone()
-        return json.loads(r["result_json"]) if r else None
+        if not r:
+            return None
+        from reporting.counts import reconcile_summary
+        return reconcile_summary(json.loads(r["result_json"]))
 
     def find_scan(self, repo_url: str, commit_sha: str) -> Optional[str]:
         with self.connect() as c:
