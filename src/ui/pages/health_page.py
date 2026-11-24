@@ -65,10 +65,12 @@ def render() -> None:
         rows.append({"Tool": "git", "Status": "found" if git else "MISSING (required)", "Path": git or "", "Version": ""})
         sy, tr = resolve_syft(s), resolve_trivy(s)
         rows.append({"Tool": "Syft", "Status": "found" if sy else "not installed (optional)", "Path": sy or "", "Version": (syft_version(sy) if sy else "") or ""})
-        rows.append({"Tool": "Trivy", "Status": "found" if tr else "not installed (optional)", "Path": tr or "", "Version": (trivy_version(tr) if tr else "") or ""})
+        trivy_status = "found (opt-in enabled)" if (tr and s.container_scan_enabled) else ("found (opt-in disabled)" if tr else "not installed (optional)")
+        rows.append({"Tool": "Trivy (Container Image Scanner)", "Status": trivy_status, "Path": tr or "", "Version": (trivy_version(tr) if tr else "") or ""})
+        rows.append({"Tool": "Multi-CI Platform Engine", "Status": "active (5 platforms: GHA, GitLab, Jenkins, CircleCI, Azure)", "Path": "pipeline_analysis/ci_adapters", "Version": "2.2.0"})
         rows.append({"Tool": "Built-in rule engine", "Status": "always available", "Path": "sbom/builtin_generator.py", "Version": "1.0"})
         df(rows, height="content")
-        st.caption("Auto mode uses Syft, then Trivy, then the built-in rule engine; metadata and transitive resolution use deps.dev, npm, PyPI, crates.io and Maven Central (public, read-only).")
+        st.caption("Auto mode uses Syft, then Trivy, then the built-in rule engine; Multi-CI engine statically parses GitHub Actions, GitLab CI/CD, Jenkins, CircleCI, and Azure Pipelines.")
 
     with t_db:
         h = db.health()

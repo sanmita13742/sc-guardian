@@ -1,7 +1,7 @@
 # Risk scoring
 
 Risk labels are produced by a **deterministic, additive rule engine** (`risk_analysis/risk_rules.py`, `risk_scorer.py`).
-No LLM participates in scores, labels or factors. Rules version: **2.0** (adds reachability, EPSS, pipeline findings, confidence and P0-P3 priority). Every assessment stores the factor list, the
+No LLM participates in scores, labels or factors. Rules version: **2.1** (adds codebase influence tiers, unreachable caps, EPSS, pipeline findings, confidence and P0-P3 priority). Every assessment stores the factor list, the
 unknowns and the thresholds that were in effect, so a label can always be reproduced.
 
 CVSS severity (a property of the advisory) and *risk* (a property of this finding in this repository) are shown separately.
@@ -22,8 +22,22 @@ CVSS severity (a property of the advisory) and *risk* (a property of this findin
 | Development-only dependency | −10 | Lockfile marks it dev-only; build/CI exposure remains. |
 | Correlated lockfile change | +5 | Same package also changed suspiciously in Git history. |
 | EPSS (exploit probability estimate) | ≥0.5 +20, ≥0.1 +10, ≥0.01 +3 | Only nudges the score; it is a statistical estimate, not proof. |
-| Reachability (package-level import evidence, not a call graph) | imported by the app +20, reached via a dependency +8, tests only −5, no import found −15, unknown 0 | Verdict comes from the Investigator with cited evidence ids. |
+| Reachability: Heavy App Usage (≥5 files or ≥15% of codebase) | **+35** | High codebase blast radius; elevates Medium CVSS to High/P1. |
+| Reachability: Moderate App Usage (2-4 files) | **+20** | Confirmed runtime presence across multiple application modules. |
+| Reachability: Single App Import (1 file) | **+12** | Localized runtime presence in application code. |
+| Reachability: Transitive via Heavy Root | **+18** | Indirect dependency pulled in by a heavily imported direct package. |
+| Reachability: Transitive Standard | **+8** | Indirect dependency pulled in by an application import. |
+| Reachability: Tests only | **−10** | Non-runtime exposure; **label capped at MEDIUM**. |
+| Reachability: No import found (unimported) | **−25** | Unreachable; **label capped at MEDIUM** (unless active CISA KEV). |
 | Applicability unconfirmed | label capped at **MEDIUM** | OSV returned the advisory but the range could not be validated locally. |
+
+## Codebase Influence and Priority Mapping
+
+Every finding receives a priority rating ($P0-P3$) driven by actual codebase influence and runtime reachability:
+- **P0 (Immediate Action)**: CRITICAL risk label OR active CISA KEV exploitation in application OR (HIGH risk with heavy codebase influence in production).
+- **P1 (Sprint Priority)**: HIGH risk label OR (MEDIUM risk with heavy codebase influence in production).
+- **P2 (Scheduled Maintenance)**: Standard MEDIUM risk OR deprioritized CRITICAL/HIGH findings that have no application imports or are test-only.
+- **P3 (Monitor Only)**: LOW risk, INFORMATIONAL, or unimported low-severity findings.
 
 ## Pipeline findings (Dockerfile, compose, CI)
 

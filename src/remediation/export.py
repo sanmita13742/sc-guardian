@@ -3,13 +3,19 @@ from __future__ import annotations
 
 from typing import Optional
 
+from remediation.pr_template_engine import render_pull_request
+
 
 def patch_text(rem: dict) -> str:
     p = rem.get("patch")
     return p["diff"] if p else ""
 
 
-def pr_markdown(rem: dict, repo: dict, approval: Optional[dict]) -> str:
+def pr_markdown(rem: dict, repo: dict, approval: Optional[dict], repo_dir: Optional[str] = None) -> str:
+    r_dir = repo_dir or repo.get("repo_dir") or repo.get("path")
+    impact = rem.get("reachability_impact")
+    _, body, _ = render_pull_request(rem, repo, approval, repo_dir=r_dir, impact=impact)
+    return body
     wi = rem.get("what_if") or {}
     val = rem.get("validation") or {}
     L = [f"## {rem['title']}", "",

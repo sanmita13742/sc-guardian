@@ -77,6 +77,8 @@ def reusable(res: Optional[dict], options: "ScanOptions", s: Settings) -> tuple[
         return False, "no stored scan"
     if res.get("status") == "failed":
         return False, "stored scan failed"
+    if res.get("vulnerabilities") and not res.get("risk_assessments"):
+        return False, "stored scan is missing risk assessments (incomplete scoring)"
     age = _age_s((res.get("repo") or {}).get("scan_timestamp", ""))
     if age > s.scan_cache_ttl_s:
         return False, f"stored scan is older than {s.scan_cache_ttl_s // 3600}h (new advisories may exist)"
@@ -190,6 +192,7 @@ def run_scan(options: ScanOptions, settings: Settings | None = None, db: Databas
         info = RepoInfo(scan_id=scan_id, url=repo_ref.web_url, name=repo_ref.name, owner=repo_ref.owner, ref=ref,
                         branch=gm.current_branch(repo_dir) or ref, commit_sha=gm.head_sha(repo_dir), scan_timestamp=_now(),
                         shallow=gm.is_shallow(repo_dir), source="github")
+        info.local_path = str(repo_dir)
         rt.observe("clone", f"Commit {info.commit_sha[:12]} on branch {info.branch}; shallow clone: {info.shallow}; stored at {ws}")
         result = analyze(repo_dir, info, options, ctx, rt, git_history=True, workspace=ws)
         return result

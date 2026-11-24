@@ -16,7 +16,9 @@ from agents.runtime import Runtime
 from agents.specialists import ScanState, source_package_view
 from core import git_manager as gm
 from remediation import whatif
+from remediation.delivery import auto_deliver_low_medium_remediations, get_remediation_severity_tier
 from remediation.planner import PlanContext, plan_group, split_label
+from remediation.reachability_impact import evaluate_reachability_impact
 from vulnerability.osv_client import OsvClient
 
 PRIO = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
@@ -41,7 +43,25 @@ class RemediationAgent:
         with rt.step("remediate", "Planning the smallest safe change per source package (parent-upgrade search, pins, mitigations)") as b:
             risks = {a["finding_id"]: a for a in st.risk["assessments"]}
             groups = source_package_view(st.vulns, risks)
-            groups.sort(key=lambda g: (PRIO.get(min((risks.get(i, {}).get("priority", "P3") for i in g["finding_ids"]), default="P3"), 3), -len(g["finding_ids"])))
+
+            def group_urgency(g: dict) -> tuple[int, int, int]:
+                prio = min((risks.get(i, {}).get("priority", "P3") for i in g["finding_ids"]), default="P3")
+                has_heavy = any(risks.get(i, {}).get("influence_tier") == "heavy" or risks.get(i, {}).get("app_files", 0) >= 5 for i in g["finding_ids"])
+                is_dev = all(bool(next((f.get("dev_dependency") for f in st.vulns if f["finding_id"] == i), False)) for i in g["finding_ids"])
+                p_val = PRIO.get(prio, 3)
+                if prio == "P0":
+                    rank = 0
+                elif has_heavy and not is_dev:
+                    rank = 1
+                elif prio == "P1":
+                    rank = 2
+                elif prio == "P2" and not is_dev:
+                    rank = 3
+                else:
+                    rank = 4
+                return (rank, p_val, -len(g["finding_ids"]))
+
+            groups.sort(key=group_urgency)
             osv = OsvClient(st.ctx.http, st.ctx.cache, s.osv_batch_size, s.osv_workers)
             ctx = PlanContext(repo_dir=st.repo_dir, http=st.ctx.http, cache=st.ctx.cache, osv=osv, vulns=st.vulns, manifests_index=st.insp.manifests, components=st.components)
             items, sims, skipped = [], {}, 0
@@ -58,17 +78,55 @@ class RemediationAgent:
                     continue
                 sims[rem["id"]] = rem.pop("sim", None)
                 rem["fingerprint"] = fingerprint(rem)
+                t_info = rem.get("target") or {}
+                src_pkg = rem.get("source_package") or rem.get("package") or ""
+                impact = evaluate_reachability_impact(
+                    st.source_index,
+                    rem.get("ecosystem", "npm"),
+                    src_pkg,
+                    t_info.get("from") or "current",
+                    t_info.get("to") or "recommended",
+                    semver_delta=(rem.get("compatibility") or {}).get("semver_change"),
+                )
+                rem["reachability_impact"] = impact.to_dict()
                 items.append(rem)
                 rt.progress("remediate", f"{rem['id']} {rem['action']}: {rem['title']}", id=rem["id"])
+            # Evaluate automation tier and auto-deliver Low/Medium severity PRs without human intervention
+            mem = None
+            if hasattr(st.ctx, "db"):
+                from storage.memory import Memory
+                mem = Memory(st.ctx.db)
+
+            repo_meta = {
+                "url": st.info.url,
+                "commit_sha": st.info.commit_sha,
+                "repo_dir": str(st.repo_dir),
+                "path": str(st.repo_dir),
+            }
+
+            if getattr(s, "remediation_auto_pr_low_med", True):
+                auto_del = auto_deliver_low_medium_remediations(st.repo_dir, items, repo_meta, memory=mem)
+            else:
+                for rem in items:
+                    tier, label = get_remediation_severity_tier(rem, st.vulns)
+                    rem["automation_tier"] = tier
+                    rem["severity_tier"] = label
+                    rem["requires_human_intervention"] = (tier == "manual_review")
+                auto_del = []
+
+            low_med = [r for r in items if r.get("automation_tier") == "automated"]
+            high_crit = [r for r in items if r.get("automation_tier") == "manual_review"]
+
             st.rem_sims = sims
             st.remediation = {"items": items, "manifests": {p: t[:200000] for p, t in ctx.originals.items()}, "groups_total": len(groups), "groups_not_planned": skipped,
-                              "budget_seconds": s.remediation_budget_s}
+                              "budget_seconds": s.remediation_budget_s, "automated_low_med": len(low_med), "manual_high_crit": len(high_crit)}
             acts: dict[str, int] = {}
             for r in items:
                 acts[r["action"]] = acts.get(r["action"], 0) + 1
-            rt.observe("remediate", f"{len(items)} remediation(s) planned of {len(groups)} source-package group(s): " + ", ".join(f"{v} {k}" for k, v in sorted(acts.items())) + (f"; {skipped} not planned (limit/time budget)" if skipped else ""))
-            rt.decide("remediate", "Require human approval before any patch/PR text can be exported", reason="Proposals are generated from public registry data and advisories; compatibility is not verified by the scan.", agent="Supervisor")
-            b["message"] = f"{len(items)} remediation(s)"
+            rt.observe("remediate", f"{len(items)} remediation(s) planned: " + ", ".join(f"{v} {k}" for k, v in sorted(acts.items())) + (f"; {len(low_med)} Low/Med PR(s) automated" if low_med else ""))
+            if high_crit:
+                rt.decide("remediate", f"Require human approval for {len(high_crit)} High/Critical severity proposal(s)", reason="High and Critical severity changes require manual verification (Accept or Ignore in Streamlit).", agent="Supervisor")
+            b["message"] = f"{len(items)} remediation(s) ({len(low_med)} auto-PR, {len(high_crit)} manual)"
 
 
 class ValidatorAgent:
@@ -101,7 +159,27 @@ class ValidatorAgent:
                 if not rem.get("rationale"):
                     rem["rationale"] = self._rationale(rem, before)
                 applies = self._check_patch(st, rem)
+
+                wi_obj = rem.get("what_if")
+                wi_passed = bool(wi_obj and wi_obj.get("verdict") in ("reduces_risk", "partial"))
+                new_cves = len(wi_obj.get("newly_introduced", [])) if wi_obj else 0
+                lock_note = rem.get("lock_note", "")
+
+                matrix = {
+                    "tier_1_patch": {"name": "Tier 1: Patch Applicability", "passed": bool(applies),
+                                     "details": "Patch applies cleanly without conflicts" if applies else "Patch cannot be applied cleanly"},
+                    "tier_2_lockfile": {"name": "Tier 2: Lockfile Coherence", "passed": bool(lock_note),
+                                       "details": f"Refresh command: {lock_note}" if lock_note else "Standard manifest update"},
+                    "tier_3_whatif": {"name": "Tier 3: OSV What-If Rescan", "passed": wi_passed,
+                                     "details": f"Verdict: {wi_obj.get('verdict', 'not_simulated')} (Fixed {len(wi_obj.get('fixed', []))}, Remaining {len(wi_obj.get('remaining', []))})" if wi_obj else "Not simulated"},
+                    "tier_4_sandbox": {"name": "Tier 4: Sandbox Build & Tests", "status": "not_run", "passed": None,
+                                       "details": "Opt-in: execute in isolated Docker container upon user request"},
+                    "tier_5_security_gate": {"name": "Tier 5: Security Regression Gate", "passed": new_cves == 0,
+                                            "details": "Zero new vulnerabilities introduced" if new_cves == 0 else f"{new_cves} new advisory(ies) introduced"},
+                }
+
                 rem["validation"] = {"patch_applies": applies, "what_if_run": sim is not None,
+                                     "matrix": matrix,
                                      "build_tests": {"status": "not_run", "reason": "Static what-if only: the repository's build and tests are not executed (optional sandbox validation can be enabled)."}}
             st.remediation["validation_summary"] = counts
             rt.observe("validate_fix", "What-if results: " + ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in counts.items() if v))

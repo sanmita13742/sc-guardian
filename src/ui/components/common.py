@@ -178,8 +178,25 @@ def metric_group(metrics: list[dict[str, Any]]) -> None:
 
 
 def risk_by_id(r: dict) -> dict[str, dict]:
-    """Map finding_id to its deterministic risk assessment."""
-    return {a["finding_id"]: a for a in r.get("risk_assessments", [])}
+    """Map finding_id to its deterministic risk assessment, auto-populating if missing."""
+    assessments = r.get("risk_assessments", [])
+    if not assessments and r.get("vulnerabilities"):
+        try:
+            from risk_analysis.finding_correlator import correlate_findings
+            from risk_analysis.risk_rules import DEFAULT_RULES
+            corr = correlate_findings(
+                r.get("vulnerabilities", []),
+                r.get("typosquatting", []),
+                r.get("lockfile_changes", []),
+                r.get("rules", DEFAULT_RULES),
+                r.get("pipeline_findings", []),
+            )
+            assessments = corr.get("assessments", [])
+            r["risk_assessments"] = assessments
+            r["correlations"] = corr.get("correlations", [])
+        except Exception:
+            assessments = []
+    return {a["finding_id"]: a for a in assessments}
 
 
 def download_json(label: str, obj: Any, filename: str, key: str) -> None:

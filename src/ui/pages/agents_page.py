@@ -5,6 +5,7 @@ import streamlit as st
 
 from agents.runtime import STEPS
 from ui.components.common import df, page_header, require_result
+from ui.components.live_progress import _is_noisy
 
 ICON = {"pending": "⚪", "running": "🔵", "done": "✅", "skipped": "⏭️", "error": "❌"}
 KIND_ICON = {"start": "▶", "progress": "•", "done": "✔", "skip": "⏭", "decision": "🧭", "observation": "👁", "warning": "⚠️", "error": "❌"}
@@ -46,11 +47,17 @@ def render() -> None:
         df([{"Time (s)": e["t"], "Agent": e["agent"], "Decision": e["message"], "Reason": e["detail"].get("reason", "")} for e in dec], height=380)
 
     with t3:
-        a, b = st.columns(2)
+        a, b, c_min = st.columns([2, 2, 2])
         f_agent = a.multiselect("Agent", [x["agent"] for x in agents])
         kinds = sorted({e["kind"] for e in trace})
         f_kind = b.multiselect("Event Type", kinds, default=[k for k in kinds if k != "progress"])
-        rows = [e for e in trace if (not f_agent or e["agent"] in f_agent) and e["kind"] in f_kind]
+        hide_telemetry = c_min.checkbox("Minimalist View", value=True, help="Hide raw internal telemetry counts and debug observations")
+        rows = [
+            e for e in trace
+            if (not f_agent or e["agent"] in f_agent)
+            and e["kind"] in f_kind
+            and (not hide_telemetry or not _is_noisy(e.get("message", "")))
+        ]
         df([{"Time (s)": e["t"], "Agent": e["agent"], "Type": f"{KIND_ICON.get(e['kind'], '')} {e['kind']}", "Message": e["message"]} for e in rows], height=420)
 
     with t4:

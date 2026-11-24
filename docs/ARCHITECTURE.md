@@ -131,38 +131,50 @@ When a scan begins, SC Guardian processes the target through 12 deterministic st
 
 ### Stage 6: Dual-Track Detection (Vulnerabilities & Pipeline Threats)
 - **Track A (Known Vulnerabilities)**: Queries Google's **OSV.dev** database using high-throughput batch requests. Enriches findings with CVSS metrics from **NVD** and active exploitation flags from **CISA KEV**.
-- **Track B (Supply Chain Anomalies & Threats)**:
-  - *Typosquatting*: Uses **RapidFuzz** to compare package names against the top 10,000 most popular libraries to detect malicious lookalikes (e.g., `reqeusts` vs `requests`).
-  - *Pipeline Security*: Inspects Dockerfiles and GitHub Actions workflows for dangerous misconfigurations (running as root, `ADD <url>`, `curl | sh`, unpinned action SHAs, pwn-request patterns).
+- **Track B (Multi-CI Platform & Container Image Security)**:
+  - *Multi-CI Platform Adapters*: Static, zero-code-execution security analysis across **GitHub Actions**, **GitLab CI/CD**, **Jenkins**, **CircleCI**, and **Azure Pipelines** via `src/pipeline_analysis/ci_adapters/`. Evaluates platform-specific security rules (unpinned actions/orbs/images, script injection, unpinned runner tokens, privileged DinD, and committed secrets).
+  - *CI-to-Container Bridge*: Discovers container build directives (`docker build`, `kaniko`, `buildah`, `Docker@2`) in CI pipelines and links them to local Dockerfiles.
+  - *Opt-In Trivy Container Image Scanner*: When enabled (`CONTAINER_SCAN_ENABLED=true`), scans container images using **Trivy** in an isolated, failure-resilient subprocess. Distinguishes OS-level packages (Debian/Alpine/RPM) from application runtime packages with layer provenance, unified under `asset_type: "container_image"`.
+  - *Typosquatting Detection*: Uses **RapidFuzz** to compare package names against the top 10,000 most popular libraries to detect malicious lookalikes (e.g., `reqeusts` vs `requests`).
 
 ### Stage 7: AST & Regex Reachability Analysis
 - Inspects the application's actual source code (`.py`, `.js`, `.ts`, `.java`, `.go`) using regex and AST import parsers.
-- Classifies each dependency's usage:
+- Classifies each dependency's usage and codebase influence:
   - `used_by_app`: The application directly imports the package.
-  - `reachable_via_dependency`: An imported direct dependency calls this transitive package.
-  - `used_in_tests_only`: The package is only referenced in test files or mock directories.
-  - `no_import_evidence`: No code in the repository references this package.
+    - *Heavy Usage*: Imported across $\ge 5$ files or $\ge 15\%$ of codebase (elevates Medium CVSS to High / P1).
+    - *Moderate Usage*: Imported across $2-4$ files.
+    - *Single Import*: Imported in $1$ file.
+  - `reachable_via_dependency`: An imported direct dependency brings this transitive package in.
+  - `used_in_tests_only`: The package is only referenced in test files or mock directories (capped at Medium).
+  - `not_imported`: No code in the repository references this package (deprioritized; capped at Medium unless CISA KEV).
 
 ### Stage 8: Evidence-Gated Investigation (`InvestigatorAgent`)
 - Investigates each vulnerability using bounded read-only tools (`find_imports`, `dependency_path`, `advisory_facts`, `read_snippet`).
 - Emits a structured verdict: `exploitable_likely`, `reachable`, `possibly_reachable`, `test_only`, or `no_import_evidence`.
+- Computes **Prioritization Shift**: Identifies when a vulnerability is *elevated* due to heavy codebase influence or *deprioritized* due to absence of runtime imports.
 - **Never outputs "safe"**: Absence of evidence is not evidence of absence; dormant code can still be invoked dynamically.
 
 ### Stage 9: Contextual Risk Scoring (P0–P3 Priority Model)
-- Moves beyond generic CVSS scores by incorporating execution context:
-  - **P0 (Immediate Hazard)**: Known exploited in wild (CISA KEV) + imported by application code.
-  - **P1 (High Priority)**: Critical/High severity + reachable in production code.
-  - **P2 (Moderate Risk)**: High severity but only in test scope, or transitive with no import evidence.
-  - **P3 (Informational / Low)**: Low severity, unconfirmed ranges, or dev-only tooling.
+- Moves beyond generic CVSS scores by incorporating execution context and codebase influence:
+  - **P0 (Immediate Hazard)**: Known exploited in wild (CISA KEV) + imported by application code, or High risk with heavy production codebase blast radius.
+  - **P1 (High Priority)**: Critical/High severity reachable in production code, or Medium severity with heavy production codebase influence ($\ge 5$ app files).
+  - **P2 (Moderate Risk)**: Standard Medium severity, or deprioritized findings (Critical/High CVSS with no application imports or test-only scope).
+  - **P3 (Informational / Low)**: Low severity, unconfirmed ranges, or unimported low-impact tooling.
 
-### Stage 10: Remediation Planning & What-If Simulation (`RemediationAgent`)
-- Finds the safest fix: direct parent bumps, minimal version increments, or override/resolution pins.
-- **What-If Simulation**: Simulates applying the patch in memory and re-evaluates the dependency graph to ensure the fix doesn't introduce new, worse CVEs.
-- Generates verified **unified diffs** (`git apply --check`) for `package.json`, `requirements.txt`, `pom.xml`, `go.mod`, and `Cargo.toml`.
+### Stage 10: Remediation Planning, Reachability Impact & What-If Simulation (`RemediationAgent`)
+- Finds the safest fix: direct parent bumps, minimal version increments, or override/resolution pins, ranked by **reachability-weighted urgency**.
+- **Code Reachability Impact Analysis**: Evaluates how suggested version upgrades affect application imports, submodules, and call surfaces, outputting a reachability preservation score.
+- **5-Tier Verification Matrix**:
+  - *Tier 1*: Patch applicability check (`git apply --check`).
+  - *Tier 2*: Lockfile coherence & update hint generation.
+  - *Tier 3*: In-memory what-if dependency tree rescan (`OsvClient`).
+  - *Tier 4*: Opt-in hardened Docker sandbox build & test execution (`--network none`, `--cap-drop ALL`).
+  - *Tier 5*: Security regression gate (ensures zero new HIGH/CRITICAL CVEs introduced).
 
-### Stage 11: Human-in-the-Loop Approval & Policy Gate
-- **No code is modified automatically**. Remediation patches require explicit human review and approval.
-- An optional **Docker Sandbox** allows executing the repository's test suite inside a hardened container (`--network none`, `--cap-drop ALL`) to confirm the patch doesn't break tests.
+### Stage 11: Governed PR Delivery & Policy Gate
+- **Interactive Remediation Agent Prompt**: Asks the user: *"Are you willing to commit these changes to the repository by creating a pull request?"*
+- **Repository PR Template Conformance**: Automatically discovers `.github/pull_request_template.md` and populates its sections and checkboxes; falls back to a standardized enterprise security format if absent.
+- **Governed Branch & Commit**: With user consent, safely creates an isolated branch (`remediation/fix-<pkg>-<version>`), stages the manifest patch, commits with a conventional commit message, and outputs GitHub CLI (`gh pr create`) dispatch commands.
 - Evaluates policy-as-code (`policies/default.yaml`, `strict.yaml`) and exports **SARIF 2.1.0** and **CycloneDX VEX** reports.
 
 ### Stage 12: Continuous Monitoring & Memory
