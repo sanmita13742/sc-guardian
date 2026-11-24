@@ -23,6 +23,17 @@ def render() -> None:
     for c, l in zip(cols, ORDER):
         c.metric(badge(l), counts[l])
 
+    vuln_assess = [a for a in assess if a.get("kind") == "vulnerability"]
+    elevated = [a for a in vuln_assess if (a.get("cvss_severity") in ("MEDIUM", "LOW") and a.get("label") in ("CRITICAL", "HIGH")) or (a.get("influence_tier") == "heavy" and a.get("priority") in ("P0", "P1"))]
+    deprioritized = [a for a in vuln_assess if a.get("cvss_severity") in ("CRITICAL", "HIGH") and a.get("label") in ("MEDIUM", "LOW", "INFORMATIONAL")]
+    heavy_influence = [a for a in vuln_assess if a.get("influence_tier") == "heavy" or a.get("app_files", 0) >= 5]
+
+    st.markdown("##### 🎯 Reachability & Codebase Influence Impact")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("🔥 Elevated by Code Influence", len(elevated), help="Medium/Low CVSS findings escalated to High/Critical due to heavy production usage")
+    m2.metric("💤 Deprioritized (No Imports)", len(deprioritized), help="Critical/High CVSS findings capped or deprioritized due to lack of application imports")
+    m3.metric("📦 Heavy Application Usage", len(heavy_influence), help="Packages imported across 5+ files or >15% of codebase")
+
     if not assess:
         st.success("No findings to assess.")
         return
@@ -39,14 +50,21 @@ def render() -> None:
 
     decided = active_decisions(r)
     st.markdown("#### Finding Risk Explanations")
-    a, b, d = st.columns([1, 1, 2])
+    a, b, c_inf, d = st.columns([1, 1, 1, 1])
     f_label = a.multiselect("Risk Level", ORDER, default=["CRITICAL", "HIGH"])
     f_kind = b.multiselect("Finding Type", ["vulnerability", "typosquatting", "lockfile_change", "pipeline", "package_risk"])
+    f_inf = c_inf.selectbox("Code Influence", ["All Findings", "Elevated by Influence", "Deprioritized (Unused)", "Heavy Usage (>=5 files)"])
     text = d.text_input("Search finding ID or package", placeholder="e.g. lodash...")
 
     expl = r.get("explanations", {})
     sel = [x for x in sorted(assess, key=lambda x: (ORDER.index(x["label"]), -x["score"]))
            if (not f_label or x["label"] in f_label) and (not f_kind or x["kind"] in f_kind)
+           and (
+               f_inf == "All Findings"
+               or (f_inf == "Elevated by Influence" and x in elevated)
+               or (f_inf == "Deprioritized (Unused)" and x in deprioritized)
+               or (f_inf == "Heavy Usage (>=5 files)" and (x.get("influence_tier") == "heavy" or x.get("app_files", 0) >= 5))
+           )
            and (not text or text.lower() in (x["finding_id"] + expl.get(x["finding_id"], {}).get("headline", "")).lower())]
 
     st.caption(f"Showing {len(sel[:30])} of {len(sel)} finding(s)")
@@ -56,9 +74,29 @@ def render() -> None:
             continue
         d_ = decided.get(a_["finding_id"])
         tag = f" · 🔕 {LABELS[d_['decision']]}" if d_ else ""
-        with st.expander(f"{badge(a_['label'])} · {a_.get('priority', '')} · {a_['finding_id']} · {e['headline'].split(' - ', 1)[-1]} (Score {a_['score']}, confidence {(a_.get('confidence') or {}).get('label', 'n/a')}){tag}", expanded=False):
+        inf_tag = ""
+        if a_.get("kind") == "vulnerability":
+            if a_ in elevated or (a_.get("influence_tier") == "heavy" and a_.get("cvss_severity") in ("MEDIUM", "LOW")):
+                inf_tag = " · 🔥 ELEVATED"
+            elif a_ in deprioritized or a_.get("influence_tier") == "not_imported":
+                inf_tag = " · 💤 DEPRIORITIZED"
+            elif a_.get("influence_tier") == "heavy":
+                inf_tag = f" · 🔥 Heavy Use ({a_.get('app_files', 0)} files)"
+
+        with st.expander(f"{badge(a_['label'])} · {a_.get('priority', '')} · {a_['finding_id']} · {e['headline'].split(' - ', 1)[-1]} (Score {a_['score']}, confidence {(a_.get('confidence') or {}).get('label', 'n/a')}){inf_tag}{tag}", expanded=False):
             if d_:
                 st.info(f"{LABELS[d_['decision']]}: {d_['reason']}" + (f" (expires {d_['expires_at'][:10]})" if d_["expires_at"] else ""))
+
+            if a_.get("kind") == "vulnerability":
+                cvss_sev = a_.get("cvss_severity")
+                lbl = a_["label"]
+                prio = a_.get("priority", "P3")
+                app_cnt = a_.get("app_files", 0)
+                if a_ in elevated or (cvss_sev in ("MEDIUM", "LOW") and lbl in ("CRITICAL", "HIGH")):
+                    st.warning(f"⚡ **Elevated by Codebase Influence**: Raw CVSS is **{cvss_sev or 'MEDIUM'}**, but this package is imported across **{app_cnt} files** in the application codebase. Risk elevated to **{lbl}** ({prio}).")
+                elif a_ in deprioritized or (cvss_sev in ("CRITICAL", "HIGH") and lbl in ("MEDIUM", "LOW")):
+                    st.info(f"🛡️ **Deprioritized via Reachability**: Raw CVSS is **{cvss_sev}**, but no static imports were found in application code. Risk deprioritized to **{lbl}** ({prio}).")
+
             sec = e.get("sections", {})
             st.markdown(f"**Impact:** {sec.get('impact', 'n/a')}")
             st.markdown(f"**How Entered:** {sec.get('how_entered', 'n/a')} ({sec.get('direct_transitive', 'n/a')})")

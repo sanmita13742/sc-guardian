@@ -52,7 +52,7 @@ def find_imports(ctx: ToolContext, package: str, ecosystem: str) -> dict:
     res = package_usage(_index(ctx), ecosystem, package)
     summary = (f"{package} imported by app code in {res['app_files']} file(s)" if res["status"] == "used_by_app" else f"{package} imported only in tests ({res['test_files']} file(s))" if res["status"] == "used_in_tests_only"
                else f"no import of {package} found in analysed {ecosystem} source" if res["status"] == "not_imported" else f"{package}: reachability unknown ({res.get('reason', '')})")
-    eid = ctx.evidence.add("reachability", "import-scanner", f"{ecosystem}:{package}", summary, {k: res.get(k) for k in ("status", "app_files", "test_files", "locations", "files_analysed", "confidence")},
+    eid = ctx.evidence.add("reachability", "import-scanner", f"{ecosystem}:{package}", summary, {k: res.get(k) for k in ("status", "app_files", "test_files", "locations", "files_analysed", "confidence", "import_density", "import_ratio", "influence_tier")},
                            source=(f"{res['locations'][0]['path']}:{res['locations'][0]['line']}" if res.get("locations") else None), verified=res["status"] != "unknown")
     return {"evidence_id": eid, **res}
 

@@ -137,23 +137,27 @@ When a scan begins, SC Guardian processes the target through 12 deterministic st
 
 ### Stage 7: AST & Regex Reachability Analysis
 - Inspects the application's actual source code (`.py`, `.js`, `.ts`, `.java`, `.go`) using regex and AST import parsers.
-- Classifies each dependency's usage:
+- Classifies each dependency's usage and codebase influence:
   - `used_by_app`: The application directly imports the package.
-  - `reachable_via_dependency`: An imported direct dependency calls this transitive package.
-  - `used_in_tests_only`: The package is only referenced in test files or mock directories.
-  - `no_import_evidence`: No code in the repository references this package.
+    - *Heavy Usage*: Imported across $\ge 5$ files or $\ge 15\%$ of codebase (elevates Medium CVSS to High / P1).
+    - *Moderate Usage*: Imported across $2-4$ files.
+    - *Single Import*: Imported in $1$ file.
+  - `reachable_via_dependency`: An imported direct dependency brings this transitive package in.
+  - `used_in_tests_only`: The package is only referenced in test files or mock directories (capped at Medium).
+  - `not_imported`: No code in the repository references this package (deprioritized; capped at Medium unless CISA KEV).
 
 ### Stage 8: Evidence-Gated Investigation (`InvestigatorAgent`)
 - Investigates each vulnerability using bounded read-only tools (`find_imports`, `dependency_path`, `advisory_facts`, `read_snippet`).
 - Emits a structured verdict: `exploitable_likely`, `reachable`, `possibly_reachable`, `test_only`, or `no_import_evidence`.
+- Computes **Prioritization Shift**: Identifies when a vulnerability is *elevated* due to heavy codebase influence or *deprioritized* due to absence of runtime imports.
 - **Never outputs "safe"**: Absence of evidence is not evidence of absence; dormant code can still be invoked dynamically.
 
 ### Stage 9: Contextual Risk Scoring (P0–P3 Priority Model)
-- Moves beyond generic CVSS scores by incorporating execution context:
-  - **P0 (Immediate Hazard)**: Known exploited in wild (CISA KEV) + imported by application code.
-  - **P1 (High Priority)**: Critical/High severity + reachable in production code.
-  - **P2 (Moderate Risk)**: High severity but only in test scope, or transitive with no import evidence.
-  - **P3 (Informational / Low)**: Low severity, unconfirmed ranges, or dev-only tooling.
+- Moves beyond generic CVSS scores by incorporating execution context and codebase influence:
+  - **P0 (Immediate Hazard)**: Known exploited in wild (CISA KEV) + imported by application code, or High risk with heavy production codebase blast radius.
+  - **P1 (High Priority)**: Critical/High severity reachable in production code, or Medium severity with heavy production codebase influence ($\ge 5$ app files).
+  - **P2 (Moderate Risk)**: Standard Medium severity, or deprioritized findings (Critical/High CVSS with no application imports or test-only scope).
+  - **P3 (Informational / Low)**: Low severity, unconfirmed ranges, or unimported low-impact tooling.
 
 ### Stage 10: Remediation Planning & What-If Simulation (`RemediationAgent`)
 - Finds the safest fix: direct parent bumps, minimal version increments, or override/resolution pins.

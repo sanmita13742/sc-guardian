@@ -34,11 +34,33 @@ def _assessment(fid: str, kind: str, score: int, factors: list[dict], rules: dic
             "thresholds": rules["thresholds"]}
 
 
-def priority_for(label: str, f: dict, reach_status: str = "unknown") -> str:
-    """P0 act now / P1 this sprint / P2 plan / P3 monitor. KEV + application import always escalates to P0."""
-    if label == "CRITICAL" or (f.get("kev") and reach_status in ("used_by_app", "reachable_via_dependency")):
+def priority_for(label: str, f: dict, reach_status: str = "unknown", reach_density: str = "unknown") -> str:
+    """P0 act now / P1 this sprint / P2 plan / P3 monitor.
+    Escalation:
+    - P0: CRITICAL risk OR (KEV + app import) OR (HIGH risk with heavy codebase influence in production).
+    - P1: HIGH risk OR (MEDIUM risk with heavy codebase influence in production).
+    - P2: MEDIUM risk OR (deprioritized unimported/test-only findings that were capped from higher CVSS).
+    - P3: LOW or INFORMATIONAL.
+    """
+    reach = f.get("reachability") or {}
+    density = reach_density if reach_density != "unknown" else (reach.get("import_density") or reach.get("influence_tier") or "unknown")
+    is_dev = bool(f.get("dev_dependency"))
+    is_heavy = density == "heavy" and not is_dev
+    has_kev = bool(f.get("kev"))
+
+    # Deprioritize unimported or test-only findings with no active KEV exploitation to P2/P3
+    if reach_status in ("not_imported", "used_in_tests_only") and not has_kev:
+        if label in ("CRITICAL", "HIGH", "MEDIUM"):
+            return "P2"
+        return "P3"
+
+    if label == "CRITICAL" or (has_kev and reach_status in ("used_by_app", "reachable_via_dependency")) or (label == "HIGH" and is_heavy):
         return "P0"
-    return {"HIGH": "P1", "MEDIUM": "P2"}.get(label, "P3")
+    if label == "HIGH" or (label == "MEDIUM" and is_heavy):
+        return "P1"
+    if label == "MEDIUM":
+        return "P2"
+    return "P3"
 
 
 def score_vulnerability(f: dict, rules: dict | None = None, related: dict | None = None) -> dict[str, Any]:
@@ -96,30 +118,85 @@ def score_vulnerability(f: dict, rules: dict | None = None, related: dict | None
         factors.append({"factor": "Exploitation probability (EPSS)", "points": 0, "detail": "not available"})
     reach = (f.get("reachability") or {})
     rst = reach.get("status") or "unknown"
-    rp = r["reachability"].get(rst, 0)
-    total += rp
+    density = reach.get("import_density") or reach.get("influence_tier") or "unknown"
+    app_files = reach.get("app_files", 0)
+    test_files = reach.get("test_files", 0)
+
     if rst == "unknown":
-        factors.append({"factor": "Reachability", "points": 0, "detail": "not assessed (unknown; NOT treated as unreachable)"})
+        rp = r["reachability"].get("unknown", 0)
+        total += rp
+        factors.append({"factor": "Reachability", "points": rp, "detail": "not assessed (unknown; NOT treated as unreachable)"})
         unknowns.append("Reachability of the vulnerable code is not assessed.")
-    else:
+    elif rst == "used_by_app":
         loc = (reach.get("locations") or [{}])[0]
-        factors.append({"factor": "Reachability (static import evidence)", "points": rp,
-                        "detail": {"used_by_app": f"the application imports {reach.get('package')} ({loc.get('path')}:{loc.get('line')})",
-                                   "reachable_via_dependency": f"the application imports {', '.join(reach.get('via') or [reach.get('package')])}, which brings this package in (exact use of the vulnerable code unknown)",
-                                   "used_in_tests_only": "imported only by test code in the analysed source",
-                                   "not_imported": "no import found in analysed source; it may still be used via configuration, plugins or a CLI"}.get(rst, rst)})
+        loc_str = f" ({loc.get('path')}:{loc.get('line')})" if loc.get("path") else ""
+        if app_files >= 5 or density == "heavy":
+            rp = r["reachability"].get("used_by_app_heavy", 35)
+            detail = f"heavy application usage: imported across {app_files} files{loc_str} (high codebase blast radius)"
+            factor_name = "Reachability (heavy app usage)"
+        elif app_files >= 2 or density == "moderate":
+            rp = r["reachability"].get("used_by_app_moderate", 20)
+            detail = f"application imports {reach.get('package')} in {app_files} files{loc_str}"
+            factor_name = "Reachability (static import evidence)"
+        else:
+            rp = r["reachability"].get("used_by_app_single", 12)
+            detail = f"application imports {reach.get('package')} in 1 file{loc_str}"
+            factor_name = "Reachability (single app import)"
+        total += rp
+        factors.append({"factor": factor_name, "points": rp, "detail": detail})
         unknowns.append("Reachability is package-level import evidence, not a call graph: it does not prove the vulnerable function is called.")
+    elif rst == "reachable_via_dependency":
+        via_str = ", ".join(reach.get("via") or [reach.get("package")])
+        if app_files >= 5 or density == "heavy":
+            rp = r["reachability"].get("reachable_via_dependency_heavy", 18)
+            detail = f"transitive dependency pulled in by heavily imported package ({via_str} in {app_files} files)"
+            factor_name = "Reachability (transitive via heavy root)"
+        else:
+            rp = r["reachability"].get("reachable_via_dependency", 8)
+            detail = f"the application imports {via_str}, which brings this package in (exact use of the vulnerable code unknown)"
+            factor_name = "Reachability (transitive via app import)"
+        total += rp
+        factors.append({"factor": factor_name, "points": rp, "detail": detail})
+        unknowns.append("Reachability is package-level import evidence, not a call graph: it does not prove the vulnerable function is called.")
+    elif rst == "used_in_tests_only":
+        rp = r["reachability"].get("used_in_tests_only", -10)
+        total += rp
+        factors.append({"factor": "Reachability (tests only)", "points": rp,
+                        "detail": f"imported only by test code ({test_files} files); excluded from production execution path"})
+        unknowns.append("Reachability is package-level import evidence: test imports indicate build/test surface rather than runtime exposure.")
+    elif rst == "not_imported":
+        rp = r["reachability"].get("not_imported", -25)
+        total += rp
+        factors.append({"factor": "Reachability (not imported)", "points": rp,
+                        "detail": "no import found in analysed source; deprioritized (it may still be used via configuration, plugins or a CLI)"})
+        unknowns.append("No static import was found in the application source; runtime exposure is reduced compared to raw CVSS severity.")
+    else:
+        rp = r["reachability"].get(rst, 0)
+        total += rp
+        factors.append({"factor": "Reachability", "points": rp, "detail": str(rst)})
+
     cap = None
     if f.get("affected_status") != "confirmed_affected":
-        cap = r["unconfirmed_applicability_cap"]
+        cap = r.get("unconfirmed_applicability_cap", "MEDIUM")
         unknowns.append("Applicability of the advisory to the installed version could not be confirmed locally.")
+    if rst == "not_imported" and not f.get("kev"):
+        unreach_cap = r.get("unreachable_cap", "MEDIUM")
+        if cap is None or RISK_ORDER.index(unreach_cap) > RISK_ORDER.index(cap):
+            cap = unreach_cap
+    elif rst == "used_in_tests_only" and not f.get("kev"):
+        test_cap = r.get("test_only_cap", "MEDIUM")
+        if cap is None or RISK_ORDER.index(test_cap) > RISK_ORDER.index(cap):
+            cap = test_cap
+
     if not f.get("fixed_versions"):
         unknowns.append("No fixed version is recorded in the advisory data.")
     a = _assessment(f["finding_id"], "vulnerability", total, factors, rules, cap, unknowns, cvss_severity=sev)
     vc = f.get("verdict_confidence")
     a["confidence"] = vc or {"score": 30 + (20 if f.get("cross_verified") else 0) + (10 if sev else 0), "label": "Medium" if f.get("cross_verified") else "Low", "basis": ["investigation not run"]}
-    a["priority"] = priority_for(a["label"], f, rst)
+    a["priority"] = priority_for(a["label"], f, rst, density)
     a["verdict"] = f.get("verdict")
+    a["influence_tier"] = density
+    a["app_files"] = app_files
     return a
 
 
