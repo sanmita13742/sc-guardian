@@ -1,242 +1,406 @@
-"""Page 5: suspicious changes (typosquatting + modified lockfiles + autonomous AI investigations)."""
+"""Page 5: Suspicious Changes & Autonomous Forensic Investigations.
+
+Integrates Person 2 (Phases 1, 2, 3):
+- Layer 1: Deterministic Forensic Evidence (29 findings across Git Diff, Manifests, Lifecycle Scripts, Dependency Sources, CI/CD, Containers, Typosquatting).
+- Layer 2: Correlated Attack Chains (Multi-vector scenario synthesis).
+- Layer 3: Autonomous AI Investigations (LangGraph tool-using investigator with Grounding Gate).
+- Backward-compatible support for core package risk signals and live repository scans.
+"""
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Dict, List
 import streamlit as st
 
 from ui.components.common import badge, df, get_result, page_header, require_result, risk_by_id
 
 
 def render() -> None:
-    page_header("Suspicious Changes", "Forensic threat signals: typosquatting package detection, lockfile modifications, and autonomous AI investigations.")
+    page_header(
+        "Suspicious Changes & Forensic Investigation",
+        "Multi-layer supply chain anomaly detection beyond conventional CVE/NVD databases (Person 2 - Phases 1, 2 & 3)."
+    )
+
     r = get_result()
 
-    # Load Phase 2/3 multi-layer investigation artifact if available
+    # Load Phase 2/3 multi-layer investigation artifact
     susp_file = Path("suspicious_changes.json")
-    susp_data = (r.get("suspicious_changes") if r and r.get("suspicious_changes") else {})
-    if not susp_data and susp_file.exists():
+    susp_data: Dict[str, Any] = {}
+    if r and r.get("suspicious_changes"):
+        susp_data = r["suspicious_changes"]
+    elif susp_file.exists():
         try:
             susp_data = json.loads(susp_file.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            susp_data = {}
 
-    scenarios = susp_data.get("correlated_scenarios", [])
-    ai_invs = susp_data.get("ai_investigations", [])
-    findings = susp_data.get("findings", [])
+    findings: List[Dict[str, Any]] = susp_data.get("findings", [])
+    scenarios: List[Dict[str, Any]] = susp_data.get("correlated_scenarios", [])
+    ai_invs: List[Dict[str, Any]] = susp_data.get("ai_investigations", [])
+    metrics: Dict[str, Any] = susp_data.get("metrics", {})
 
     if not r and not susp_data:
         require_result()
         return
 
-    if not r and susp_data:
-        st.info(f"Displaying results from active forensic scan artifact (`suspicious_changes.json` — {len(findings)} findings). Run a live scan on the **Repository Scan** page to refresh session state.")
-        r = {
-            "typosquatting": [f for f in findings if f.get("category") == "Typosquatting"],
-            "lockfile_changes": [f for f in findings if "lock" in f.get("affected_file", "").lower() or f.get("category") == "Repository Diff"],
-            "package_risk": {"findings": [f for f in findings if f.get("category") in ("Lifecycle Script", "Dependency Source", "Docker & CI/CD")]}
-        }
+    # Build fast lookup map for AI investigations
+    ai_map: Dict[str, Dict[str, Any]] = {inv["finding_id"]: inv for inv in ai_invs if "finding_id" in inv}
 
+    # Extract legacy signals if available
     risks = risk_by_id(r) if r else {}
     pkg = (r.get("package_risk") or {}) if r else {}
+    pkg_findings = pkg.get("findings", [])
 
+    # --------------------------------------------------------------------------------------------------
+    # Top Metrics Banner
+    # --------------------------------------------------------------------------------------------------
+    total_count = len(findings) if findings else len(pkg_findings)
+    introduced_count = sum(1 for f in findings if f.get("change_origin") == "INTRODUCED_IN_RANGE")
+    high_crit_count = sum(1 for f in findings if f.get("severity") in ("CRITICAL", "HIGH"))
+    scenarios_count = len(scenarios)
+    ai_count = len(ai_invs)
+
+    benign_ai = sum(1 for inv in ai_invs if inv.get("verdict") == "BENIGN_EXPLANATION")
+    anomaly_ai = sum(1 for inv in ai_invs if inv.get("verdict") == "CONFIRMED_ANOMALY")
+    attack_ai = sum(1 for inv in ai_invs if inv.get("verdict") == "SUSPECTED_SUPPLY_CHAIN_ATTACK")
+
+    m_cols = st.columns(5)
+    m_cols[0].metric("Total Findings", total_count, help="All deterministic forensic indicators discovered across diffs, manifests, scripts, CI/CD and sources.")
+    m_cols[1].metric("Introduced in Diff", introduced_count, help="Findings introduced in the analyzed Git commit range vs pre-existing in baseline.")
+    m_cols[2].metric("High / Critical", high_crit_count, help="Findings with high or critical potential supply chain impact.")
+    m_cols[3].metric("Correlated Scenarios", scenarios_count, help="Multi-vector attack chains synthesizing disparate indicators.")
+    m_cols[4].metric("AI Disambiguated", ai_count, f"{benign_ai} Benign · {anomaly_ai} Anom · {attack_ai} Attack", help="Findings autonomously investigated by LangGraph AI agent.")
+
+    st.markdown("---")
+
+    # --------------------------------------------------------------------------------------------------
+    # Multi-Layer Tabs Definition
+    # --------------------------------------------------------------------------------------------------
     tab_titles = [
-        f"Typosquatting ({len(r.get('typosquatting', []))})",
-        f"Modified Lockfiles ({len(r.get('lockfile_changes', []))})",
-        f"Package risk signals ({len(pkg.get('findings', []))})"
+        f"🌟 Unified View ({total_count})",
+        f"🤖 Autonomous AI Investigations ({ai_count})",
+        f"⛓️ Correlated Attack Chains ({scenarios_count})",
+        f"🔬 Deterministic Forensic Evidence ({total_count})",
     ]
-    if ai_invs:
-        tab_titles.append(f"Autonomous AI Investigations ({len(ai_invs)})")
-    if scenarios:
-        tab_titles.append(f"Correlated Scenarios ({len(scenarios)})")
+    if pkg_findings:
+        tab_titles.append(f"📦 Package Risk Signals ({len(pkg_findings)})")
 
     tabs = st.tabs(tab_titles)
-    tab1, tab2, tab3 = tabs[0], tabs[1], tabs[2]
-    tab_ai = tabs[3] if len(tabs) > 3 and ai_invs else None
-    tab_corr = tabs[4] if len(tabs) > 4 and scenarios else (tabs[3] if len(tabs) > 3 and not ai_invs and scenarios else None)
+    tab_unified = tabs[0]
+    tab_ai = tabs[1]
+    tab_corr = tabs[2]
+    tab_det = tabs[3]
+    tab_pkg = tabs[4] if len(tabs) > 4 else None
 
-    with tab3:
-        pv = pkg.get("provenance") or {}
-        if pv:
-            st.caption(f"Build provenance (npm provenance / SLSA attestations) is published for {pv.get('attested', 0)} of {pv.get('with_registry_data', 0)} packages with registry data. "
-                       "Presence only - signatures are not cryptographically verified here.")
-        pf = pkg.get("findings", [])
-        if not pf:
-            st.success("No integrity, install-script, recency, deprecation or dependency-confusion signals.")
-        else:
-            df([{"ID": f.get("finding_id") or f.get("id"), "Severity": f.get("severity"), "Signal": f.get("rule_id") or f.get("category"), "Target": f.get("subject") or f.get("affected_file"), "Finding": f.get("title"), "Risk": risks.get(f.get("finding_id") or f.get("id"), {}).get("label", f.get("severity", ""))} for f in pf], height=300)
-            for f in pf[:25]:
-                fid = f.get("finding_id") or f.get("id")
-                rid = f.get("rule_id") or f.get("category")
-                with st.expander(f"{fid} · {rid} · {f.get('title')}", expanded=False):
-                    st.markdown(f"**Why it matters / Explanation:** {f.get('why') or f.get('explanation') or f.get('technical_explanation')}")
-                    if f.get("remediation") or f.get("recommended_action"):
-                        st.markdown(f"**What to do:** {f.get('remediation') or f.get('recommended_action')}")
+    # ==================================================================================================
+    # TAB 1: Unified Multi-Layer View
+    # ==================================================================================================
+    with tab_unified:
+        st.markdown("#### Complete Multi-Layer Supply Chain Findings")
+        st.caption("Consolidates Layer 1 deterministic facts, Layer 2 correlated attack chains, and Layer 3 autonomous AI verdicts.")
+
+        # Interactive Filters
+        f_col1, f_col2, f_col3, f_col4 = st.columns([2, 1, 1, 1])
+        search_query = f_col1.text_input("🔍 Search findings (ID, file, code, or explanation)", "", key="uni_search")
+
+        categories = ["All"] + sorted(list({f.get("category", "") for f in findings if f.get("category")}))
+        cat_filter = f_col2.selectbox("Category", categories, key="uni_cat")
+
+        severities = ["All", "HIGH", "MEDIUM", "LOW"]
+        sev_filter = f_col3.selectbox("Severity", severities, key="uni_sev")
+
+        verdicts = ["All", "BENIGN_EXPLANATION", "CONFIRMED_ANOMALY", "SUSPECTED_SUPPLY_CHAIN_ATTACK", "NOT_INVESTIGATED"]
+        verdict_filter = f_col4.selectbox("AI Verdict", verdicts, key="uni_verdict")
+
+        # Apply Filters
+        filtered = []
+        for f in findings:
+            fid = f.get("id", "")
+            f_cat = f.get("category", "")
+            f_sev = f.get("severity", "")
+            f_file = f.get("affected_file", "")
+            f_ev = str(f.get("evidence", ""))
+            f_exp = str(f.get("explanation") or f.get("technical_explanation") or "")
+            ai_data = ai_map.get(fid)
+            ai_v = ai_data.get("verdict") if ai_data else "NOT_INVESTIGATED"
+
+            if search_query:
+                sq = search_query.lower()
+                if not (sq in fid.lower() or sq in f_file.lower() or sq in f_ev.lower() or sq in f_exp.lower()):
+                    continue
+            if cat_filter != "All" and f_cat != cat_filter:
+                continue
+            if sev_filter != "All" and f_sev != sev_filter:
+                continue
+            if verdict_filter != "All":
+                if verdict_filter == "NOT_INVESTIGATED" and ai_data:
+                    continue
+                if verdict_filter != "NOT_INVESTIGATED" and ai_v != verdict_filter:
+                    continue
+            filtered.append(f)
+
+        st.caption(f"Showing **{len(filtered)}** of **{len(findings)}** findings matching filters.")
+
+        # Summary Dataframe
+        if filtered:
+            table_rows = []
+            for f in filtered:
+                fid = f.get("id", "")
+                ai_data = ai_map.get(fid)
+                table_rows.append({
+                    "Finding ID": fid,
+                    "Category": f.get("category", ""),
+                    "Severity": f.get("severity", ""),
+                    "Target File": f"{f.get('affected_file', '')}:{f.get('line_number', 1)}",
+                    "Origin": f.get("change_origin", "PRE_EXISTING"),
+                    "AI Verdict": ai_data.get("verdict", "—") if ai_data else "—",
+                    "AI Confidence": ai_data.get("confidence", "—") if ai_data else "—",
+                })
+            df(table_rows, height=280)
+
+            # Detailed Finding Cards
+            st.markdown("##### Detailed Forensic Evidence & AI Analysis")
+            for f in filtered:
+                fid = f.get("id", "")
+                f_title = f.get("title", fid)
+                f_sev = f.get("severity", "MEDIUM")
+                f_cat = f.get("category", "")
+                f_orig = f.get("change_origin", "PRE_EXISTING")
+                ai_data = ai_map.get(fid)
+
+                # Icon based on AI verdict if present, otherwise severity
+                if ai_data:
+                    v = ai_data.get("verdict")
+                    icon = "🟢" if v == "BENIGN_EXPLANATION" else "🔴" if v == "SUSPECTED_SUPPLY_CHAIN_ATTACK" else "🟡"
+                else:
+                    icon = "🔴" if f_sev == "HIGH" else "🟡" if f_sev == "MEDIUM" else "🔵"
+
+                exp_title = f"{icon} **[{f_sev}]** `{fid}` · {f_title}"
+                with st.expander(exp_title, expanded=False):
+                    c1, c2, c3 = st.columns(3)
+                    c1.markdown(f"**Category:** `{f_cat}`")
+                    c2.markdown(f"**Target:** `{f.get('affected_file')}:{f.get('line_number')}`")
+                    c3.markdown(f"**Origin:** `{'INTRODUCED IN COMMIT RANGE' if f_orig == 'INTRODUCED_IN_RANGE' else 'PRE-EXISTING IN REPOSITORY'}`")
+
+                    # Evidence snippet
                     ev = f.get("evidence")
                     if ev:
-                        st.code(ev)
-                    st.caption(f"Evidence `{f.get('evidence_id') or f.get('evidence_type', 'HEURISTIC')}` · {'directly observed' if f.get('evidence_strength') == 'high' or f.get('evidence_type') == 'OBSERVED_CHANGE' else 'heuristic signal, not proof'}")
+                        st.markdown("**Deterministic Forensic Evidence Excerpt:**")
+                        st.code(ev if isinstance(ev, str) else "\n".join(ev), language="text")
 
-    with tab1:
-        meta = r.get("typosquatting_meta", {})
-        stats = meta.get("stats", {})
-        if stats:
-            st.caption(f"Checked {stats.get('unique_packages_checked', 0)} packages · {stats.get('candidates', 0)} candidates · {stats.get('suppressed_established', 0)} suppressed (established packages)")
+                    # Technical explanations
+                    exp_text = f.get("technical_explanation") or f.get("explanation")
+                    if exp_text:
+                        st.markdown(f"**Technical Explanation:** {exp_text}")
+                    if f.get("potential_impact"):
+                        st.markdown(f"**Potential Supply Chain Impact:** {f.get('potential_impact')}")
+                    if f.get("recommended_action"):
+                        st.info(f"**Recommended Action / Remediation:** {f.get('recommended_action')}")
 
-        typo_items = r.get("typosquatting", [])
-        if typo_items:
-            rows = []
-            for t in typo_items:
-                rows.append({
-                    "Finding": t.get("finding_id") or t.get("id"),
-                    "Suspicious Package": t.get("package_name") or t.get("title"),
-                    "Target File": t.get("affected_file") or "manifest",
-                    "Evidence": t.get("evidence_strength") or t.get("evidence_type", "HEURISTIC"),
-                    "Severity": t.get("severity", "MEDIUM")
+                    # AI Investigation Layer (if investigated)
+                    if ai_data:
+                        st.markdown("---")
+                        st.markdown("#### 🤖 Autonomous AI Investigator Judgement (Layer 3)")
+                        v = ai_data.get("verdict", "UNCONFIRMED")
+                        conf = ai_data.get("confidence", "UNKNOWN")
+                        planner = ai_data.get("planner", "deterministic")
+
+                        if v == "BENIGN_EXPLANATION":
+                            st.success(f"**AI Verdict: {v}** ({conf} Confidence) · Verified by Grounding Gate")
+                        elif v == "SUSPECTED_SUPPLY_CHAIN_ATTACK":
+                            st.error(f"**AI Verdict: {v}** ({conf} Confidence) · Suspected Supply Chain Compromise")
+                        else:
+                            st.warning(f"**AI Verdict: {v}** ({conf} Confidence) · Non-Standard Configuration")
+
+                        st.markdown(f"**Investigator Rationale:** {ai_data.get('rationale')}")
+
+                        if ai_data.get("attack_scenario"):
+                            st.warning(f"**Suspected Attack Scenario:** {ai_data.get('attack_scenario')}")
+
+                        # Supporting vs Contradicting Factors
+                        col_sup, col_con = st.columns(2)
+                        with col_sup:
+                            st.markdown("**Supporting Evidence (Suspicion Indicators):**")
+                            for se in ai_data.get("supporting_evidence", []):
+                                st.markdown(f"• **{se.get('factor')}:** {se.get('detail')}")
+                        with col_con:
+                            st.markdown("**Contradicting Evidence (Benign Indicators):**")
+                            for ce in ai_data.get("contradicting_evidence", []):
+                                st.markdown(f"• **{ce.get('factor')}:** {ce.get('detail')}")
+
+                        # Collapsible Tool Execution Trace
+                        steps = ai_data.get("investigation_steps", [])
+                        if steps:
+                            with st.expander(f"🔍 LangGraph Tool Execution Trace ({len(steps)} steps)", expanded=False):
+                                for s_idx, stp in enumerate(steps, 1):
+                                    st.markdown(f"**Step {s_idx}: `{stp.get('tool')}`**")
+                                    args_str = json.dumps(stp.get("args", {}), indent=2)
+                                    st.caption(f"Inputs: `{args_str}`")
+                                    res_str = str(stp.get("result", ""))
+                                    if len(res_str) > 300:
+                                        res_str = res_str[:300] + "... [truncated]"
+                                    st.code(res_str, language="json" if "{" in res_str else "text")
+
+    # ==================================================================================================
+    # TAB 2: Autonomous AI Investigations (Layer 3)
+    # ==================================================================================================
+    with tab_ai:
+        st.markdown("#### Autonomous AI Investigations (LangGraph Agent)")
+        st.caption(
+            f"**{len(ai_invs)}** high-priority findings investigated autonomously using read-only Git, AST, and filesystem tools. "
+            "All findings pass a strict Grounding Gate: zero unverified host breach claims, citations must match observed files, "
+            "and verdicts strictly follow allowed vocabulary."
+        )
+
+        if ai_invs:
+            ai_table = []
+            for inv in ai_invs:
+                ai_table.append({
+                    "Finding ID": inv.get("finding_id"),
+                    "Target": f"{inv.get('affected_file')}:{inv.get('line_number')}",
+                    "Verdict": inv.get("verdict"),
+                    "Confidence": inv.get("confidence"),
+                    "Planner Model": inv.get("planner", "Gemini 2.5 Flash Lite"),
+                    "Supporting Factors": len(inv.get("supporting_evidence", [])),
+                    "Contradicting Factors": len(inv.get("contradicting_evidence", [])),
                 })
-            df(rows, height=320)
+            df(ai_table, height=280)
 
-            for t in typo_items:
-                fid = t.get("finding_id") or t.get("id")
-                pkg_name = t.get("package_name") or t.get("title")
-                with st.expander(f"{fid} · {pkg_name}", expanded=False):
-                    st.write(t.get("why_flagged") or t.get("explanation") or t.get("technical_explanation"))
-                    ev = t.get("evidence")
-                    if isinstance(ev, list):
-                        for e in ev:
-                            st.markdown(f"• {e}")
-                    elif isinstance(ev, str):
-                        st.code(ev)
-        else:
-            st.success("No typosquatting candidates detected.")
-
-    with tab2:
-        la = r.get("lockfile_analysis", {})
-        sm = la.get("summary") or {}
-        if sm:
-            c = st.columns(5)
-            c[0].metric("Commits Inspected", sm.get("commits_analysed", 0))
-            c[1].metric("Normal Updates", sm.get("normal_update", 0))
-            c[2].metric("Unexplained", sm.get("unexplained_change", 0))
-            c[3].metric("Suspicious", sm.get("potentially_suspicious", 0))
-            c[4].metric("Baseline Gaps", sm.get("insufficient_baseline", 0))
-
-        changes = la.get("changes", [])
-        if changes:
-            show_all = st.checkbox("Show normal updates", False)
-            rows = [c_ for c_ in changes if show_all or c_["classification"] != "normal_update"]
-            st.caption(f"Showing {len(rows)} change(s) of {len(changes)}")
-            df([{"Commit": c_["commit"][:8], "Package": c_["package_name"], "Change": c_["change_type"],
-                 "Prev": (c_["previous"] or {}).get("version") or "-", "New": (c_["new"] or {}).get("version") or "-",
-                 "Classification": c_["classification"].replace("_", " ").title(),
-                 "Evidence": c_["evidence_strength"],
-                 "Risk": risks.get(c_["finding_id"], {}).get("label", "")} for c_ in rows], height=300)
-
-            for c_ in rows[:20]:
-                with st.expander(f"{c_['finding_id']} · {c_['package_name']} ({c_['classification'].replace('_', ' ').title()})", expanded=False):
-                    ci = c_.get("commit_info") or {}
-                    st.markdown(f"**Commit:** `{c_['commit'][:10]}` — {ci.get('subject', '')} ({ci.get('author', '')})")
-                    for why in c_.get("reasons", []):
-                        st.markdown(f"• {why}")
-                    if c_.get("diff_excerpt"):
-                        st.code("\n".join(c_["diff_excerpt"]), language="diff")
-        else:
-            lock_items = r.get("lockfile_changes", [])
-            if lock_items:
-                df([{"ID": l.get("id"), "Severity": l.get("severity"), "Title": l.get("title"), "File": l.get("affected_file"), "Origin": l.get("change_origin")} for l in lock_items], height=300)
-                for l in lock_items:
-                    with st.expander(f"{l.get('id')} · {l.get('title')}", expanded=False):
-                        st.markdown(f"**Explanation:** {l.get('explanation')}")
-                        st.code(l.get("evidence", ""))
-            else:
-                st.info("No lockfile change anomalies detected.")
-
-    if tab_ai:
-        with tab_ai:
-            st.caption(f"LangGraph tool-using autonomous AI investigations ({len(ai_invs)} findings examined). Strictly grounded with zero unverified host breach claims.")
-            df([{"Finding ID": inv["finding_id"], "Target File": f"{inv.get('affected_file')}:{inv.get('line_number')}",
-                 "Verdict": inv.get("verdict"), "Confidence": inv.get("confidence"),
-                 "Planner": inv.get("planner", "deterministic"), "Supporting": len(inv.get("supporting_evidence", [])),
-                 "Contradicting": len(inv.get("contradicting_evidence", []))} for inv in ai_invs], height=300)
-
+            st.markdown("##### Detailed Investigation Cards")
             for inv in ai_invs:
                 v = inv.get("verdict", "UNCONFIRMED")
-                v_icon = "🟢" if v == "BENIGN_EXPLANATION" else "🔴" if v == "SUSPECTED_SUPPLY_CHAIN_ATTACK" else "🟡"
-                with st.expander(f"{v_icon} {inv['finding_id']} · {v} ({inv.get('confidence')} Confidence)", expanded=False):
-                    st.markdown(f"**Rationale:** {inv.get('rationale')}")
-                    if inv.get("attack_scenario"):
-                        st.markdown(f"**Suspected Attack Narrative:** {inv.get('attack_scenario')}")
+                fid = inv.get("finding_id", "")
+                conf = inv.get("confidence", "UNKNOWN")
+                icon = "🟢" if v == "BENIGN_EXPLANATION" else "🔴" if v == "SUSPECTED_SUPPLY_CHAIN_ATTACK" else "🟡"
 
+                with st.expander(f"{icon} `{fid}` · {v} ({conf} Confidence)", expanded=False):
                     c1, c2 = st.columns(2)
-                    with c1:
+                    c1.markdown(f"**Target File:** `{inv.get('affected_file')}:{inv.get('line_number')}`")
+                    c2.markdown(f"**Planner Model:** `{inv.get('planner', 'Gemini 2.5 Flash Lite')}`")
+
+                    st.markdown(f"**Autonomous Rationale:** {inv.get('rationale')}")
+
+                    if inv.get("attack_scenario"):
+                        st.error(f"**Suspected Attack Scenario:** {inv.get('attack_scenario')}")
+
+                    cs1, cs2 = st.columns(2)
+                    with cs1:
                         st.markdown("**Supporting Evidence (Suspicion Factors):**")
                         for se in inv.get("supporting_evidence", []):
                             st.markdown(f"• **{se.get('factor')}:** {se.get('detail')}")
-                    with c2:
+                    with cs2:
                         st.markdown("**Contradicting Evidence (Benign Factors):**")
                         for ce in inv.get("contradicting_evidence", []):
                             st.markdown(f"• **{ce.get('factor')}:** {ce.get('detail')}")
 
+                    # Collapsible Tool Execution Trace
                     steps = inv.get("investigation_steps", [])
                     if steps:
-                        st.caption(f"Autonomous Tool Trace: {' ➔ '.join([s.get('tool') for s in steps])}")
+                        with st.expander(f"🔍 LangGraph Tool Execution Trace ({len(steps)} steps)", expanded=False):
+                            for s_idx, stp in enumerate(steps, 1):
+                                st.markdown(f"**Step {s_idx}: `{stp.get('tool')}`**")
+                                st.caption(f"Inputs: `{json.dumps(stp.get('args', {}))}`")
+                                res_str = str(stp.get("result", ""))
+                                if len(res_str) > 300:
+                                    res_str = res_str[:300] + "... [truncated]"
+                                st.code(res_str, language="text")
+
                     if inv.get("recommended_action"):
                         st.info(f"**Recommended Action:** {inv.get('recommended_action')}")
+        else:
+            st.info("No autonomous AI investigations available.")
 
-    if tab_corr:
-        with tab_corr:
-            st.caption(f"Phase 2 Cross-Signal Multi-Vector Attack Chains ({len(scenarios)} composite scenarios synthesized).")
+    # ==================================================================================================
+    # TAB 3: Correlated Attack Chains (Layer 2)
+    # ==================================================================================================
+    with tab_corr:
+        st.markdown("#### Correlated Attack Chains (Multi-Vector Scenarios)")
+        st.caption(
+            f"**{len(scenarios)}** multi-vector attack scenarios synthesized by correlating disparate indicators "
+            "(e.g., combining Docker base image drift, unpinned CI actions, and unverified registry mirrors)."
+        )
+
+        if scenarios:
             for sc in scenarios:
-                with st.expander(f"⚠️ {sc.get('composite_id')} · {sc.get('scenario_name')} ({sc.get('severity')})", expanded=True):
+                with st.expander(f"⚠️ `{sc.get('composite_id')}` · {sc.get('scenario_name')} ({sc.get('severity')})", expanded=True):
                     st.markdown(f"**MITRE ATT&CK Technique:** `{sc.get('attack_technique')}`")
-                    st.markdown(f"**Suspected Threat Scenario:** {sc.get('suspected_scenario')}")
-                    st.markdown(f"**Contributing Findings:** {', '.join(sc.get('primary_finding_ids', []))}")
+                    st.markdown(f"**Suspected Scenario Narrative:** {sc.get('suspected_scenario')}")
+                    st.markdown(f"**Contributing Findings:** `{', '.join(sc.get('primary_finding_ids', []))}`")
+
                     if sc.get("reasoning_chain"):
-                        st.markdown("**Reasoning Chain:**")
-                        for step in sc.get("reasoning_chain", []):
-                            st.markdown(f"1. {step}")
+                        st.markdown("**Step-by-Step Reasoning Chain:**")
+                        for step_no, step in enumerate(sc.get("reasoning_chain", []), 1):
+                            st.markdown(f"{step_no}. {step}")
+        else:
+            st.info("No correlated attack chains synthesized for this scan.")
 
-    if tab_ai:
-        with tab_ai:
-            st.caption(f"LangGraph tool-using autonomous AI investigations ({len(ai_invs)} findings examined). Strictly grounded with zero unverified host breach claims.")
-            df([{"Finding ID": inv["finding_id"], "Target File": f"{inv.get('affected_file')}:{inv.get('line_number')}",
-                 "Verdict": inv.get("verdict"), "Confidence": inv.get("confidence"),
-                 "Planner": inv.get("planner", "deterministic"), "Supporting": len(inv.get("supporting_evidence", [])),
-                 "Contradicting": len(inv.get("contradicting_evidence", []))} for inv in ai_invs], height=300)
+    # ==================================================================================================
+    # TAB 4: Deterministic Forensic Evidence (Layer 1)
+    # ==================================================================================================
+    with tab_det:
+        st.markdown("#### Layer 1 Deterministic Forensic Evidence")
+        st.caption("Direct static findings from repository diffs, manifest verifiers, AST lifecycle scripts, CI/CD linters, and typosquatting detectors.")
 
-            for inv in ai_invs:
-                v = inv.get("verdict", "UNCONFIRMED")
-                v_icon = "🟢" if v == "BENIGN_EXPLANATION" else "🔴" if v == "SUSPECTED_SUPPLY_CHAIN_ATTACK" else "🟡"
-                with st.expander(f"{v_icon} {inv['finding_id']} · {v} ({inv.get('confidence')} Confidence)", expanded=False):
-                    st.markdown(f"**Rationale:** {inv.get('rationale')}")
-                    if inv.get("attack_scenario"):
-                        st.markdown(f"**Suspected Attack Narrative:** {inv.get('attack_scenario')}")
+        cat_names = sorted(list({f.get("category", "") for f in findings if f.get("category")}))
+        if cat_names:
+            sub_tabs = st.tabs([f"{cat} ({sum(1 for f in findings if f.get('category') == cat)})" for cat in cat_names])
+            for idx, cat in enumerate(cat_names):
+                with sub_tabs[idx]:
+                    cat_findings = [f for f in findings if f.get("category") == cat]
+                    cat_rows = []
+                    for cf in cat_findings:
+                        cat_rows.append({
+                            "ID": cf.get("id"),
+                            "Severity": cf.get("severity"),
+                            "Target": f"{cf.get('affected_file')}:{cf.get('line_number')}",
+                            "Origin": cf.get("change_origin"),
+                            "Confidence": cf.get("confidence"),
+                        })
+                    df(cat_rows, height=240)
 
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown("**Supporting Evidence (Suspicion Factors):**")
-                        for se in inv.get("supporting_evidence", []):
-                            st.markdown(f"• **{se.get('factor')}:** {se.get('detail')}")
-                    with c2:
-                        st.markdown("**Contradicting Evidence (Benign Factors):**")
-                        for ce in inv.get("contradicting_evidence", []):
-                            st.markdown(f"• **{ce.get('factor')}:** {ce.get('detail')}")
+                    for cf in cat_findings:
+                        with st.expander(f"[{cf.get('severity')}] {cf.get('id')} · {cf.get('title')}", expanded=False):
+                            st.markdown(f"**File:** `{cf.get('affected_file')}:{cf.get('line_number')}`")
+                            st.markdown(f"**Explanation:** {cf.get('technical_explanation') or cf.get('explanation')}")
+                            if cf.get("evidence"):
+                                st.code(cf.get("evidence"), language="text")
+                            if cf.get("recommended_action"):
+                                st.info(f"**Remediation:** {cf.get('recommended_action')}")
+        else:
+            st.info("No deterministic forensic findings recorded.")
 
-                    steps = inv.get("investigation_steps", [])
-                    if steps:
-                        st.caption(f"Autonomous Tool Trace: {' ➔ '.join([s.get('tool') for s in steps])}")
-                    if inv.get("recommended_action"):
-                        st.info(f"**Recommended Action:** {inv.get('recommended_action')}")
+    # ==================================================================================================
+    # TAB 5: Package Risk Signals (Legacy / Core Scanner)
+    # ==================================================================================================
+    if tab_pkg and pkg_findings:
+        with tab_pkg:
+            st.markdown("#### Core Scanner Package Risk Signals")
+            st.caption("Registry integrity, install-script presence, and deprecation signals from the core scan pipeline.")
 
-    if tab_corr:
-        with tab_corr:
-            st.caption(f"Phase 2 Cross-Signal Multi-Vector Attack Chains ({len(scenarios)} composite scenarios synthesized).")
-            for sc in scenarios:
-                with st.expander(f"⚠️ {sc.get('composite_id')} · {sc.get('scenario_name')} ({sc.get('severity')})", expanded=True):
-                    st.markdown(f"**MITRE ATT&CK Technique:** `{sc.get('attack_technique')}`")
-                    st.markdown(f"**Suspected Threat Scenario:** {sc.get('suspected_scenario')}")
-                    st.markdown(f"**Contributing Findings:** {', '.join(sc.get('primary_finding_ids', []))}")
-                    if sc.get("reasoning_chain"):
-                        st.markdown("**Reasoning Chain:**")
-                        for step in sc.get("reasoning_chain", []):
-                            st.markdown(f"1. {step}")
+            pv = pkg.get("provenance") or {}
+            if pv:
+                st.caption(f"Build provenance published for {pv.get('attested', 0)} of {pv.get('with_registry_data', 0)} packages with registry data.")
+
+            pkg_rows = []
+            for pf in pkg_findings:
+                fid = pf.get("finding_id") or pf.get("id")
+                pkg_rows.append({
+                    "ID": fid,
+                    "Severity": pf.get("severity"),
+                    "Signal": pf.get("rule_id") or pf.get("category"),
+                    "Target": pf.get("subject") or pf.get("affected_file"),
+                    "Finding": pf.get("title"),
+                    "Risk": risks.get(fid, {}).get("label", pf.get("severity", ""))
+                })
+            df(pkg_rows, height=280)
+
+            for pf in pkg_findings[:20]:
+                fid = pf.get("finding_id") or pf.get("id")
+                rid = pf.get("rule_id") or pf.get("category")
+                with st.expander(f"{fid} · {rid} · {pf.get('title')}", expanded=False):
+                    st.markdown(f"**Why it matters:** {pf.get('why') or pf.get('explanation')}")
+                    if pf.get("remediation"):
+                        st.markdown(f"**What to do:** {pf.get('remediation')}")
+                    if pf.get("evidence"):
+                        st.code(pf.get("evidence"))
