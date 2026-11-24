@@ -104,7 +104,7 @@ class RemediationAgent:
                 "path": str(st.repo_dir),
             }
 
-            if getattr(s, "remediation_auto_pr_low_med", True):
+            if getattr(s, "remediation_auto_pr_low_med", True) and getattr(st.info, "source", "github") != "local":  # local folders: never auto-branch/commit; the user accepts or ignores
                 auto_del = auto_deliver_low_medium_remediations(st.repo_dir, items, repo_meta, memory=mem)
             else:
                 for rem in items:

@@ -4,12 +4,16 @@ from __future__ import annotations
 import streamlit as st
 
 from config.settings import get_settings
+from remediation.apply_local import applied_record, undo_in_place
+from remediation.local_trial import accept_validated, discard_trial, latest_trial, run_trial
+from sandbox.runner import docker_status
 from remediation.delivery import (
     can_dispatch_gh_cli,
     commit_and_create_pr_branch,
     get_remediation_severity_tier,
 )
 from remediation.export import patch_text, pr_markdown
+from reporting.counts import remediation_totals
 from remediation.pr_template_engine import find_pr_template, render_pull_request
 from storage.database import Database
 from storage.memory import Memory
@@ -23,6 +27,88 @@ def _mem() -> Memory:
     return Memory(Database(get_settings().db_path))
 
 
+def _local_actions(i: dict, repo: dict, mem, ap, root: str, result: dict) -> None:
+    """Local-folder flow: the fix is applied to a scratch clone and validated first; only a passing proposal can be accepted into the real files."""
+    rec = applied_record(root, i)
+    if rec:
+        lock = rec.get("lock") or {}
+        st.success(f"✅ **Applied to your project** at {rec['applied_at']}: " + ", ".join(f"`{f}`" for f in rec["files"]) + (" (the exact files that passed validation)" if rec.get("validated") else ""))
+        if lock.get("status") in ("tool_missing", "failed"):
+            st.warning(f"🔒 Lockfile not refreshed: {lock['note']}. Until it is, a rescan can still report this vulnerability.")
+        elif lock.get("note"):
+            st.caption(f"🔒 {lock['note']}.")
+        st.info("Run **Repository Scan** again on the same folder to confirm the findings are gone.")
+        if st.button("↩️ Undo this change", key=f"undo_{i['id']}"):
+            res = undo_in_place(root, i)
+            if res["status"] == "success":
+                if mem:
+                    mem.audit(repo["url"], "analyst", "remediation_undone", i["title"], "restored " + ", ".join(res["restored"]))
+                    mem.set_approval(repo["url"], i["fingerprint"], "needs_review", "Change undone by analyst", i["title"], "analyst")
+                st.rerun()
+            else:
+                st.error(res["error"])
+        return
+    if not i.get("patch"):
+        st.warning("No automatic file change could be produced for this proposal; follow the rationale for a manual fix.")
+        return
+
+    docker = docker_status()
+    trial = latest_trial(root, i)
+    want_tests = st.session_state.pop(f"want_tests_{i['id']}", None)
+    if trial is None or want_tests is not None:
+        box = st.status("Validating the fix on a clone of your project (your files are not touched) ...", expanded=True)
+        trial = run_trial(root, i, result, get_settings(), with_tests=bool(want_tests), progress=lambda m: box.write(m))
+        box.update(label=f"Validation {trial['status']}", state="complete" if trial["status"] == "passed" else "error", expanded=False)
+
+    ok = trial["status"] == "passed"
+    if ok:
+        st.success("🧪 **Validated on a clone: passed.** Accept writes these exact tested files into your project.")
+    else:
+        st.error("🧪 **Validation failed.** " + "; ".join(trial.get("reasons") or ["see the steps below"]))
+    cmp_ = trial.get("comparison")
+    if cmp_:
+        m = st.columns(4)
+        m[0].metric("Findings before", cmp_["before"])
+        m[1].metric("After the fix", cmp_["after"], delta=cmp_["after"] - cmp_["before"], delta_color="inverse")
+        m[2].metric("Fixed", len(cmp_["fixed"]))
+        m[3].metric("Newly introduced", len(cmp_["new"]))
+    with st.expander("Validation steps", expanded=not ok):
+        for stp in trial.get("steps", []):
+            st.markdown(f"{'✅' if stp['ok'] else '❌'} **{stp['step']}** - {stp['detail']}")
+        for run in (trial.get("tests") or {}).get("runs", []):
+            with st.expander(f"{run['phase']} - exit code {run['exit_code']} ({run['seconds']}s)"):
+                st.code(run["log_tail"] or "(no output)", language="text")
+    c_t1, c_t2 = st.columns([2, 1])
+    tick = False
+    if docker["available"]:
+        tick = c_t1.checkbox("Also run this project's own build/tests in the Docker sandbox", key=f"tests_ok_{i['id']}",
+                             help="Runs the project's test command in an isolated container (dependencies installed with network, tests run without network).")
+    else:
+        c_t1.caption("Build/test run skipped: " + docker["reason"])
+    if c_t2.button("🔁 Re-validate", key=f"revalidate_{i['id']}", use_container_width=True):
+        st.session_state[f"want_tests_{i['id']}"] = bool(tick)
+        st.rerun()
+
+    if ap and ap["state"] == "rejected":
+        st.info(f"🚫 Ignored by **{ap['actor']}**.")
+    c_acc, c_ign, _ = st.columns([1.5, 1, 1.5])
+    if c_acc.button("✅ Accept & Apply Changes", key=f"loc_accept_{i['id']}", type="primary", use_container_width=True, disabled=not ok,
+                    help=None if ok else "Only a proposal that passed validation on the clone can be accepted."):
+        res = accept_validated(root, i)
+        if res["status"] == "success":
+            if mem:
+                mem.set_approval(repo["url"], i["fingerprint"], "approved", "Accepted by analyst after passing clone validation", i["title"], "analyst")
+                mem.audit(repo["url"], "analyst", "remediation_applied_local", i["title"], "wrote validated " + ", ".join(res["files"]))
+            st.rerun()
+        else:
+            st.error(f"❌ {res['error']}")
+    if c_ign.button("🚫 Ignore", key=f"loc_ignore_{i['id']}", use_container_width=True):
+        if mem:
+            mem.set_approval(repo["url"], i["fingerprint"], "rejected", "Ignored by analyst (local folder scan)", i["title"], "analyst")
+        discard_trial(root, i)
+        st.rerun()
+
+
 def render() -> None:
     page_header(
         "Remediation",
@@ -31,6 +117,8 @@ def render() -> None:
     r = require_result()
     if not r:
         return
+    if r.get("repo", {}).get("source") == "local":
+        st.caption("📁 Local folder scan: each fix is first applied to a **clone** of your project, rescanned and checked there. Only a fix that passes can be **Accepted**, which writes those exact tested files into your folder (with a backup and Undo). **Ignore** dismisses it. Nothing is committed or pushed.")
     rem = r.get("remediation") or {}
     items = rem.get("items") or []
     if not items:
@@ -45,19 +133,19 @@ def render() -> None:
         mem, approvals = None, {}
 
     vs = rem.get("validation_summary") or {}
-    fixed = sum(len((i.get("what_if") or {}).get("fixed", [])) for i in items)
+    totals = remediation_totals(items, len(r.get("vulnerabilities") or []))
+    fixed = totals["fixed_unique"]
     auto_count = sum(1 for i in items if i.get("automation_tier") == "automated" or i.get("priority") in ("P2", "P3"))
     manual_count = len(items) - auto_count
 
     c = st.columns(5)
     c[0].metric("Proposals", len(items))
-    c[1].metric("Findings Fixed", fixed)
+    c[1].metric("Findings Fixed", fixed, help="Unique findings the proposals fix; proposals overlap, so this is not the sum of the table's Fixes column")
     c[2].metric("⚡ Auto-PR (Low/Med)", auto_count)
     c[3].metric("👤 Manual Review (High/Crit)", manual_count)
     c[4].metric("Approved", sum(1 for i in items if approvals.get(i["fingerprint"], {}).get("state") == "approved"))
 
-    if rem.get("groups_not_planned"):
-        st.caption(f"{rem['groups_not_planned']} lower-priority source-package group(s) were not planned (limit or time budget).")
+    st.caption(f"{totals['covered_unique']} of {totals['total_findings']} findings are covered by a proposal." + (f" {rem['groups_not_planned']} lower-priority source-package group(s) were not planned (limit or time budget)." if rem.get("groups_not_planned") else ""))
 
     # Table filter by automation policy
     col_f1, _ = st.columns([1, 2])
@@ -101,12 +189,16 @@ def render() -> None:
     ap = approvals.get(i["fingerprint"])
     tier = i.get("automation_tier") or ("manual_review" if i.get("priority") in ("P0", "P1") else "automated")
     is_manual = (tier == "manual_review" or i.get("priority") in ("P0", "P1"))
+    is_local = repo.get("source") == "local"
+    local_root = repo.get("local_path") or repo.get("repo_dir") or repo.get("path") or "."
 
     st.markdown(f"### {ICON.get(i['action'], '')} {i['title']}")
     st.markdown(i.get("rationale", ""))
 
     # --- SEVERITY & AUTOMATION POLICY BAR WITH ACCEPT / IGNORE ACTIONS ---
-    if is_manual:
+    if is_local:
+        _local_actions(i, repo, mem, ap, local_root, r)
+    elif is_manual:
         st.warning(
             "⚠️ **Human Intervention Required (High / Critical Severity)**  \n"
             "This proposal addresses High or Critical risk findings. By policy, changes **will not** be committed or sent without explicit manual human approval. "
@@ -151,7 +243,7 @@ def render() -> None:
             st.rerun()
 
     # Show persistent PR status if already dispatched in session
-    pr_status_disp = st.session_state.get(f"pr_res_{i['id']}")
+    pr_status_disp = None if is_local else st.session_state.get(f"pr_res_{i['id']}")
     if pr_status_disp:
         if pr_status_disp.get("status") == "success":
             st.success(f"🎉 Branch `{pr_status_disp['branch']}` created and committed! PR markdown file: `{pr_status_disp.get('pr_file')}`")
@@ -288,8 +380,12 @@ def render() -> None:
                     st.rerun()
                 except ValueError as e:
                     st.error(str(e))
-        approved = bool((ap and ap["state"] == "approved") or not is_manual)
-        if approved:
+        approved = bool((ap and ap["state"] == "approved") or (not is_manual and not is_local))
+        if approved and is_local:
+            st.caption("Local folder scan: use **Accept & Apply Changes** above to edit the files in place. The patch can still be downloaded below.")
+            if patch_text(i):
+                st.download_button("Download .patch", patch_text(i), file_name=f"{i['id']}.patch", mime="text/x-diff", key=f"loc_patch_{i['id']}")
+        elif approved:
             st.markdown("---")
             st.markdown("### 🤖 Remediation Agent Delivery")
 

@@ -53,7 +53,7 @@ const rank = n => (n.vuln ? 1000 + ({CRITICAL:4,HIGH:3,MEDIUM:2,LOW:1}[n.vuln]||
 const ranked = pkgs.slice().sort((a,b) => rank(b) - rank(a));
 const nDirect = pkgs.filter(n => n.direct).length;
 let filter = 'direct', limit = Math.min(Math.max(nDirect, 1), pkgs.length), focus = null, selected = null, layout = 'phys', physicsOn = true, query = '';
-const FILTERS = [['direct','Direct Only ('+nDirect+')'],['prod','Production Only'],['hubs','Verified Shared Hubs'],['all','All Nodes']];
+const FILTERS = [['direct','Direct Only ('+nDirect+')'],['prod','Production Only'],['all','All Nodes']];
 const fb = document.getElementById('filters');
 FILTERS.forEach(([k,t]) => {const b = document.createElement('button'); b.textContent = (FILTERS.findIndex(f => f[0]===k)+1)+'. '+t; b.dataset.k = k; b.onclick = () => {filter = k; focus = null; physicsOn = (layout === 'phys'); draw(false);}; fb.appendChild(b);});
 const lim = document.getElementById('lim'); lim.max = Math.max(pkgs.length, 1); lim.value = limit;
@@ -72,7 +72,7 @@ function chain(id, set) {  // shortest path to a root, so no shown node is orpha
 function visibleSet() {
   const set = new Set(roots);
   if (focus) {chain(focus, set); (out[focus]||[]).forEach(x => set.add(x)); (inn[focus]||[]).forEach(x => set.add(x)); return set;}
-  let pool = ranked.filter(n => filter==='direct' ? n.direct : filter==='prod' ? n.kind==='prod' : filter==='hubs' ? (n.parents||0)>=2 : true);
+  let pool = ranked.filter(n => filter==='direct' ? n.direct : filter==='prod' ? n.kind==='prod' : true);
   if (query) pool = pool.filter(n => n.label.toLowerCase().includes(query));
   pool.slice(0, limit).forEach(n => chain(n.id, set));
   return set;

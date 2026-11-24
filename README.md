@@ -25,7 +25,6 @@ Configuration precedence: environment `SCANNER_<NAME>` > `.env` > `scanner.toml`
 | Vulnerability Findings | verdicts (reachable / possibly reachable / test-only / no import evidence), evidence chain, ground-truth test |
 | Pipeline & Containers | Dockerfile, compose, GitHub Actions and generic CI findings (EOL images, unpinned actions, token permissions, ...) |
 | Suspicious Changes | typosquatting, lockfile history, package risk (install scripts, deprecation, digest mismatch) |
-| Risk & Explainability | priority P0-P3, confidence, factor tables |
 | Remediation | proposal per source package with measured effect (fixed / remaining / new), SBOM diff, patch, rollback, approval + audit trail, optional Docker sandbox |
 | Policy & Gate | YAML policy-as-code (`policies/default.yaml`, `strict.yaml`) with waivers |
 | Monitoring | watch list; re-checks stored inventories for newly disclosed advisories |

@@ -676,9 +676,8 @@ def _summary(st: ScanState, result: dict) -> dict:
     by_sev: dict[str, int] = {}
     for f in v:
         by_sev[f["severity"] or "UNKNOWN"] = by_sev.get(f["severity"] or "UNKNOWN", 0) + 1
-    by_risk: dict[str, int] = {}
-    for a in st.risk["assessments"]:
-        by_risk[a["label"]] = by_risk.get(a["label"], 0) + 1
+    from reporting.counts import risk_breakdown
+    by_risk, by_priority, by_risk_other = risk_breakdown(st.risk["assessments"], v)
     confirmed = [f for f in v if f["affected_status"] == "confirmed_affected"]
     return {
         "components": len([c for c in st.components if c.type not in ("file", "container") and c.purl_type not in ("docker", "github") and not c.is_self]), "by_ecosystem": st.quality.get("components_by_ecosystem", {}),
@@ -688,5 +687,5 @@ def _summary(st: ScanState, result: dict) -> dict:
         "typosquatting": len(st.typo["findings"]),
         "pipeline_findings": len(st.pipe["findings"]), "pipeline_critical_high": sum(1 for f in st.pipe["findings"] if f["severity"] in ("CRITICAL", "HIGH")),
         "lockfile_findings": len([c for c in st.lres["findings"] if c["classification"] != "insufficient_baseline"]),
-        "by_risk": by_risk, "services": len(st.insp.services), "cross_verified": (result.get("verification") or {}).get("findings_cross_verified"),
+        "by_risk": by_risk, "by_priority": by_priority, "by_risk_other": by_risk_other, "services": len(st.insp.services), "cross_verified": (result.get("verification") or {}).get("findings_cross_verified"),
     }

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 _SEGMENT = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
 _REF = re.compile(r"^[A-Za-z0-9._/@+-]{1,200}$")
@@ -82,6 +83,41 @@ def validate_github_url(url: str) -> GitHubRepo:
         if parts[2] == "tree" and len(parts) > 3:
             ref = validate_ref("/".join(parts[3:]))
     return GitHubRepo(owner=owner, name=name, ref=ref)
+
+
+_WIN_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def looks_like_local_path(text: str) -> bool:
+    """True when the input is a filesystem path (drive letter, UNC, absolute/relative/home path, file://) rather than a URL."""
+    t = (text or "").strip().strip('"').strip("'")
+    if not t:
+        return False
+    if t.lower().startswith("file://"):
+        return True
+    if "://" in t or t.lower().startswith(("git@", "github.com/", "www.github.com/")):
+        return False
+    return bool(_WIN_DRIVE.match(t)) or t.startswith(("\\\\", "/", "~", "./", ".\\", "../", "..\\"))
+
+
+def resolve_local_path(text: str) -> Path:
+    """Return the resolved project directory for a local path input, or raise InvalidRepositoryURL."""
+    t = text.strip().strip('"').strip("'")
+    if t.lower().startswith("file://"):
+        t = unquote(urlparse(t).path)
+        if _WIN_DRIVE.match(t.lstrip("/")):
+            t = t.lstrip("/")
+    if "\x00" in t or any(ord(c) < 32 for c in t):
+        raise InvalidRepositoryURL("Path contains control characters")
+    try:
+        p = Path(t).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError) as e:
+        raise InvalidRepositoryURL(f"Invalid path: {e}")
+    if not p.exists():
+        raise InvalidRepositoryURL(f"Folder not found: {p}")
+    if not p.is_dir():
+        raise InvalidRepositoryURL(f"Not a folder: {p} (give the project's root folder)")
+    return p
 
 
 def validate_ref(ref: str | None) -> str | None:

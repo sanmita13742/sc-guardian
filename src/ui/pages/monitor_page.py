@@ -19,7 +19,7 @@ def render() -> None:
     repos = []
     seen = set()
     for x in db.list_scans(300):
-        if x["status"] != "failed" and not x["repo_url"].startswith("local-fixture") and x["repo_url"] not in seen:
+        if x["status"] != "failed" and not x["repo_url"].startswith(("local:", "local-fixture")) and x["repo_url"] not in seen:
             seen.add(x["repo_url"])
             repos.append(x)
     wl = {w["repo_url"]: w for w in watchlist(db)}

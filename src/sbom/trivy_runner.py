@@ -15,6 +15,7 @@ from typing import Optional
 
 from config.settings import Settings, get_settings
 from core.safe_env import scrubbed_env
+from sbom.tool_locator import find_tool
 from sbom.syft_runner import ScannerResult  # same result shape for every scanner
 
 
@@ -22,7 +23,7 @@ def resolve_trivy(settings: Settings | None = None) -> Optional[str]:
     cand = (settings or get_settings()).trivy_bin
     if os.path.sep in cand or "/" in cand:
         return cand if Path(cand).exists() else None
-    return shutil.which(cand)
+    return shutil.which(cand) or find_tool(cand)
 
 
 def trivy_version(trivy_bin: str) -> Optional[str]:
