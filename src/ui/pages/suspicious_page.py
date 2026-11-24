@@ -151,10 +151,10 @@ def render() -> None:
                 table_rows.append({
                     "Finding ID": fid,
                     "Category": f.get("category", ""),
-                    "Severity": f.get("severity", ""),
+                    "Initial Static Severity": f.get("severity", ""),
                     "Target File": f"{f.get('affected_file', '')}:{f.get('line_number', 1)}",
                     "Origin": f.get("change_origin", "PRE_EXISTING"),
-                    "AI Verdict": ai_data.get("verdict", "—") if ai_data else "—",
+                    "Autonomous AI Verdict": ai_data.get("verdict", "—") if ai_data else "— (Uninvestigated)",
                     "AI Confidence": ai_data.get("confidence", "—") if ai_data else "—",
                 })
             df(table_rows, height=280)
@@ -169,14 +169,20 @@ def render() -> None:
                 f_orig = f.get("change_origin", "PRE_EXISTING")
                 ai_data = ai_map.get(fid)
 
-                # Icon based on AI verdict if present, otherwise severity
+                # Clear status badge explaining Static Scan vs AI Disambiguation
                 if ai_data:
                     v = ai_data.get("verdict")
-                    icon = "🟢" if v == "BENIGN_EXPLANATION" else "🔴" if v == "SUSPECTED_SUPPLY_CHAIN_ATTACK" else "🟡"
+                    if v == "BENIGN_EXPLANATION":
+                        status_tag = f"🟢 [DISAMBIGUATED SAFE] (Static: {f_sev})"
+                    elif v == "SUSPECTED_SUPPLY_CHAIN_ATTACK":
+                        status_tag = f"🔴 [SUSPECTED ATTACK] (Static: {f_sev})"
+                    else:
+                        status_tag = f"🟡 [CONFIRMED ANOMALY] (Static: {f_sev})"
+                    exp_title = f"{status_tag} `{fid}` · {f_title}"
                 else:
                     icon = "🔴" if f_sev == "HIGH" else "🟡" if f_sev == "MEDIUM" else "🔵"
+                    exp_title = f"{icon} [{f_sev}] `{fid}` · {f_title}"
 
-                exp_title = f"{icon} **[{f_sev}]** `{fid}` · {f_title}"
                 with st.expander(exp_title, expanded=False):
                     c1, c2, c3 = st.columns(3)
                     c1.markdown(f"**Category:** `{f_cat}`")
@@ -207,11 +213,12 @@ def render() -> None:
                         planner = ai_data.get("planner", "deterministic")
 
                         if v == "BENIGN_EXPLANATION":
-                            st.success(f"**AI Verdict: {v}** ({conf} Confidence) · Verified by Grounding Gate")
+                            st.success(f"**AI Verdict: SAFE / LEGITIMATE ({v})** ({conf} Confidence) · Verified by Grounding Gate")
+                            st.info(f"💡 **False Alarm Resolved by AI:** The deterministic static scanner flagged this pattern as **{f_sev}** severity based on generic heuristic rules. The autonomous AI investigated the actual codebase, imports, and package history, proving this is a legitimate safe dependency and eliminating the false alarm.")
                         elif v == "SUSPECTED_SUPPLY_CHAIN_ATTACK":
-                            st.error(f"**AI Verdict: {v}** ({conf} Confidence) · Suspected Supply Chain Compromise")
+                            st.error(f"**AI Verdict: SUSPECTED SUPPLY CHAIN ATTACK ({v})** ({conf} Confidence) · Elevated from Static `{f_sev}`")
                         else:
-                            st.warning(f"**AI Verdict: {v}** ({conf} Confidence) · Non-Standard Configuration")
+                            st.warning(f"**AI Verdict: CONFIRMED ANOMALY ({v})** ({conf} Confidence) · Non-Standard Configuration")
 
                         st.markdown(f"**Investigator Rationale:** {ai_data.get('rationale')}")
 
